@@ -82,7 +82,7 @@ copy(path.join(ORT, 'ort-wasm-simd-threaded.wasm'), path.join(OUT, 'vendor/ort')
 // 指定する。出力が dist-local/ に分かれるので、配布経路（dist/）には乗らない。
 //
 // 名前は esbuild の define で main.js へ渡すので、定義はここ1箇所で済む。
-const PUBLIC_MODEL = 'fuseki_degct_b3_iter4.onnx';
+const PUBLIC_MODEL = 'fuseki_degct_b3_iter46.onnx';
 const modelArg = process.argv[process.argv.indexOf('--model') + 1];
 const MODEL_SRC = custom ? path.resolve(modelArg) : path.join(HERE, 'models', PUBLIC_MODEL);
 const MODEL = path.basename(MODEL_SRC);

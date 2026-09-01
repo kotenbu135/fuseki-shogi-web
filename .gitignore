@@ -12,7 +12,7 @@ node_modules/
 # 詳細は models/README.md を参照。
 models/*
 !models/README.md
-!models/fuseki_degct_b3_iter4.onnx
+!models/fuseki_degct_b3_iter46.onnx
 
 # 参照データ（test/gen_parity_ref.py が生成する）
 parity_ref.json
