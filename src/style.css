@@ -204,12 +204,14 @@ sq:nth-child(61)::after {
 sq.last-dest { background-color: var(--last-dest); }
 sq.check { background-color: var(--check); }
 sq.selected { background-color: var(--selected); }
-.manipulable sq.hover { background-color: #ffffff2e; }
 
 /* 着手可能なマスの印。空きマスは点、駒がいるマス(.oc)は輪。
    どちらも選択マスと同じ色で描く（lishogi の _shogiground.scss と同じ）。 */
 sq.dest { background: radial-gradient(var(--selected) 19%, rgba(0, 0, 0, 0) 20%); }
 sq.dest.oc { background: radial-gradient(transparent 0%, transparent 80%, var(--selected) 80%); }
+/* 掴んだ駒が乗っているマス。lishogi と同じで、色を変えるのは着手できるマスだけ。
+   どのマスでも白く光らせると、置けないマスまで反応しているように見える。
+   駒が今どこにあるかは sg-square-over の黒い丸が示す。 */
 sq.dest.hover { background: var(--selected-hover); }
 sq.last-dest.dest.oc:not(.hover) {
   background: radial-gradient(var(--last-dest) 0%, var(--last-dest) 80%, var(--selected) 80%);
