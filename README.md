@@ -33,6 +33,33 @@ serve.mjs         dist/ をCOOP/COEP付きでローカルに配る
 そのものに記録される**ようにするため。GPL v3の「対応するソースの提供」は、バイナリと
 対応したソースを指せて初めて意味を持つ。
 
+## デプロイ（Cloudflare Pages）
+
+静的配信だけで動くが、**COOP/COEPヘッダを返せるホストが要る**。やねうら王のWASMが
+SharedArrayBufferを使うため。GitHub Pagesはヘッダを設定できないので使えない。
+Cloudflare Pagesは `_headers` を読むので、ビルド出力にコピーしている。
+
+Gitインテグレーション（Pagesがリポジトリを直接ビルドする）を使う。
+
+| 設定 | 値 |
+| --- | --- |
+| リポジトリ | `kotenbu135/fuseki-shogi-web` |
+| ビルドコマンド | `npm run build` |
+| 出力ディレクトリ | `dist` |
+| 環境変数 | `NODE_VERSION` = `22` |
+
+`wrangler pages deploy` や手元の `dist/` のドラッグ＆ドロップは使わない。
+Pages側がリポジトリをcloneしてビルドすれば、`.gitignore` で塞いである `models/` は
+ビルド環境に**存在すらしない**。手元の操作ミスで重みが配布される経路が消える。
+
+Emscriptenはビルド環境に無いので、`wasm/dist/*` はコミットしてある（[THIRD_PARTY.md](THIRD_PARTY.md)）。
+
+重みが無いビルドは布石フェーズを指せないため、`index.html` は準備中ページ
+（`src/soon.html`）になる。このページは疎通診断を兼ねていて、
+`crossOriginIsolated` とエンジン2つの起動を実ブラウザで確かめられる。
+対局画面は `play.html` に置かれる。重みを `models/` に入れてビルドすると、
+`index.html` が対局画面に戻り `play.html` は作られない。
+
 ## ビルド
 
 ```bash
