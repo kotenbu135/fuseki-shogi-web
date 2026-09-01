@@ -126,6 +126,9 @@ export class Sound {
     // としか書いていないので、これだけでマスター経由になる。
     voice({ ...proxyOf(this.ctx), destination: master }, this.ctx.currentTime + 0.001);
     master.connect(dest);
+    // 鳴らし終えたら音のグラフから外す。1局200手でも繋ぎっぱなしにしない。
+    // いちばん長い音（負け）で0.7秒なので、その倍を取っておけば足りる。
+    setTimeout(() => master.disconnect(), 1500);
   }
 }
 

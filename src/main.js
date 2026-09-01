@@ -65,6 +65,7 @@ const sound = new Sound();
 // 音は合成なので、鳴っているかを外から数値で確かめられるようにしておく。
 // test/browser_smoke.mjs が OfflineAudioContext に差し替えて振幅を見る。
 globalThis.__VOICES = VOICES;
+globalThis.__sound = sound;   // AudioContextが本当に起きたかを外から見るため
 ui.volume.value = String(Math.round(sound.volume * 100));
 ui.volume.addEventListener('input', () => {
   sound.setVolume(Number(ui.volume.value) / 100);

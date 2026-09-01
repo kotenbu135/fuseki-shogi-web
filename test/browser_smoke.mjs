@@ -26,7 +26,8 @@ const FULL = process.argv.includes('--full');
 const DIST = args[0] ? path.resolve(args[0]) : path.join(ROOT, 'dist');
 const NORMAL_PLIES = Number(args[1] ?? 4);
 const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
-const PORT = 8099;
+// 固定だと --full を並べて回したときにぶつかる。SMOKE_PORT で逃がせるようにする。
+const PORT = Number(process.env.SMOKE_PORT || 8099);
 
 if (!fs.existsSync(path.join(DIST, 'app.js'))) {
   console.error('dist/ が無い。先に node build.mjs を実行すること。');
@@ -121,13 +122,27 @@ try {
   // 1局通すときは持ち時間を最短にする。movetimeMs は Game のコンストラクタで固定
   // されるので、対局開始を押す**前**に変える。
   if (FULL) await evaluate(page, 'document.getElementById("opt-movetime").value = "500"');
-  await evaluate(page, 'document.getElementById("btn-new").click()');
+  // 実マウスで押す。element.click() は利用者の操作と見なされないので、
+  // ブラウザの自動再生規制で AudioContext が suspended のままになり、
+  // 「音が鳴らない」状態をテストが素通りしてしまう。
+  await click(page, await center(page, '#btn-new'));
 
   // 対局中に「対局開始」が押せると、進行中の対局が黙って消える。
   check('対局中は対局開始が押せない',
     await evaluate(page, 'document.getElementById("btn-new").disabled') === true);
   check('対局中は投了が押せる',
     await evaluate(page, 'document.getElementById("btn-resign").disabled') === false);
+
+  // 合成が動くことと、アプリの経路で鳴ることは別問題。AudioContext は利用者の操作の
+  // 中でしか起こせないので、対局開始で起きていなければ1音も出ない。
+  const audio = await evaluate(page, `(() => {
+    const s = window.__sound;
+    if (!s) return 'sound が公開されていない';
+    return { ctx: !!s.ctx, state: s.ctx?.state, running: (s.ctx?.currentTime ?? 0) > 0 };
+  })()`);
+  check('対局開始でAudioContextが起きている',
+    typeof audio === 'object' && audio.ctx && audio.state === 'running' && audio.running,
+    typeof audio === 'string' ? audio : `state=${audio.state}`);
   // 触れるのに効かない設定は「壊れている」と区別がつかない。対局中は閉じる。
   check('対局中は手番と持ち時間を変えられない', await evaluate(page, `(() =>
     document.getElementById('opt-color').disabled &&
