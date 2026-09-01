@@ -9,6 +9,7 @@
 | 担当 | 使うもの | ライセンス |
 | --- | --- | --- |
 | 盤UI | [shogiground](https://github.com/WandererXII/shogiground) | GPL-3.0-or-later |
+| 駒の画像 | lishogi の駒セット kanji_light（[Ka-hu](https://github.com/Ka-hu)） | CC BY 4.0 |
 | 通常将棋のルール・棋譜 | [shogiops](https://github.com/WandererXII/shogiops) | GPL-3.0-or-later |
 | 布石フェーズのルール・特徴量 | `wasm/`（cppshogiをWebAssembly化） | GPL v3 |
 | 布石フェーズのAI | 布石方策 + [onnxruntime-web](https://github.com/microsoft/onnxruntime) | MIT |
@@ -16,6 +17,10 @@
 
 布石フェーズはエンジン側も探索を行わず**1手あたりNN前向き1回**で指しているため、
 ブラウザでも同じ手を再現できる。通常フェーズは素の将棋なので、やねうら王のWASMビルドに任せる。
+
+盤と駒台の見た目・操作は lishogi に寄せてある（踏んだところは
+[src/README.md](src/README.md)）。盤の木目と対局音は素材を持たず、
+CSSとWebAudioで生成している（理由は [THIRD_PARTY.md](THIRD_PARTY.md)）。
 
 ## 構成
 
