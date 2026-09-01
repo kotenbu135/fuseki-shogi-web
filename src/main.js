@@ -144,7 +144,9 @@ async function boot() {
     setStatus('布石フェーズのルールを読み込んでいる…');
     const fuseki = await Fuseki.load(ASSETS.fuseki);
 
-    setStatus('布石方策を読み込んでいる…', '約30MB');
+    // 内訳は onnxruntime-web の .wasm 13.3MB と重み 1.9MB（dist/ の実測）。
+    // ここが起動でいちばん待たされる。数字を直すときは両方を測り直すこと。
+    setStatus('布石方策を読み込んでいる…', '約15MB');
     const policy = await FusekiPolicy.load({ model: ASSETS.model, wasmPaths: ASSETS.ortWasm });
 
     // やねうら王はSharedArrayBufferを使う。COOP/COEPが立っていない配信では
@@ -199,6 +201,14 @@ ui.color.addEventListener('change', () => {
   ensureBoard();
   showIdleBoard(sg);
   renderSeats();
+});
+
+// 対局中の離脱を1回止める。局面はどこにも保存していないので、
+// 誤ってリロードすると40手の布石がそのまま消える。取り返しがつかない。
+addEventListener('beforeunload', e => {
+  if (!game || game.phase === 'over') return;
+  e.preventDefault();
+  e.returnValue = '';   // 古いブラウザはこちらを見る
 });
 
 ui.navFirst.addEventListener('click', () => goToPly(0));

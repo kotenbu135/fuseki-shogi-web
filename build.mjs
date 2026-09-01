@@ -127,6 +127,20 @@ fs.writeFileSync(path.join(OUT, 'play.html'), stamp('index.html'));
 // 準備中ページが無数のURLで実在することになる。
 fs.writeFileSync(path.join(OUT, '404.html'), stamp('404.html'));
 
+// 起動時に「約15MB」と出しているのは onnxruntime-web の .wasm と重みの合計。
+// 片方だけ差し替えると表示だけ古くなるので、ここで突き合わせる。
+{
+  const mb = f => (fs.existsSync(f) ? fs.statSync(f).size : 0) / 1048576;
+  const shown = (fs.readFileSync(path.join(HERE, 'src/main.js'), 'utf8')
+    .match(/setStatus\('布石方策を読み込んでいる…', '約(\d+)MB'\)/) ?? [])[1];
+  // 重みは --model で差し替わるので、置いた実物（MODEL）を見る。
+  const actual = mb(path.join(OUT, 'vendor/ort/ort-wasm-simd-threaded.wasm'))
+    + mb(path.join(OUT, 'models', MODEL));
+  if (shown && Math.abs(Number(shown) - actual) > 3)
+    console.warn(`起動時の表示「約${shown}MB」が実物（${actual.toFixed(1)}MB）とずれている。`
+      + ' src/main.js の setStatus を直すこと。');
+}
+
 console.log(`index = src/${indexSrc}  (dlshogi ${info.dlshogi_commit.slice(0, 12)})`);
 
 const options = {
