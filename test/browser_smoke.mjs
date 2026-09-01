@@ -373,6 +373,35 @@ try {
     newEnabled: !document.getElementById('btn-new').disabled,
     colorEnabled: !document.getElementById('opt-color').disabled,
   })`);
+  // ---- 2局目 ----
+  // 1局目で溜めた状態（棋譜・時計・音を鳴らした位置・さかのぼり位置）を
+  // 落とし忘れると、2局目に持ち越される。押す場所が同じなので気づきにくい。
+  const second = await (async () => {
+    await click(page, await center(page, '#btn-new'));
+    await evalUntil(page, 'document.querySelectorAll("sg-hp-wrap").length', v => v > 0, 20000);
+    await evalUntil(page, 'document.getElementById("status-line").textContent',
+      v => v && v.startsWith('あなたの番'), 30000);
+    return evaluate(page, `({
+      棋譜: document.querySelectorAll('#kifu li').length,
+      盤上: document.querySelectorAll('sg-pieces piece:not(.fading)').length,
+      時計上: document.getElementById('clock-top').textContent,
+      時計下: document.getElementById('clock-bottom').textContent,
+      さかのぼり中: document.getElementById('board').classList.contains('reviewing'),
+      navFirst無効: document.getElementById('nav-first').disabled,
+      投了の文言: document.getElementById('btn-resign').textContent,
+      対局開始無効: document.getElementById('btn-new').disabled,
+      持ち駒: document.querySelectorAll('sg-hand-wrap.hand-bottom sg-hp-wrap:not([data-nb="0"])').length,
+    })`);
+  })();
+  check('2局目が前の対局を持ち越していない',
+    second.棋譜 === 0 && second.盤上 === 0 && second.さかのぼり中 === false
+      && second.navFirst無効 === true && second.投了の文言 === '投了'
+      && second.対局開始無効 === true && second.持ち駒 === 8
+      // 1局目は数秒動いているので、'0:0' で始まるだけでは持ち越しを見逃す。
+      // 1秒未満（0:00.x）まで絞る。
+      && /^0:00\.\d$/.test(second.時計上) && /^0:00\.\d$/.test(second.時計下),
+    JSON.stringify(second));
+
   check('布石フェーズの途中で投了しても落ちない',
     exceptions().length === beforeResign && afterResign.phase === '終局' && afterResign.newEnabled
       && afterResign.colorEnabled,
