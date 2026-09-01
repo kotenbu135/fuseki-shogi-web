@@ -51,7 +51,7 @@ body {
 }
 
 .app {
-  max-width: calc(72rem * var(--board-scale-f, 1));
+  max-width: calc(80rem * var(--board-scale-f, 1));
   margin: 0 auto;
   padding: 1.5rem 1.25rem 3rem;
 }
@@ -73,7 +73,18 @@ body {
   align-items: start;
 }
 @media (min-width: 56rem) {
-  .layout { grid-template-columns: minmax(0, 1fr) 19rem; }
+  .layout {
+    grid-template-columns: minmax(0, 1fr) 19rem;
+    /* パネルを盤の高さまで引き伸ばす。start のままだと中身の高さで決まり、
+       盤より背が高くなって左下に大きな空白ができる。 */
+    align-items: stretch;
+  }
+  /* 余りは棋譜が吸う。lishogiも棋譜が残りの高さを埋める。
+     flex-basis を 0 にするのが要点で、auto のままだと棋譜が中身の高さを
+     主張してパネルが盤より背高になり、盤の下に空白ができる。 */
+  .panel { min-height: 0; }
+  .kifu-box { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  .kifu { flex: 1 1 0; min-height: 0; max-height: none; }
 }
 
 /* ---- 盤まわり ---- */
@@ -344,7 +355,7 @@ coords.ranks { right: .15em; width: 1.1em; }
 @media (min-width: 56rem) {
   sg-board > coords { color: var(--ink-soft); text-shadow: none; }
   coords.files { top: -1.5em; height: 1.2em; }
-  coords.ranks { right: -1.35em; width: 1.1em; }
+  coords.ranks { right: -1.7em; width: 1.1em; }
 }
 
 /* ---- 持ち駒 ---- */
@@ -567,8 +578,10 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   font-weight: 600;
 }
 
-.controls { display: flex; flex-direction: column; gap: .6rem; }
-.controls label { display: flex; flex-direction: column; gap: .2rem; font-size: .75rem; color: var(--ink-soft); }
+/* 設定は2列。1列に積むと縦に伸びて、棋譜に回せる高さを食う。 */
+.controls { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .6rem; }
+.controls label { display: flex; flex-direction: column; gap: .15rem; font-size: .75rem; color: var(--ink-soft); }
+.controls .buttons { grid-column: 1 / -1; }
 .controls select:disabled { opacity: .5; cursor: not-allowed; }
 .controls select {
   padding: .4rem .5rem;
