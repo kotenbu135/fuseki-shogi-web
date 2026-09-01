@@ -99,6 +99,12 @@ const stamp = f => fs.readFileSync(path.join(HERE, 'src', f), 'utf8').replace(/<
 const indexSrc = hasModel ? 'index.html' : 'soon.html';
 fs.writeFileSync(path.join(OUT, 'index.html'), stamp(indexSrc));
 if (!hasModel) fs.writeFileSync(path.join(OUT, 'play.html'), stamp('index.html'));
+
+// 404。Cloudflare Pages は出力直下の 404.html を、見つからないパスに 404 で返す。
+// 置かないと未知のURLが軒並み index.html を 200 で返し、検索エンジンから見ると
+// 準備中ページが無数のURLで実在することになる。
+fs.writeFileSync(path.join(OUT, '404.html'), stamp('404.html'));
+
 console.log(`index = src/${indexSrc}  (dlshogi ${info.dlshogi_commit.slice(0, 12)})`);
 
 const options = {
