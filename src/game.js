@@ -64,12 +64,16 @@ export class Game {
 
   get isHumanTurn() { return this.phase !== 'over' && this.turnColor === this.humanColor; }
   get aiColor() { return this.humanColor === SENTE ? GOTE : SENTE; }
-  get ply() { return this.phase === 'fuseki' ? this.fuseki.ply + 1 : 40 + this.normalMoves.length + 1; }
+  get ply() { return this.position ? 40 + this.normalMoves.length + 1 : this.fuseki.ply + 1; }
 
   // ---- 盤の表示状態（ルールは含まない） ----
 
+  // 盤と持ち駒の取り出しは phase ではなく position の有無で分ける。
+  // 布石フェーズの途中で投了すると phase は 'over' になるが position は null のままで、
+  // phase で分けると makeSfen(null) を呼んで落ちる（盤が固まり、新規対局も始められなくなる）。
+  // position があるのは41手目の移行を通ったときだけなので、これが正しい判定になる。
   boardSfen() {
-    if (this.phase === 'fuseki') return boardMapToSfen(this.boardPieces);
+    if (!this.position) return boardMapToSfen(this.boardPieces);
     return makeSfen(this.position).split(' ')[0];
   }
 
@@ -89,7 +93,7 @@ export class Game {
   }
 
   hands() {
-    if (this.phase === 'fuseki')
+    if (!this.position)
       return new Map([[SENTE, this.fuseki.remaining(BLACK)], [GOTE, this.fuseki.remaining(WHITE)]]);
     const toMap = color => new Map([...this.position.hands[color]].filter(([, n]) => n > 0));
     return new Map([[SENTE, toMap(SENTE)], [GOTE, toMap(GOTE)]]);

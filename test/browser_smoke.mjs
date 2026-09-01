@@ -97,6 +97,8 @@ const wsUrl = await new Promise((resolve, reject) => {
 
 const cdp = await connect(wsUrl);
 const logs = [];
+/** これまでに出た未処理例外。logs は増え続けるので、その都度数える。 */
+const exceptions = () => logs.filter(l => l.startsWith('EXCEPTION'));
 try {
   const target = await cdp.send('Target.createTarget', { url: 'about:blank' });
   const page = await cdp.attach(target.targetId);
@@ -264,7 +266,8 @@ try {
     await evaluate(page, 'document.querySelectorAll("#kifu li").length') >= 2,
     await evaluate(page, '[...document.querySelectorAll("#kifu li .m")].map(e => e.textContent).join(" ")'));
 
-  const errors = logs.filter(l => l.startsWith('EXCEPTION'));
+  // logs は増え続けるので、数えるのはその都度。const で切り取ると
+  // それ以降に出た例外を1件も見なくなる。
   // 評価の表示。布石専用ネットは価値ヘッドを持たないので勝率が出せず、
   // undefined を素通しすると "NaN%" と出る（落ちないので気付けない）。
   const evalText = await evaluate(page, 'document.getElementById("readout-eval").textContent');
@@ -314,9 +317,32 @@ try {
     typeof nav === 'object' && nav.backLive === nav.live && nav.stillReviewing === false
       && nav.navNextDisabledAtLive === true);
 
-  check('未処理の例外が無い', errors.length === 0, errors.join(' / '));
+  check('未処理の例外が無い', exceptions().length === 0, exceptions().join(' / '));
 
   if (FULL) await playWholeGame(page);
+
+  // ---- 布石フェーズの途中で投了する ----
+  // ここは長く落ちていた。phase が 'over' になるのに position は null のままで、
+  // boardSfen() が phase で分岐して makeSfen(null) を呼んでいた。落ちると
+  // render() が途中で止まるので盤も表示も固まり、新規対局も始められなくなる。
+  // 例外は setStatus を通らないので、画面を見ているだけでは分からない。
+  const beforeResign = exceptions().length;
+  await evaluate(page, 'document.getElementById("btn-new").click()');
+  await evalUntil(page, 'document.querySelectorAll("sg-hp-wrap").length', v => v > 0, 20000);
+  await evalUntil(page, 'document.getElementById("status-line").textContent',
+    v => v && v.startsWith('あなたの番'), 30000);
+  await evaluate(page, `(() => { const b = document.getElementById('btn-resign'); b.click(); b.click(); })()`);
+  await new Promise(r => setTimeout(r, 600));
+  const afterResign = await evaluate(page, `({
+    phase: document.getElementById('readout-phase').textContent,
+    status: document.getElementById('status-line').textContent,
+    newEnabled: !document.getElementById('btn-new').disabled,
+    colorEnabled: !document.getElementById('opt-color').disabled,
+  })`);
+  check('布石フェーズの途中で投了しても落ちない',
+    exceptions().length === beforeResign && afterResign.phase === '終局' && afterResign.newEnabled
+      && afterResign.colorEnabled,
+    `${afterResign.phase} / ${afterResign.status} / 例外 ${exceptions().length - beforeResign} 件`);
 } finally {
   cdp.close();
   chrome.kill();
@@ -335,6 +361,7 @@ process.exit(failures ? 1 : 0);
  * 再現できるよう、最後に必ず棋譜を出す。
  */
 async function playWholeGame(page) {
+  const errorsAtFullStart = exceptions().length;
   console.log('\n--- 1局通す（--full）---');
   const t0 = Date.now();
   try {
@@ -356,6 +383,10 @@ async function playWholeGame(page) {
     if (s.phase === '終局') {
       check('裁定で終わったなら理由は布石の玉取り',
         s.sub === '41手目に玉を取れる形で布石が終わった', `${s.status} / ${s.sub}`);
+      // ここは position が null のまま phase が 'over' になる経路で、
+      // boardSfen() が phase で分岐していたころは makeSfen(null) で落ちていた。
+      check('裁定で終わったときに例外が出ていない', exceptions().length === errorsAtFullStart,
+        exceptions().slice(errorsAtFullStart).join(' / '));
       console.log('  41手目の裁定で決着したので通常フェーズは見ない');
       return;
     }
@@ -410,6 +441,8 @@ async function playWholeGame(page) {
     check('通常フェーズから布石の局面へ戻れる',
       cross.at20 === 20 && cross.at40 === 40 && cross.back === cross.live,
       `20手目=${cross.at20}枚 / 40手目=${cross.at40}枚 / 最新へ戻して=${cross.back}枚（対局中=${cross.live}枚）`);
+    check('1局通しても例外が出ていない', exceptions().length === errorsAtFullStart,
+      exceptions().slice(errorsAtFullStart).join(' / '));
   } finally {
     console.log(`  棋譜: ${await kifuText(page)}`);
   }
