@@ -38,6 +38,7 @@ fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
 
 copy(path.join(HERE, 'src', 'style.css'), OUT);
+copy(path.join(HERE, 'src', 'favicon.svg'), OUT);
 copy(path.join(HERE, '_headers'), OUT);
 
 // 駒の画像（CC BY 4.0 / Ka-hu。THIRD_PARTY.md を参照）。
