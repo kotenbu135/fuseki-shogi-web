@@ -41,7 +41,7 @@ const SNAPSHOT = `({
   phase: document.getElementById('readout-phase').textContent,
   evaluation: document.getElementById('readout-eval').textContent,
   kifu: document.querySelectorAll('#kifu li').length,
-  boardPieces: document.querySelectorAll('sg-pieces piece').length,
+  boardPieces: document.querySelectorAll('sg-pieces piece:not(.fading)').length,
 })`;
 
 // main.js が setStatus で出すエラーの文言。**ここを見るのが要点**で、drive() は
@@ -135,13 +135,15 @@ try {
 
   // 合成が動くことと、アプリの経路で鳴ることは別問題。AudioContext は利用者の操作の
   // 中でしか起こせないので、対局開始で起きていなければ1音も出ない。
+  // currentTime は resume した直後だとまだ 0 のことがあり、それを条件に入れると
+  // たまに落ちる（20回まわして1回踏んだ）。state だけを見る。
   const audio = await evaluate(page, `(() => {
     const s = window.__sound;
     if (!s) return 'sound が公開されていない';
-    return { ctx: !!s.ctx, state: s.ctx?.state, running: (s.ctx?.currentTime ?? 0) > 0 };
+    return { ctx: !!s.ctx, state: s.ctx?.state };
   })()`);
   check('対局開始でAudioContextが起きている',
-    typeof audio === 'object' && audio.ctx && audio.state === 'running' && audio.running,
+    typeof audio === 'object' && audio.ctx && audio.state === 'running',
     typeof audio === 'string' ? audio : `state=${audio.state}`);
   // 触れるのに効かない設定は「壊れている」と区別がつかない。対局中は閉じる。
   check('対局中は手番と持ち時間を変えられない', await evaluate(page, `(() =>
@@ -423,10 +425,20 @@ async function playWholeGame(page) {
       return;
     }
     check('通常フェーズへ移った', s.phase === '通常', s.phase);
-    check('盤上に40枚ある', s.boardPieces === 40, `${s.boardPieces}枚`);
+    // 40手打った直後は最後の1手の描画がまだ動いていることがある。20回まわして
+    // 1回だけ39枚と数えた。Nodeで25局まわしても盤の実体は必ず40枚だったので、
+    // 実体ではなく描画の追いつき待ち。落ち着くまで待ってから数える。
+    const settled = await evalUntil(page,
+      'document.querySelectorAll("sg-pieces piece:not(.fading)").length', v => v === 40, 5000);
+    check('盤上に40枚ある', settled === 40, `${settled}枚`);
     // 価値ヘッドの無いネットでは布石フェーズの評価は「採用手の確率」。移った直後は
     // まだ誰も通常フェーズの評価を出していないので、布石の確率が残っていてはいけない。
     check('布石の評価を持ち越していない', s.evaluation === '—', s.evaluation);
+    // 41手目でルールが変わる。フェーズ表示が変わるだけでは気づけないので、
+    // 移った最初の手番で一度だけ知らせる。
+    check('41手目に入ったことを知らせている',
+      s.status.includes('41手目') || s.status.startsWith('AIが考えている'),
+      `${s.status} / ${s.sub}`);
 
     // ---- 通常フェーズ ----
     // やねうら王が考えている間、席の印が脈打つ。布石フェーズのAIは同期的で

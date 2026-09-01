@@ -71,6 +71,10 @@ console.log(`布石40手: ${fusekiMs}ms (1手あたり ${(fusekiMs / 40).toFixed
 console.log(`棋譜: ${game.fusekiMoves.join(' ')}`);
 
 check('40手打ち切った', game.fusekiMoves.length === 40);
+// 打った手数と盤上の枚数が合うこと。同じマスへ二重に打つと Map が上書きされて
+// 静かに1枚減る（ブラウザのテストで39枚と数えたことがあり、そこを切り分けるために足した）。
+check('盤上の枚数が打った手数と合う', game.boardPieces.size === 40, `${game.boardPieces.size}枚`);
+check('SFENの駒数も40', game.boardSfen().replace(/[0-9/+]/g, '').length === 40, game.boardSfen());
 check('全9筋に各色の歩がちょうど1枚', filesWithOnePawnEach(game.boardPieces));
 
 // ---- 41手目の裁定 ----

@@ -382,6 +382,13 @@ function renderSeats() {
   ui.seatBottom.classList.toggle('thinking', thinking && turn === bottom);
 }
 
+/** 通常フェーズに入ってから人間が指したか。41手目の案内を引っ込める合図に使う。
+ *  通常フェーズは41手目＝先手から始まるので、指し手の並びの偶奇が色になる。 */
+function hasHumanMovedInNormal() {
+  if (!game || game.phase === 'fuseki') return false;
+  return game.normalMoves.some((_, i) => (i % 2 === 0 ? SENTE : GOTE) === game.humanColor);
+}
+
 function render() {
   // 対局前は空の盤と満杯の駒台を出し、読み出しは空にしておく。
   if (!game) {
@@ -418,7 +425,14 @@ function render() {
   } else if (viewPly !== null) {
     setStatus(`${viewPly}手目までを表示中`, '盤には触れない。最新へ戻すと指せる（→ / End）。');
   } else if (game.isHumanTurn) {
-    setStatus(game.phase === 'fuseki' ? 'あなたの番。駒台から駒を打つ。' : 'あなたの番。');
+    // 41手目でルールが変わる。フェーズの表示が切り替わるだけでは気づけないので、
+    // 通常フェーズで自分がまだ1手も指していないあいだは言い続ける。
+    // 「一度だけ」にすると、直後の drive() の再描画に上書きされて誰も読めない。
+    if (game.phase === 'normal' && !hasHumanMovedInNormal()) {
+      setStatus('41手目。ここから普通の将棋。', '打つのは取った駒だけ。盤の駒を動かす。');
+    } else {
+      setStatus(game.phase === 'fuseki' ? 'あなたの番。駒台から駒を打つ。' : 'あなたの番。');
+    }
   } else {
     setStatus('AIが考えている…', game.phase === 'fuseki' ? '布石方策（探索なし）' : 'やねうら王');
   }
