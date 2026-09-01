@@ -14,10 +14,12 @@
 // 不変条件を留める。ブラウザもエンジンも要らないので数秒で終わる。
 //
 //   node test/game_terminal_test.mjs
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Fuseki } from '../src/fuseki.js';
 import { Game } from '../src/game.js';
+import { parseSfen } from 'shogiops/sfen';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -32,6 +34,10 @@ const check = (label, fn) => {
     console.log(`  NG ${label} — ${e.message}`);
   }
 };
+
+// 実際の布石が作った41手目の局面（test/sample_sfens.jsonl の1件目）。
+const SAMPLE_41 = JSON.parse(
+  fs.readFileSync(path.join(HERE, 'sample_sfens.jsonl'), 'utf8').split('\n')[0]).sfen;
 
 const fuseki = await Fuseki.load(pathToFileURL(path.join(ROOT, 'wasm/dist/fuseki.mjs')).href);
 
@@ -87,6 +93,29 @@ check('41手目の裁定で決着した形でも値が取り出せる', () => {
   g._end('sente', 'fuseki_king_capture');
   if (g.position !== null) throw new Error('position が作られてしまっている');
   readEverything(g);
+});
+
+console.log('--- 通常フェーズで終局した Game ---');
+
+check('通常フェーズで終局しても値が取り出せる', () => {
+  // 40手で終わる形は2つあり、こちらは position が**作られた後**に終局する側。
+  //   fuseki_king_capture -> position は null（上の節）
+  //   詰み                 -> position はある（この節）
+  // 布石フェーズは王手放置を見ないので、41手目の局面が既に詰んでいることがある。
+  // 実際に --full を繰り返していて「後手の勝ち / 詰み」で終わる局が出た。
+  const g = newGame();
+  const parsed = parseSfen('standard', SAMPLE_41, false);
+  if (parsed.isErr) throw new Error(`見本のSFENが読めない: ${parsed.error}`);
+  g.position = parsed.unwrap();
+  g.phase = 'normal';
+  const before = readEverything(g);
+  if (before.turnColor !== 'sente') throw new Error(`41手目の手番: ${before.turnColor}`);
+  g._end('gote', 'checkmate');
+  const after = readEverything(g);
+  if (after.turnColor !== null) throw new Error('終局後に手番が残っている');
+  if (after.board !== before.board) throw new Error('終局で盤が変わってしまう');
+  if (after.moveDests.size !== 0 || after.dropDests.size !== 0)
+    throw new Error('終局後に指せる手が出ている');
 });
 
 console.log('--- 布石フェーズの途中（終局していない） ---');
