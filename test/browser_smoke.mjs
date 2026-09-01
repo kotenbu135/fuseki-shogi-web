@@ -179,6 +179,22 @@ try {
     typeof sound === 'string' ? sound
       : Object.entries(sound).map(([k, v]) => `${k} peak=${v.peak}`).join(' / '));
 
+  // 盤の大きさ。広げたときにページごと横スクロールしないこと。
+  const scale = await evaluate(page, `(async () => {
+    const set = v => { const s = document.getElementById('opt-scale');
+      s.value = String(v); s.dispatchEvent(new Event('input')); };
+    const wait = () => new Promise(r => setTimeout(r, 200));
+    const w = () => document.querySelector('sg-board').getBoundingClientRect().width;
+    const over = () => document.documentElement.scrollWidth > document.documentElement.clientWidth;
+    set(70); await wait(); const small = w(), smallOver = over();
+    set(115); await wait(); const big = w(), bigOver = over();
+    set(100); await wait();
+    return { small: +small.toFixed(1), big: +big.toFixed(1), smallOver, bigOver };
+  })()`);
+  check('盤の大きさを変えても横スクロールが出ない',
+    scale.small < scale.big && !scale.smallOver && !scale.bigOver,
+    `70%=${scale.small}px / 115%=${scale.big}px`);
+
   check('対局前から盤が出ている', await evaluate(page, `(() => {
     const sq = document.querySelectorAll('sg-squares sq').length;
     const hp = document.querySelectorAll('sg-hp-wrap').length;

@@ -33,6 +33,7 @@ const ui = {
   ply: el('readout-ply'), phase: el('readout-phase'), evaluation: el('readout-eval'),
   kifu: el('kifu'),
   color: el('opt-color'), movetime: el('opt-movetime'), volume: el('opt-volume'),
+  scale: el('opt-scale'),
   newGame: el('btn-new'), resign: el('btn-resign'), flip: el('btn-flip'),
   navFirst: el('nav-first'), navPrev: el('nav-prev'),
   navNext: el('nav-next'), navLast: el('nav-last'),
@@ -40,6 +41,25 @@ const ui = {
   seatTopName: el('seat-top-name'), seatBottomName: el('seat-bottom-name'),
   clockTop: el('clock-top'), clockBottom: el('clock-bottom'),
 };
+
+// 盤の大きさ。localStorageに残す。
+const SCALE_KEY = 'fuseki-board-scale';
+function applyScale(pct) {
+  const root = document.documentElement.style;
+  root.setProperty('--board-scale', `${pct}%`);
+  root.setProperty('--board-scale-f', String(pct / 100));
+  try { localStorage.setItem(SCALE_KEY, String(pct)); } catch { /* 残せなくても効く */ }
+}
+{
+  let saved = 100;
+  try {
+    const v = Number.parseInt(localStorage.getItem(SCALE_KEY) ?? '', 10);
+    if (v >= 70 && v <= 115) saved = v;
+  } catch { /* 読めなければ既定 */ }
+  ui.scale.value = String(saved);
+  applyScale(saved);
+  ui.scale.addEventListener('input', () => applyScale(Number(ui.scale.value)));
+}
 
 const sound = new Sound();
 // 音は合成なので、鳴っているかを外から数値で確かめられるようにしておく。

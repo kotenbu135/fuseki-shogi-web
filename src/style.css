@@ -54,7 +54,7 @@ body {
 }
 
 .app {
-  max-width: 72rem;
+  max-width: calc(72rem * var(--board-scale-f, 1));
   margin: 0 auto;
   padding: 1.5rem 1.25rem 3rem;
 }
@@ -82,6 +82,15 @@ body {
 /* ---- 盤まわり ---- */
 
 .board-column { display: flex; flex-direction: column; }
+/* 盤の大きさ。画面の広さで決まる幅に倍率を掛ける。lishogiにも同じ調整がある。 */
+/* 盤の大きさは画面の広さで効かせ方を変える。
+   広いとき: .app の横幅ごと伸縮させる（盤と右のパネルが一緒に動く）。
+     .sg-wrap の幅を直接いじると、列より広くしたぶんがはみ出す。
+   狭いとき: 盤は既に横幅いっぱいなので、縮める方向にだけ効かせる。
+     100%を超えさせるとページ全体に横スクロールが出る（430px幅で実際に出た）。 */
+@media (max-width: 55.999rem) {
+  .board-column > .sg-wrap { width: min(var(--board-scale, 100%), 100%); margin: 0 auto; }
+}
 
 /* 盤と駒台の配置。lishogi と同じで、狭いときは盤の上下、広いときは盤の左右に
    駒台を置く（ui/common/css/component/_board.scss）。
