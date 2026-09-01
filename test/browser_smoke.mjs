@@ -444,8 +444,17 @@ async function playWholeGame(page) {
     // ---- 41手目の裁定 ----
     // 40手完了時点で手番側が相手玉を取れる形は普通に起こる。そこで終わった場合も正常。
     if (s.phase === '終局') {
-      check('裁定で終わったなら理由は布石の玉取り',
-        s.sub === '41手目に玉を取れる形で布石が終わった', `${s.status} / ${s.sub}`);
+      // 40手で終わる形は2つある。
+      //   1. 41手目の裁定（手番側が相手玉を取れる） -> fuseki_king_capture
+      //   2. 41手目の局面が既に詰んでいる -> checkmate
+      // 2 は布石フェーズが王手放置を見ないために起こり、game.js の
+      // _transitionToNormal() が最後に _checkNormalGameOver() を呼んで拾っている
+      // （拾わないと「AIの投了」に化ける）。どちらも正常。
+      // 1 は position が null のまま終局するので、表示の取り出し口が
+      // phase で分岐していると落ちる（game_terminal_test.mjs で留めてある）。
+      check('裁定で終わった理由が玉取りか詰み',
+        ['41手目に玉を取れる形で布石が終わった', '詰み'].includes(s.sub),
+        `${s.status} / ${s.sub}`);
       // ここは position が null のまま phase が 'over' になる経路で、
       // boardSfen() が phase で分岐していたころは makeSfen(null) で落ちていた。
       check('裁定で終わったときに例外が出ていない', exceptions().length === errorsAtFullStart,
