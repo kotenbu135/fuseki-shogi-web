@@ -31,9 +31,12 @@ const f2len = M.ccall('fw_features2_len', 'number', [], []);
 const f1ptr = M.ccall('fw_features1_ptr', 'number', [], []);
 const f2ptr = M.ccall('fw_features2_ptr', 'number', [], []);
 console.log(`特徴量サイズ: features1=${f1len} (=${f1len / 81}プレーン x 81), features2=${f2len} (=${f2len / 81} x 81)`);
+const compactNum = M.ccall('fw_compact_label_num', 'number', [], []);
+console.log(`布石専用ネットの出力次元: ${compactNum} (=${compactNum / 81}スロット x 81マス)`);
 
 let mismatches = [], checks = 0;
 const eq = (label, a, b, ctx) => { checks++; if (a !== b) mismatches.push(`${label}: wasm=${a} cpp=${b} @${ctx}`); };
+eq('布石ラベルの出力次元', compactNum, 648, 'FUSEKI_LABEL_NUM');
 
 const rng = new Lcg(ref.seed);
 const tStart = Date.now();
@@ -51,8 +54,15 @@ for (const g of ref.data) {
     const [h2, nz2] = csumFloats(M.HEAPF32.subarray(f2ptr >> 2, (f2ptr >> 2) + f2len));
     const color = M.ccall('fw_turn', 'number', [], []);
     let labels = 0n;
+    // compact = 布石専用ネット(648出力)のラベル。2268空間のラベルとは別に照合する。
+    // 片方が288空間・片方が648空間という取り違えは、他の照合項目を全部通したまま
+    // argmaxだけを別の手にするので、ここを省くと検証をすり抜ける。
+    let compact = 0n, compactMax = -1;
     legal.forEach(([pt, sq], i) => {
       labels = (labels + BigInt(i + 1) * BigInt(M.ccall('fw_move_label', 'number', ['number', 'number', 'number'], [pt, sq, color]) + 1)) & M32;
+      const cl = M.ccall('fw_compact_label', 'number', ['number', 'number', 'number'], [pt, sq, color]);
+      compact = (compact + BigInt(i + 1) * BigInt(cl + 1)) & M32;
+      if (cl > compactMax) compactMax = cl;
     });
     const ctx = `game=${g.game} ply=${p.ply}`;
     eq('ply', M.ccall('fw_ply', 'number', [], []), p.ply, ctx);
@@ -62,6 +72,8 @@ for (const g of ref.data) {
     eq('features1', h1, p.f1_csum, ctx); eq('features1非零数', nz1, p.f1_nz, ctx);
     eq('features2', h2, p.f2_csum, ctx); eq('features2非零数', nz2, p.f2_nz, ctx);
     eq('moveLabel', Number(labels), p.label_csum, ctx);
+    eq('布石ラベル(648空間)', Number(compact), p.compact_csum, ctx);
+    eq('布石ラベルの最大値', compactMax, p.compact_max, ctx);
     const idx = Number(rng.next() % BigInt(n));
     eq('LCG一致(pt)', legal[idx][0], p.pick[0], ctx);
     eq('LCG一致(sq)', legal[idx][1], p.pick[1], ctx);

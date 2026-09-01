@@ -10,6 +10,17 @@ import sys
 
 import numpy as np
 from dlshogi import cppshogi
+from dlshogi.common import MAX_MOVE_LABEL_NUM
+
+# 布石専用ネット（scripts/fuseki_net.py の fuseki6x64 等）の出力空間は 8スロット × 81マス = 648。
+# 既存の 28 × 81 = 2268 のラベルから、盤上の指し手ぶん 81 × (28 - 8) = 1620 を引いた値になる。
+# **この引き算をここで独立に書き直しているのは意図的**で、C++/WASM側の
+# make_fuseki_compact_label とこの式が食い違っていないことが照合項目になる。
+# 取り違え（片方が288空間、片方が648空間）は、既存の照合項目を全部通したまま
+# argmaxだけを別の手にする壊れ方をするので、専用の項目が要る。
+FUSEKI_PIECE_SLOTS = 8
+FUSEKI_LABEL_OFFSET = 81 * (MAX_MOVE_LABEL_NUM - FUSEKI_PIECE_SLOTS)
+FUSEKI_LABEL_NUM = 81 * FUSEKI_PIECE_SLOTS
 
 M32 = 0xFFFFFFFF
 M64 = 0xFFFFFFFFFFFFFFFF
@@ -56,14 +67,22 @@ def main(games=20, seed=12345):
             h2, nz2 = csum_floats(f2)
             color = cppshogi.fuseki_turn()
             labels = 0
+            compact = 0
+            compact_max = -1
             for i, (pt, sq) in enumerate(legal):
-                labels = (labels + (i + 1) * (cppshogi.fuseki_move_label(pt, sq, color) + 1)) & M32
+                label = cppshogi.fuseki_move_label(pt, sq, color)
+                labels = (labels + (i + 1) * (label + 1)) & M32
+                c = label - FUSEKI_LABEL_OFFSET
+                assert 0 <= c < FUSEKI_LABEL_NUM, (pt, sq, color, label, c)
+                compact = (compact + (i + 1) * (c + 1)) & M32
+                compact_max = max(compact_max, c)
             idx = rng.next() % len(legal)
             pt, sq = legal[idx]
             plies.append({
                 "ply": cppshogi.fuseki_ply(), "turn": color, "n": len(legal),
                 "legal_csum": csum_pairs(legal), "f1_csum": h1, "f1_nz": nz1,
                 "f2_csum": h2, "f2_nz": nz2, "label_csum": labels,
+                "compact_csum": compact, "compact_max": compact_max,
                 "pick": [pt, sq], "usi": cppshogi.fuseki_move_to_usi(pt, sq) if hasattr(cppshogi, "fuseki_move_to_usi") else "",
             })
             cppshogi.fuseki_do_drop(pt, sq)

@@ -24,6 +24,7 @@ std::string __fuseki_to_sfen();
 bool __fuseki_verify_final_sfen(const std::string& sfen);
 void __fuseki_make_input_features(char* ndfeatures1, char* ndfeatures2);
 int __fuseki_move_label(int pieceType, int square, int color);
+int __fuseki_compact_label(int pieceType, int square, int color);
 bool __fuseki_parse_usi_move(const std::string& moveStr, int* outPieceType, int* outSquare);
 
 namespace {
@@ -48,6 +49,12 @@ EMSCRIPTEN_KEEPALIVE int fw_ply() { return __fuseki_ply(); }
 EMSCRIPTEN_KEEPALIVE int fw_is_king_attacked(int c) { return __fuseki_is_king_attacked(c) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int fw_remaining(int c, int pt) { return __fuseki_remaining(c, pt); }
 EMSCRIPTEN_KEEPALIVE int fw_move_label(int pt, int sq, int c) { return __fuseki_move_label(pt, sq, c); }
+// 布石専用ネット（648出力）のラベル。fw_move_label から 81*(28-8)=1620 を引いた値だが、
+// 引き算はC++側（cppshogi.cpp の make_fuseki_compact_label）に閉じてある。
+// ここで独自に引くと、C++が288空間・ONNXが648空間といった取り違えが起きたとき
+// parity_test.mjs のビット一致検証をすり抜ける（argmaxだけが別の手を指す）。
+EMSCRIPTEN_KEEPALIVE int fw_compact_label(int pt, int sq, int c) { return __fuseki_compact_label(pt, sq, c); }
+EMSCRIPTEN_KEEPALIVE int fw_compact_label_num() { return FUSEKI_LABEL_NUM; }
 
 // 特徴量は静的バッファに書き、JS側はHEAPF32のsubarrayとして読む。
 EMSCRIPTEN_KEEPALIVE void fw_make_features() {
