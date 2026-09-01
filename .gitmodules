@@ -1,0 +1,3 @@
+[submodule "engine/dlshogi"]
+	path = engine/dlshogi
+	url = https://github.com/kotenbu135/DeepLearningShogi.git

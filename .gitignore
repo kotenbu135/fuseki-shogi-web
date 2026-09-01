@@ -1,0 +1,13 @@
+node_modules/
+
+# WASMのビルド成果物（wasm/build.sh で再生成できる）
+wasm/dist/
+
+# 学習済みモデルはこのリポジトリでは配布しない。
+# 現行モデルは dlshogi with GCT (WCSC31) の派生物で再配布の許諾がないため、
+# 手元での検証には置いてよいがコミットしてはいけない。詳細は README を参照。
+models/*
+!models/README.md
+
+# 参照データ（test/gen_parity_ref.py が生成する）
+parity_ref.json
