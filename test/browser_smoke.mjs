@@ -236,6 +236,50 @@ try {
   const evalText = await evaluate(page, 'document.getElementById("readout-eval").textContent');
   check('評価の表示がNaNでない', !/NaN|undefined/.test(evalText), evalText);
 
+  // ---- 棋譜をさかのぼる ----
+  // 「盤に映っているのが対局中の局面ではない」という壊れ方をしうるので、
+  // 戻した先の駒数と、戻っている間に着手を受け付けないことを見る。
+  const nav = await evaluate(page, `(async () => {
+    const wait = () => new Promise(r => setTimeout(r, 400));   // animation.duration=250ms より長く
+    // アニメーション中は消えていく駒(.fading)がDOMに残るので除く。
+      const count = () => document.querySelectorAll('sg-pieces piece:not(.fading)').length;
+    const dests = () => document.querySelectorAll('sq.dest').length;
+    const plies = document.querySelectorAll('#kifu li').length;
+    if (plies < 2) return '棋譜が2手に満たない';
+    const live = count();
+
+    document.getElementById('nav-first').click(); await wait();
+    const atFirst = count();
+    const reviewing = document.getElementById('board').classList.contains('reviewing');
+    // さかのぼっている間は駒台の駒を選んでも打てるマスが出てはいけない
+    const hp = document.querySelector('sg-hand-wrap.hand-bottom sg-hp-wrap:not([data-nb="0"]) piece');
+    hp?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
+    await wait();
+    const destsWhileReviewing = dests();
+
+    document.getElementById('nav-next').click(); await wait();
+    const afterOne = count();
+
+    document.getElementById('nav-last').click(); await wait();
+    const backLive = count();
+    return {
+      live, atFirst, afterOne, backLive, reviewing, destsWhileReviewing,
+      stillReviewing: document.getElementById('board').classList.contains('reviewing'),
+      navNextDisabledAtLive: document.getElementById('nav-next').disabled,
+    };
+  })()`);
+  check('最初の局面へ戻ると盤が空になる',
+    typeof nav === 'object' && nav.atFirst === 0 && nav.reviewing === true,
+    typeof nav === 'string' ? nav : `最初=${nav.atFirst}枚 / 対局中=${nav.live}枚`);
+  check('1手進めると駒が1枚だけ増える', typeof nav === 'object' && nav.afterOne === 1);
+  check('さかのぼっている間は駒を打てない',
+    typeof nav === 'object' && nav.destsWhileReviewing === 0,
+    typeof nav === 'object' ? `打てるマス=${nav.destsWhileReviewing}` : '');
+  check('最新へ戻すと対局中の局面に戻る',
+    typeof nav === 'object' && nav.backLive === nav.live && nav.stillReviewing === false
+      && nav.navNextDisabledAtLive === true);
+
   check('未処理の例外が無い', errors.length === 0, errors.join(' / '));
 
   if (FULL) await playWholeGame(page);
@@ -299,6 +343,25 @@ async function playWholeGame(page) {
     // やねうら王が指したので、評価の出どころが替わっている（formatEval のもう一方の枝）。
     check('通常フェーズの評価がやねうら王のものになった',
       s.phase === '終局' || /深さ|手詰/.test(s.evaluation), s.evaluation);
+
+    // 布石と通常はフェーズが違い、盤の出どころ（boardPieces / shogiopsのPosition）も違う。
+    // 通常フェーズから布石の局面へ戻れるかは、この継ぎ目でしか壊れない。
+    const cross = await evaluate(page, `(async () => {
+      const wait = () => new Promise(r => setTimeout(r, 400));   // animation.duration=250ms より長く
+      // アニメーション中は消えていく駒(.fading)がDOMに残るので除く。
+      const count = () => document.querySelectorAll('sg-pieces piece:not(.fading)').length;
+      const live = count();
+      const rows = document.querySelectorAll('#kifu li');
+      rows[19].click(); await wait();          // 20手目（布石の途中）
+      const at20 = count();
+      rows[39].click(); await wait();          // 40手目（布石が終わった直後）
+      const at40 = count();
+      document.getElementById('nav-last').click(); await wait();
+      return { live, at20, at40, back: count() };
+    })()`);
+    check('通常フェーズから布石の局面へ戻れる',
+      cross.at20 === 20 && cross.at40 === 40 && cross.back === cross.live,
+      `20手目=${cross.at20}枚 / 40手目=${cross.at40}枚 / 最新へ戻して=${cross.back}枚（対局中=${cross.live}枚）`);
   } finally {
     console.log(`  棋譜: ${await kifuText(page)}`);
   }

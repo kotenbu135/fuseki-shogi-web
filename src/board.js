@@ -71,6 +71,21 @@ export function showIdleBoard(sg) {
   });
 }
 
+/**
+ * 棋譜をさかのぼって表示する。控え（Game._snapshot）をそのまま流し込む。
+ * activeColor を空にして触れなくするのは showIdleBoard と同じ理由。
+ */
+export function showSnapshot(sg, snap) {
+  sg.set({
+    sfen: { board: snap.board, hands: handsToSfen(snap.hands, HAND_ROLES) },
+    activeColor: undefined,
+    lastDests: snap.lastDests,
+    checks: false,
+    movable: { dests: new Map() },
+    droppable: { dests: new Map() },
+  });
+}
+
 /** Gameの現在の局面を盤へ映す。 */
 export function syncBoard(sg, game) {
   const humanTurn = game.isHumanTurn;

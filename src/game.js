@@ -74,6 +74,20 @@ export class Game {
   }
 
   /** 持ち駒。布石フェーズは「まだ打っていない駒」、通常フェーズは取った駒。 */
+  /**
+   * 棋譜から局面を戻すための控え。過去の局面は指し手から再生できない
+   * （布石フェーズにはPositionが無く、通常フェーズも41手目の局面を作り直す必要がある）ので、
+   * 1手ごとにそのときの盤と駒台をそのまま取っておく。1局200手でも数十KBに収まる。
+   * Mapは持ち回すと後で書き換わるおそれがあるので、必ず複製する。
+   */
+  _snapshot() {
+    return {
+      board: this.boardSfen(),
+      hands: new Map([...this.hands()].map(([color, m]) => [color, new Map(m)])),
+      lastDests: [...this.lastDests],
+    };
+  }
+
   hands() {
     if (this.phase === 'fuseki')
       return new Map([[SENTE, this.fuseki.remaining(BLACK)], [GOTE, this.fuseki.remaining(WHITE)]]);
@@ -209,6 +223,9 @@ export class Game {
     this.boardPieces.set(key, { role: move.role, color });
     this.lastDests = [key];
     this._lastDestSquare = square;
+    // 控えは _transitionToNormal() の前に取る。40手目の控えは布石が終わった
+    // 時点の盤で、41手目の裁定より前の姿でなければならない。
+    this.kifu[this.kifu.length - 1].snapshot = this._snapshot();
     if (this.fuseki.isPlacementDone) this._transitionToNormal();
   }
 
@@ -263,6 +280,7 @@ export class Game {
     this.lastDests = 'from' in md
       ? [makeSquareName(md.from), makeSquareName(md.to)]
       : [makeSquareName(md.to)];
+    this.kifu[this.kifu.length - 1].snapshot = this._snapshot();
     this._checkNormalGameOver();
   }
 

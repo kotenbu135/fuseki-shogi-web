@@ -43,6 +43,14 @@
       <div class="kifu-box">
         <h2>棋譜</h2>
         <ol class="kifu" id="kifu"></ol>
+        <!-- 棋譜をさかのぼる。lishogiと同じ並び（最初・1手戻る・1手進む・最新）。 -->
+        <div class="kifu-nav">
+          <button type="button" id="nav-first" title="最初の局面へ（Home）" aria-label="最初の局面へ" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 6h2.2v12H7z"/><path d="M18 6v12l-8-6z"/></svg></button>
+          <button type="button" id="nav-prev" title="1手戻る（←）" aria-label="1手戻る" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 6v12l-8-6z"/></svg></button>
+          <button type="button" id="nav-next" title="1手進む（→）" aria-label="1手進む" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 6v12l8-6z"/></svg></button>
+          <button type="button" id="nav-last" title="最新の局面へ（End）" aria-label="最新の局面へ" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.8 6H17v12h-2.2z"/><path d="M6 6v12l8-6z"/></svg></button>
+        </div>
+
         <!-- 対局中の操作は棋譜のすぐ下。lishogiもここに置いている。 -->
         <div class="kifu-actions">
           <button type="button" id="btn-flip" title="盤を反転">盤を反転</button>

@@ -6,7 +6,7 @@ import { Fuseki } from './fuseki.js';
 import { FusekiPolicy } from './policy.js';
 import { NormalEngine, loadYaneuraOuFactory } from './normal.js';
 import { Game, SENTE, GOTE } from './game.js';
-import { createBoard, showIdleBoard, syncBoard } from './board.js';
+import { createBoard, showIdleBoard, showSnapshot, syncBoard } from './board.js';
 import { Sound, VOICES } from './sound.js';
 
 const ASSETS = {
@@ -34,6 +34,8 @@ const ui = {
   kifu: el('kifu'),
   color: el('opt-color'), movetime: el('opt-movetime'), volume: el('opt-volume'),
   newGame: el('btn-new'), resign: el('btn-resign'), flip: el('btn-flip'),
+  navFirst: el('nav-first'), navPrev: el('nav-prev'),
+  navNext: el('nav-next'), navLast: el('nav-last'),
   seatTop: el('seat-top'), seatBottom: el('seat-bottom'),
   seatTopName: el('seat-top-name'), seatBottomName: el('seat-bottom-name'),
   clockTop: el('clock-top'), clockBottom: el('clock-bottom'),
@@ -50,6 +52,10 @@ ui.volume.addEventListener('input', () => {
 });
 let soundedKifu = 0;       // 音を鳴らし終えた手数
 let soundedOver = false;
+
+// 棋譜のどこを見ているか。null なら対局中の（最新の）局面。
+// 0 は初手より前（空の盤）、n は n手目を指した直後。
+let viewPly = null;
 
 // 時計。1手ごとの持ち時間ではなく、その色が考えた累計を数え上げる。
 // 布石将棋に時間切れ負けのルールは無いので、減らすのではなく増やす。
@@ -158,6 +164,30 @@ ui.color.addEventListener('change', () => {
   renderSeats();
 });
 
+ui.navFirst.addEventListener('click', () => goToPly(0));
+ui.navPrev.addEventListener('click', () => goToPly((viewPly === null ? game?.kifu.length ?? 0 : viewPly) - 1));
+ui.navNext.addEventListener('click', () => goToPly((viewPly ?? 0) + 1));
+ui.navLast.addEventListener('click', () => goToPly(null));
+
+// 棋譜の行を押したらその局面へ。lishogiと同じ。
+ui.kifu.addEventListener('click', e => {
+  const li = e.target.closest('li');
+  if (li) goToPly([...ui.kifu.children].indexOf(li) + 1);
+});
+
+// 矢印キーでも動かす。入力欄に居るときは奪わない。
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+  const n = game?.kifu.length ?? 0;
+  const at = viewPly === null ? n : viewPly;
+  if (e.key === 'ArrowLeft') goToPly(at - 1);
+  else if (e.key === 'ArrowRight') goToPly(at + 1);
+  else if (e.key === 'Home') goToPly(0);
+  else if (e.key === 'End') goToPly(null);
+  else return;
+  e.preventDefault();
+});
+
 ui.flip.addEventListener('click', () => {
   if (!sg) return;
   // set({orientation}) では駄目。向きはマスのsgKeyと駒台の色に焼き込まれていて、
@@ -174,6 +204,7 @@ function startGame() {
   game = new Game({ ...engines, humanColor, movetimeMs: Number(ui.movetime.value) });
   soundedKifu = 0;
   soundedOver = false;
+  viewPly = null;
   clock.sente = clock.gote = 0;
   clock.running = null;
   // 時計は手番が変わったときにしか進まないので、表示だけ別に回す。
@@ -191,7 +222,7 @@ function startGame() {
 
 /** 人間の駒打ち。布石フェーズと通常フェーズで指し手の意味が違う。 */
 function handleDrop(piece, key) {
-  if (!game || !game.isHumanTurn) return render();
+  if (!game || !game.isHumanTurn || viewPly !== null) return render();
   try {
     if (game.phase === 'fuseki') game.playFusekiDrop(`${USI_LETTER[piece.role]}*${key}`);
     else game.playNormalMove(`${USI_LETTER[piece.role]}*${key}`);
@@ -204,7 +235,7 @@ function handleDrop(piece, key) {
 
 /** 人間の移動（通常フェーズのみ）。 */
 function handleMove(orig, dest, prom) {
-  if (!game || !game.isHumanTurn) return render();
+  if (!game || !game.isHumanTurn || viewPly !== null) return render();
   try {
     game.playNormalMove(`${orig}${dest}${prom ? '+' : ''}`);
   } catch (e) {
@@ -246,6 +277,32 @@ const RESULT_TEXT = {
   engine_illegal_move: 'エンジンが非合法手を返した',
 };
 
+/** 盤に何を映すか。過去を見ている間は対局中の局面を出さない。 */
+function renderBoard() {
+  if (!sg || !game) return;
+  const reviewing = viewPly !== null;
+  // .sg-wrap は shogiground が #board に足したクラス。内部を覗かず自分の要素を触る。
+  el('board').classList.toggle('reviewing', reviewing);
+  if (!reviewing) return void syncBoard(sg, game);
+  if (viewPly === 0) return void showIdleBoard(sg);
+  showSnapshot(sg, game.kifu[viewPly - 1].snapshot);
+}
+
+/** さかのぼる操作。対局中の局面へ戻るまで盤は触れない。 */
+function goToPly(ply) {
+  if (!game || !game.kifu.length) return;
+  const last = game.kifu.length;
+  viewPly = ply === null || ply >= last ? null : Math.max(0, ply);
+  render();
+}
+
+function renderNav() {
+  const n = game ? game.kifu.length : 0;
+  const at = viewPly === null ? n : viewPly;
+  ui.navFirst.disabled = ui.navPrev.disabled = n === 0 || at === 0;
+  ui.navNext.disabled = ui.navLast.disabled = n === 0 || viewPly === null;
+}
+
 /** 席の名前・手番の印・時計。対局前でも呼べる。 */
 function renderSeats() {
   const humanColor = game ? game.humanColor : (ui.color.value === GOTE ? GOTE : SENTE);
@@ -268,9 +325,10 @@ function render() {
     if (sg) showIdleBoard(sg);
     ui.ply.textContent = ui.phase.textContent = ui.evaluation.textContent = '—';
     renderSeats();
+    renderNav();
     return;
   }
-  if (sg) syncBoard(sg, game);
+  renderBoard();
 
   ui.ply.textContent = game.phase === 'over' ? `${game.kifu.length}手で終局` : `${game.ply}手目`;
   ui.phase.textContent = game.phase === 'fuseki'
@@ -280,6 +338,7 @@ function render() {
   tickClock(game.phase === 'over' ? null : game.turnColor);
   renderSeats();
   renderKifu();
+  renderNav();
   playMoveSounds();
 
   if (game.phase === 'over') {
@@ -291,6 +350,8 @@ function render() {
     setStatus(who, RESULT_TEXT[reason] ?? reason);
     ui.resign.disabled = true;
     ui.newGame.disabled = false;
+  } else if (viewPly !== null) {
+    setStatus(`${viewPly}手目までを表示中`, '盤には触れない。最新へ戻すと指せる（→ / End）。');
   } else if (game.isHumanTurn) {
     setStatus(game.phase === 'fuseki' ? 'あなたの番。駒台から駒を打つ。' : 'あなたの番。');
   } else {
@@ -324,11 +385,16 @@ function renderKifu() {
     li.innerHTML = `<span class="n">${entry.ply}</span><span class="m">${entry.text}</span>`;
     ui.kifu.appendChild(li);
   }
-  // 直前の手だけ塗る。前の手の塗りは消す。
-  const cur = ui.kifu.lastElementChild;
+  // 塗るのは「今見ている手」。対局中の局面なら最後の手。
+  const at = viewPly === null ? game.kifu.length : viewPly;
+  const cur = at > 0 ? ui.kifu.children[at - 1] : null;
   for (const li of ui.kifu.querySelectorAll('li.current')) if (li !== cur) li.classList.remove('current');
-  if (cur) cur.classList.add('current');
-  ui.kifu.scrollTop = ui.kifu.scrollHeight;
+  if (cur) {
+    cur.classList.add('current');
+    // さかのぼっているときだけ視界に入れる。対局中は下端に貼り付いていてほしい。
+    if (viewPly !== null) cur.scrollIntoView({ block: 'nearest' });
+  }
+  if (viewPly === null) ui.kifu.scrollTop = ui.kifu.scrollHeight;
 }
 
 function formatEval(evaluation) {
