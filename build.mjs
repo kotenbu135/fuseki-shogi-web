@@ -92,14 +92,13 @@ fs.writeFileSync(path.join(OUT, 'build-info.json'), JSON.stringify(info, null, 2
 // 重みが無いビルドは布石フェーズを指せない。その状態で対局画面をindexに置くと
 // 読み込みエラーが最初に見えるので、準備中ページ（疎通診断つき）をindexにする。
 // 重みが入った時点で index は自動的に対局画面へ戻る。
-const indexSrc = hasModel ? 'index.html' : 'soon.html';
-let html = fs.readFileSync(path.join(HERE, 'src', indexSrc), 'utf8');
-html = html.replace(/<!--BUILD_INFO-->/g,
+const stamp = f => fs.readFileSync(path.join(HERE, 'src', f), 'utf8').replace(/<!--BUILD_INFO-->/g,
   `dlshogi <code>${info.dlshogi_commit.slice(0, 12)}</code> / ` +
   `web <code>${info.web_commit.slice(0, 12)}</code> / ` +
   `fuseki.wasm <code>${info.fuseki_wasm_sha256}</code>`);
-fs.writeFileSync(path.join(OUT, 'index.html'), html);
-if (!hasModel) copy(path.join(HERE, 'src', 'index.html'), OUT, 'play.html');
+const indexSrc = hasModel ? 'index.html' : 'soon.html';
+fs.writeFileSync(path.join(OUT, 'index.html'), stamp(indexSrc));
+if (!hasModel) fs.writeFileSync(path.join(OUT, 'play.html'), stamp('index.html'));
 console.log(`index = src/${indexSrc}  (dlshogi ${info.dlshogi_commit.slice(0, 12)})`);
 
 const options = {
