@@ -17,6 +17,7 @@
 | [@mizarjp/yaneuraou.k-p](https://www.npmjs.com/package/@mizarjp/yaneuraou.k-p) | `vendor/yaneuraou/` | GPL-3.0 |
 | cppshogi のWASM化（`wasm/`） | `vendor/fuseki/` | GPL v3 |
 | 対局画面（`src/`） | `app.js`, `index.html`, `style.css` | GPL-3.0-only |
+| 布石方策の重み（下記） | `models/fuseki_degct_b3_iter4.onnx` | 本リポジトリの著作物 |
 
 `app.js` にバンドルした分の著作権表示は `app.js.LEGAL.txt` に出している
 （esbuild の `legalComments: 'linked'`）。
@@ -38,20 +39,28 @@ GPL v3 は、配ったバイナリに対応するソースを受け取った人�
 Emscripten が無く、CI側で `wasm/build.sh` を回せないため。成果物とソースが食い違って
 いないことは上記のコミットIDとハッシュで確かめられる。
 
-## 2. 配布していないもの
-
 ### 布石方策の重み
 
-`models/` は `.gitignore` で塞いであり、**このリポジトリからは配布していない**。
+配布しているのは `models/fuseki_degct_b3_iter4.onnx`（布石専用ネット・648出力・
+価値ヘッド無し）。**第三者の学習済みモデルを初期値にしていない。** 乱数初期化した
+重みから出発し、やねうら王（`yaneuraou.k-p` 同梱の SuishoPetite）の探索結果だけを
+教師信号にして自己対局で学習したものである。学習と検証の記録は非公開の開発リポジトリの
+`docs/degct_plan.md` にある。
 
-現行の重み（`fuseki_rollout_iter38.onnx`）は
+教師信号の出どころがやねうら王である以上、この重みは同エンジンの評価を蒸留したものと
+いえる。やねうら王のWASMビルドは GPL-3.0 として配布されており（第3節）、こちらも
+リポジトリと同じ GPL-3.0 で配る。
+
+## 2. 配布していないもの
+
+### GCT派生の重み
+
+`models/fuseki_rollout_iter38.onnx` は
 [dlshogi with GCT (WCSC31)](https://github.com/TadaoYamaoka/DeepLearningShogi/releases/tag/wcwc31)
-の公開モデルを初期値として学習したもので、そのモデルには再配布の明文の許諾が無い。
-配布可能な重みに置き換えるまで、公開版には重みを載せない。
-
-`node build.mjs`（引数なし）は重みを出力に含めない。手元で対局するときの
-`--with-model` は出力先を `dist-local/` に分けてあり、配布経路（`dist/`）には
-どちらの操作でも重みが入らない。
+の公開モデルを初期値として学習した派生物で、そのモデルには再配布の明文の許諾が無い。
+`.gitignore` はファイル名を挙げて配布してよい重みだけを開けており、この重みは塞いだまま
+である。手元で当てるときの `--model` は出力先を `dist-local/` に分けてあるので、
+配布経路（`dist/`）には乗らない。
 
 ### 水匠5 `nn.bin`
 

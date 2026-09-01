@@ -14,9 +14,10 @@ const ASSETS = {
   // 差し替えるのは .wasm だけ（文字列で渡すと .mjs も外部から取りにいってしまう）。
   ortWasm: { wasm: new URL('./vendor/ort/ort-wasm-simd-threaded.wasm', import.meta.url).href },
   // ファイル名は build.mjs が define で渡す（--model で差し替えられる）。
-  // esbuildを通さずに素で読み込んだときのために既定値を持たせる。
+  // esbuildを通さずに素で読み込んだときのために既定値を持たせる。ここだけは
+  // build.mjs の PUBLIC_MODEL と二重に持つことになるので、片方を変えたら両方直す。
   model: new URL(`./models/${typeof __MODEL_FILE__ === 'undefined'
-    ? 'fuseki_rollout_iter38.onnx' : __MODEL_FILE__}`, import.meta.url).href,
+    ? 'fuseki_degct_b3_iter4.onnx' : __MODEL_FILE__}`, import.meta.url).href,
   yaneuraou: new URL('./vendor/yaneuraou/yaneuraou.k-p.js', import.meta.url).href,
 };
 

@@ -10,12 +10,14 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// 既定は dist-local/（--with-model の出力＝重みが入っていて実際に指せる）。
-// 無ければ dist/（配布用。布石AIは動かない）。第1引数で明示もできる。
+// 既定は dist/（公開用のビルド。models/ の重みが入っているのでそのまま指せる）。
+// 第1引数でディレクトリ、第2引数でポートを変えられる。
+//
+//   node serve.mjs                 dist/ を 8080 で配る
+//   node serve.mjs dist-local 8081 --model で作った出力を別のポートで配る
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = process.argv[2] ? path.resolve(process.argv[2])
-  : (fs.existsSync(path.join(HERE, 'dist-local')) ? path.join(HERE, 'dist-local') : path.join(HERE, 'dist'));
-const PORT = Number(process.argv[2] || 8080);
+const ROOT = process.argv[2] ? path.resolve(process.argv[2]) : path.join(HERE, 'dist');
+const PORT = Number(process.argv[3] || 8080);
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',

@@ -5,6 +5,8 @@
 // 素通りしてしまう。ここはその差分だけを見るためのもの。
 //
 //   node build.mjs && node test/browser_smoke.mjs [dist ディレクトリ]
+//   node build.mjs --full なしでも dist/ を見る。別の重みを当てるなら:
+//   node build.mjs --model <重み> && node test/browser_smoke.mjs dist-local --full [手数]
 //
 // Chrome を --headless で起こして CDP で叩く（Node 26 の組み込み WebSocket を使うので
 // 追加の依存は要らない）。CHROME 環境変数で実行ファイルを差し替えられる。
@@ -17,7 +19,12 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
-const DIST = process.argv[2] ? path.resolve(process.argv[2]) : path.join(ROOT, 'dist');
+// 位置引数は [distディレクトリ] [通常フェーズの手数]。--full を付けると、2手見て
+// 終わりにせず布石40手→41手目の裁定→通常フェーズまで実際に指して通す。
+const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+const FULL = process.argv.includes('--full');
+const DIST = args[0] ? path.resolve(args[0]) : path.join(ROOT, 'dist');
+const NORMAL_PLIES = Number(args[1] ?? 4);
 const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
 const PORT = 8099;
 
@@ -25,6 +32,21 @@ if (!fs.existsSync(path.join(DIST, 'app.js'))) {
   console.error('dist/ が無い。先に node build.mjs を実行すること。');
   process.exit(1);
 }
+
+/** 画面から読める状態。1手ごとに何度も評価を往復しないよう1回でまとめて取る。 */
+const SNAPSHOT = `({
+  status: document.getElementById('status-line').textContent,
+  sub: document.getElementById('status-sub').textContent,
+  phase: document.getElementById('readout-phase').textContent,
+  evaluation: document.getElementById('readout-eval').textContent,
+  kifu: document.querySelectorAll('#kifu li').length,
+  boardPieces: document.querySelectorAll('sg-pieces piece').length,
+})`;
+
+// main.js が setStatus で出すエラーの文言。**ここを見るのが要点**で、drive() は
+// 例外を握って表示へ流すため、Runtime.exceptionThrown には何も出てこない。
+// _transitionToNormal() の「41手目局面をshogiopsが受理しない」もこの経路で消える。
+const FATAL_STATUS = ['起動に失敗した', 'エンジンでエラーが起きた', 'その手は指せない'];
 
 let failures = 0;
 const check = (label, cond, detail = '') => {
@@ -92,6 +114,9 @@ try {
   if (failures) { console.log('--- コンソール ---'); logs.forEach(l => console.log('  ' + l)); }
   if (ready !== false) throw new Error('エンジンが起動しないので以降の確認はできない');
 
+  // 1局通すときは持ち時間を最短にする。movetimeMs は Game のコンストラクタで固定
+  // されるので、対局開始を押す**前**に変える。
+  if (FULL) await evaluate(page, 'document.getElementById("opt-movetime").value = "500"');
   await evaluate(page, 'document.getElementById("btn-new").click()');
 
   // 先手が人間なので、盤に駒が1枚も無い状態で自分の番になる
@@ -155,6 +180,8 @@ try {
   check('評価の表示がNaNでない', !/NaN|undefined/.test(evalText), evalText);
 
   check('未処理の例外が無い', errors.length === 0, errors.join(' / '));
+
+  if (FULL) await playWholeGame(page);
 } finally {
   cdp.close();
   chrome.kill();
@@ -164,6 +191,165 @@ try {
 
 console.log(`\n不一致 ${failures} 件`);
 process.exit(failures ? 1 : 0);
+
+// ---- 1局通す（--full） ----
+
+/**
+ * 布石40手 → 41手目の裁定 → 通常フェーズ、を実際にクリックで指して通す。
+ * 布石の着手は温度1のサンプリングなので、同じ局面は二度と出ない。落ちたときに
+ * 再現できるよう、最後に必ず棋譜を出す。
+ */
+async function playWholeGame(page) {
+  console.log('\n--- 1局通す（--full）---');
+  const t0 = Date.now();
+  try {
+    // ---- 布石フェーズ ----
+    let s = await waitTurn(page);
+    for (let guard = 0; guard < 45 && s.phase.startsWith('布石'); guard++) {
+      if (!alive(s)) return;
+      const before = s.kifu;
+      if (!await dropAnyPiece(page))
+        return void check('布石で駒を打てる', false, `${await handText(page)} / ${JSON.stringify(s)}`);
+      s = await waitTurn(page, before + 1);
+    }
+    if (!alive(s)) return;
+    console.log(`  布石${s.kifu}手: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    check('布石が40手で終わった', s.kifu === 40, `${s.kifu}手`);
+
+    // ---- 41手目の裁定 ----
+    // 40手完了時点で手番側が相手玉を取れる形は普通に起こる。そこで終わった場合も正常。
+    if (s.phase === '終局') {
+      check('裁定で終わったなら理由は布石の玉取り',
+        s.sub === '41手目に玉を取れる形で布石が終わった', `${s.status} / ${s.sub}`);
+      console.log('  41手目の裁定で決着したので通常フェーズは見ない');
+      return;
+    }
+    check('通常フェーズへ移った', s.phase === '通常', s.phase);
+    check('盤上に40枚ある', s.boardPieces === 40, `${s.boardPieces}枚`);
+    // 価値ヘッドの無いネットでは布石フェーズの評価は「採用手の確率」。移った直後は
+    // まだ誰も通常フェーズの評価を出していないので、布石の確率が残っていてはいけない。
+    check('布石の評価を持ち越していない', s.evaluation === '—', s.evaluation);
+
+    // ---- 通常フェーズ ----
+    for (let i = 0; i < NORMAL_PLIES && s.phase === '通常'; i++) {
+      const before = s.kifu;
+      if (!await moveAnyPiece(page))
+        return void check('通常フェーズで動かせる駒がある', false, JSON.stringify(s));
+      s = await waitTurn(page, before + 1);
+      if (!alive(s)) return;
+    }
+    check('通常フェーズで手が進んだ', s.kifu > 40, `${s.kifu}手`);
+    // やねうら王が指したので、評価の出どころが替わっている（formatEval のもう一方の枝）。
+    check('通常フェーズの評価がやねうら王のものになった',
+      s.phase === '終局' || /深さ|手詰/.test(s.evaluation), s.evaluation);
+  } finally {
+    console.log(`  棋譜: ${await kifuText(page)}`);
+  }
+}
+
+/** 棋譜の文字列。落ちた局面を再現できるよう、失敗時に出す。 */
+function kifuText(page) {
+  return evaluate(page, `[...document.querySelectorAll('#kifu li .m')].map(e => e.textContent).join(' ')`);
+}
+
+/**
+ * AIが指し終えて人間の番（か終局）になるまで待つ。
+ *
+ * @param {number} minKifu ここまでに進んでいるはずの手数。**省略してはいけない。**
+ *   shogiground は着手のコールバックを setTimeout 越しに呼ぶ（events.after）。
+ *   クリックが返った時点ではまだ handleDrop が走っておらず、表示は「あなたの番」の
+ *   ままなので、「AIが考えている」の消滅だけで待つと**打つ前の状態**をそのまま拾う。
+ *   その古い状態で次の着手へ進むと、人間の手番でないのにクリックすることになる。
+ *
+ * 表示は render() が先に書き換わり、盤のアニメーション（board.js の duration 180ms）は
+ * その後で終わる。動いている最中にクリックすると座標がずれるので、少し置いてから返す。
+ */
+async function waitTurn(page, minKifu = 0) {
+  const s = await evalUntil(page, SNAPSHOT,
+    v => v && v.kifu >= minKifu && !v.status.startsWith('AIが考えている'), 180000);
+  await new Promise(r => setTimeout(r, 250));
+  return s;
+}
+
+/** エラーの表示が出ていないか。出ていたら不一致として数える。 */
+function alive(s) {
+  const bad = FATAL_STATUS.find(t => s.status.startsWith(t));
+  if (bad) check('エラーの表示が出ていない', false, `${s.status} / ${s.sub}`);
+  return !bad;
+}
+
+/**
+ * n番目の要素の中心。shogigroundの駒はマスのキーではなく transform で置かれていて、
+ * セレクタでn番目を指す手が無い。**印のclassを足して指してはいけない**。shogiground は
+ * piece の className から色と駒種を作っているので、余計なclassは駒の同一性を狂わせる。
+ */
+function centerOfNth(page, selector, index) {
+  return evaluate(page, `(() => {
+    const el = [...document.querySelectorAll(${JSON.stringify(selector)})][${index}];
+    if (!el) return null;
+    el.scrollIntoView({ block: 'center' });
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`);
+}
+
+/** クリックが空振りしたときに、その座標に何があったのかを見る。 */
+function elementAt(page, { x, y }) {
+  return evaluate(page, `(() => {
+    const el = document.elementFromPoint(${x}, ${y});
+    return el ? el.tagName + '.' + el.className : 'なし';
+  })()`);
+}
+
+/**
+ * 布石フェーズで駒を1つ打つ。打ち切った駒は data-nb="0" になるので選ばない。
+ * 残っていても打てるとは限らない（歩は二歩の禁じ手で全9筋が埋まると打てなくなる）ので、
+ * マスが光る駒が見つかるまで順に試す。
+ */
+async function dropAnyPiece(page) {
+  const sel = '#hand-bottom sg-hp-wrap:not([data-nb="0"]) piece';
+  const total = await evaluate(page, `document.querySelectorAll(${JSON.stringify(sel)}).length`);
+  for (let i = 0; i < total; i++) {
+    const at = await centerOfNth(page, sel, i);
+    if (!at) return false;
+    await click(page, at);
+    const dests = await evalUntil(page, 'document.querySelectorAll("sq.dest").length', v => v > 0, 3000);
+    if (!dests) {
+      console.log(`    ${i}番目の駒を押してもマスが光らない: 座標(${at.x.toFixed(0)},${at.y.toFixed(0)}) `
+        + `にあるのは ${await elementAt(page, at)}`);
+      continue;
+    }
+    await click(page, await center(page, 'sg-squares sq.dest'));
+    return true;
+  }
+  return false;
+}
+
+/** 手前の駒台の残数。落ちたときにどの駒で詰まったのかを見るために出す。 */
+function handText(page) {
+  return evaluate(page, `[...document.querySelectorAll('#hand-bottom sg-hp-wrap')]
+    .map(w => w.dataset.nb + '×' + (w.querySelector('piece')?.className ?? '?')).join(' ')`);
+}
+
+/** 通常フェーズで自分の駒を1つ動かす。動かせる駒が見つかるまで順に試す。 */
+async function moveAnyPiece(page) {
+  const mine = 'sg-pieces piece.sente';
+  const total = await evaluate(page, `document.querySelectorAll(${JSON.stringify(mine)}).length`);
+  for (let i = 0; i < total; i++) {
+    const at = await centerOfNth(page, mine, i);
+    if (!at) return false;
+    await click(page, at);
+    // 動けない駒（周りが塞がっている）はマスが光らない。次の駒へ。
+    const dests = await evalUntil(page, 'document.querySelectorAll("sq.dest").length', v => v > 0, 1500);
+    if (!dests) continue;
+    await click(page, await center(page, 'sg-squares sq.dest'));
+    // 成りを選べる手なら、ダイアログが開く（強制成りのときは開かずに成る）。
+    const choices = await evalUntil(page, 'document.querySelectorAll("sg-promotion piece").length', v => v > 0, 1000);
+    if (choices > 0) await click(page, await center(page, 'sg-promotion piece'));
+    return true;
+  }
+  return false;
+}
 
 // ---- 最小限のCDPクライアント ----
 

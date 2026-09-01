@@ -17,13 +17,15 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const watch = process.argv.includes('--watch');
-const withModel = process.argv.includes('--with-model');
+// 重みを外から差したときだけ出力先を分ける（下の OUT を参照）。
+const custom = process.argv.includes('--model');
 
-// 出力先を --with-model で分ける。同じ dist/ に「重み入り」と「配布用」を書き分けると、
-// 直前にどちらで叩いたかで dist/ の中身が変わってしまい、`wrangler pages deploy dist` や
-// ダッシュボードへのドラッグ＆ドロップが**その時の状態次第で**再配布になる。
-// パスを分けておけば、配布経路が触るのは常に重みの無いほうになる。
-const OUT = path.join(HERE, withModel ? 'dist-local' : 'dist');
+// 出力先を --model で分ける。同じ dist/ に「配布してよい重み」と「配布できない重み」を
+// 書き分けると、直前にどちらで叩いたかで dist/ の中身が変わってしまい、
+// `wrangler pages deploy dist` やダッシュボードへのドラッグ＆ドロップが**その時の
+// 状態次第で**再配布になる。パスを分けておけば、配布経路が触るのは常に models/ に
+// コミットしてある重み（＝再配布してよいもの）だけになる。
+const OUT = path.join(HERE, custom ? 'dist-local' : 'dist');
 
 const copy = (from, toDir, name = path.basename(from)) => {
   if (!fs.existsSync(from)) return false;
@@ -56,25 +58,24 @@ for (const f of ['yaneuraou.k-p.js', 'yaneuraou.k-p.wasm', 'yaneuraou.k-p.worker
 const ORT = path.join(HERE, 'node_modules/onnxruntime-web/dist');
 copy(path.join(ORT, 'ort-wasm-simd-threaded.wasm'), path.join(OUT, 'vendor/ort'));
 
-// 布石方策の重み。現行モデルは dlshogi with GCT (WCSC31) の派生物で再配布の許諾が
-// 無いため（models/README.md）、**既定ではdistに入れない**。
-//   node build.mjs --with-model   ローカル確認用。dist-local/ に出る。配ってはいけない
-//   node build.mjs                デプロイ用。dist/ に出る
-// --model <パス> で差し替えられる。布石専用ネット（648出力・価値ヘッド無し）の
-// 動作確認や、学習中の途中経過を当てるときに使う。dist側のファイル名は
-// esbuildのdefineでmain.jsへ渡すので、モデル名の定義はここ1箇所で済む。
+// 布石方策の重み。
+//
+//   node build.mjs                 公開用。models/ の PUBLIC_MODEL が dist/ に入る
+//   node build.mjs --model <パス>   手元確認用。dist-local/ に出る。配ってはいけない
+//
+// **models/ にコミットしてよいのは再配布できる重みだけ**（models/README.md）。現行の
+// 公開重みは乱数初期化からやねうら王の採点だけで学習したもので、GCT由来のパラメータを
+// 持たない。GCT派生の重み（fuseki_rollout_iter38.onnx）を手元で当てるときは --model で
+// 指定する。出力が dist-local/ に分かれるので、配布経路（dist/）には乗らない。
+//
+// 名前は esbuild の define で main.js へ渡すので、定義はここ1箇所で済む。
+const PUBLIC_MODEL = 'fuseki_degct_b3_iter4.onnx';
 const modelArg = process.argv[process.argv.indexOf('--model') + 1];
-const MODEL_SRC = process.argv.includes('--model')
-  ? path.resolve(modelArg) : path.join(HERE, 'models', 'fuseki_rollout_iter38.onnx');
+const MODEL_SRC = custom ? path.resolve(modelArg) : path.join(HERE, 'models', PUBLIC_MODEL);
 const MODEL = path.basename(MODEL_SRC);
-let hasModel = false;
-if (withModel) {
-  hasModel = copy(MODEL_SRC, path.join(OUT, 'models'));
-  if (hasModel) console.warn(`--with-model: ${path.basename(OUT)}/models/${MODEL} を含めた。この出力は配布しないこと`);
-  else console.warn(`警告: ${MODEL_SRC} が無いので含めていない`);
-} else {
-  console.log('重みは含めていない（配布用）。手元で対局するなら --with-model を付ける');
-}
+const hasModel = copy(MODEL_SRC, path.join(OUT, 'models'));
+if (!hasModel) console.warn(`警告: ${MODEL_SRC} が無いので含めていない。布石フェーズは指せない`);
+else if (custom) console.warn(`--model: ${path.basename(OUT)}/models/${MODEL} を含めた。この出力は配布しないこと`);
 
 // ビルドの素性。GPL v3 の「対応するソースの提供」は、配ったバイナリと対応するソースを
 // 指せて初めて意味を持つ。wasm/dist/ をコミットしている以上、成果物とソースが食い違って
@@ -104,7 +105,9 @@ const stamp = f => fs.readFileSync(path.join(HERE, 'src', f), 'utf8').replace(/<
   `fuseki.wasm <code>${info.fuseki_wasm_sha256}</code>`);
 const indexSrc = hasModel ? 'index.html' : 'soon.html';
 fs.writeFileSync(path.join(OUT, 'index.html'), stamp(indexSrc));
-if (!hasModel) fs.writeFileSync(path.join(OUT, 'play.html'), stamp('index.html'));
+// play.html は重みを載せていなかった頃に対局画面を置いていたURL。index が対局画面へ
+// 戻った後も、出回ったリンクが404にならないよう同じ内容で残す。
+fs.writeFileSync(path.join(OUT, 'play.html'), stamp('index.html'));
 
 // 404。Cloudflare Pages は出力直下の 404.html を、見つからないパスに 404 で返す。
 // 置かないと未知のURLが軒並み index.html を 200 で返し、検索エンジンから見ると

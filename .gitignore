@@ -4,11 +4,15 @@ node_modules/
 # 無く、CI側で wasm/build.sh を回せないため。成果物とソースが食い違っていないことは、
 # ページに出す submodule のコミットIDと fuseki.wasm のハッシュで確かめられる。
 
-# 学習済みモデルはこのリポジトリでは配布しない。
-# 現行モデルは dlshogi with GCT (WCSC31) の派生物で再配布の許諾がないため、
-# 手元での検証には置いてよいがコミットしてはいけない。詳細は README を参照。
+# 学習済みモデルは、**再配布できるものだけ**をファイル名を挙げてコミットする。
+# 公開している重みは乱数初期化からやねうら王の採点だけで学習したもので、GCT由来の
+# パラメータを持たない。一方 fuseki_rollout_iter38.onnx は dlshogi with GCT (WCSC31) の
+# 派生物で再配布の許諾が無く、手元に置いてよいがコミットしてはいけない。
+# ワイルドカードで開けずに1つずつ挙げるのは、次の重みが黙って混ざらないようにするため。
+# 詳細は models/README.md を参照。
 models/*
 !models/README.md
+!models/fuseki_degct_b3_iter4.onnx
 
 # 参照データ（test/gen_parity_ref.py が生成する）
 parity_ref.json

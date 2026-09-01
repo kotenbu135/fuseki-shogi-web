@@ -24,7 +24,7 @@ engine/dlshogi/   dlshogiのフォーク（submodule）。布石フェーズのm
 wasm/             cppshogiをEmscriptenでWASMにするビルド
 src/              対局画面（src/README.md 参照）
 test/             同一性の照合とスモークテスト
-models/           重みの置き場（コミットしない。models/README.md 参照）
+models/           布石方策の重み。再配布できるものだけコミットする（models/README.md）
 build.mjs         src/ と3つのエンジンのアセットを dist/ にまとめる
 serve.mjs         dist/ をCOOP/COEP付きでローカルに配る
 ```
@@ -49,16 +49,18 @@ Gitインテグレーション（Pagesがリポジトリを直接ビルドする
 | 環境変数 | `NODE_VERSION` = `22` |
 
 `wrangler pages deploy` や手元の `dist/` のドラッグ＆ドロップは使わない。
-Pages側がリポジトリをcloneしてビルドすれば、`.gitignore` で塞いである `models/` は
-ビルド環境に**存在すらしない**。手元の操作ミスで重みが配布される経路が消える。
+Pages側がリポジトリをcloneしてビルドすれば、ビルド環境に存在するのは**コミットしてある
+重みだけ**になる。再配布できない重み（`models/README.md`）は `.gitignore` で塞いだままなので、
+手元の操作ミスでそれが配布される経路が消える。
 
 Emscriptenはビルド環境に無いので、`wasm/dist/*` はコミットしてある（[THIRD_PARTY.md](THIRD_PARTY.md)）。
 
-重みが無いビルドは布石フェーズを指せないため、`index.html` は準備中ページ
-（`src/soon.html`）になる。このページは疎通診断を兼ねていて、
+`models/` に重みがあれば `index.html` は対局画面になる。重みが見つからないビルド
+（クローンし損ねた等）では布石フェーズを指せないので、`index.html` は準備中ページ
+（`src/soon.html`）に切り替わる。このページは疎通診断を兼ねていて、
 `crossOriginIsolated` とエンジン2つの起動を実ブラウザで確かめられる。
-対局画面は `play.html` に置かれる。重みを `models/` に入れてビルドすると、
-`index.html` が対局画面に戻り `play.html` は作られない。
+対局画面はどちらの場合も `play.html` にも置かれる（重みを載せていなかった頃のURLが
+404にならないようにするため）。
 
 ## ビルド
 
@@ -99,7 +101,7 @@ node test/yaneuraou_smoke.mjs test/sample_sfens.jsonl 12 1000
 
 # 布石方策が本家と同じlogitを返すか（onnxruntime-web ↔ Python onnxruntime）
 node test/policy_probe.mjs policy_probe.json
-python3 test/policy_parity.py policy_probe.json models/fuseki_rollout_iter38.onnx
+python3 test/policy_parity.py policy_probe.json models/fuseki_degct_b3_iter4.onnx
 
 # 41手目の裁定が shogiops の Position より前に効いていること
 node test/adjudication_test.mjs
@@ -144,17 +146,16 @@ Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
 
-### 重みは既定でdistに入らない
+### distに入るのは配布してよい重みだけ
 
-`node build.mjs` はモデルを `dist/` にコピーしない。現行モデルは再配布の許諾が無いため
-（[models/README.md](models/README.md)）、`dist/` をそのまま上げれば配布になってしまう。
+`node build.mjs` が `dist/` へ入れるのは `models/` にコミットしてある重み
+（[models/README.md](models/README.md)）に限られる。再配布できない重みを手元で当てる
+ときは `--model` で指定する。出力先が分かれるので、配布経路に混ざらない。
 
 ```bash
-node build.mjs                # デプロイ用。重みは入らない
-node build.mjs --with-model   # 手元で対局するとき。このdistは配ってはいけない
+node build.mjs                                            # デプロイ用。dist/
+node build.mjs --model models/fuseki_rollout_iter38.onnx  # dist-local/。配ってはいけない
 ```
-
-`npm start` / `npm run watch` はローカル確認用なので `--with-model` が付いている。
 
 ## ライセンス
 
@@ -174,4 +175,5 @@ If not, see <https://www.gnu.org/licenses/>.
 このリポジトリを公開してソースを提供している。同梱・利用する第三者の成果物は上表のとおりで、
 やねうら王のWASMビルドは評価関数 **SuishoPetite(2021-11)**（たややん氏提供）を内蔵している。
 
-**学習済みモデルはこのリポジトリでは配布しない。** 理由は [models/README.md](models/README.md) を参照。
+**布石方策の重みは、再配布できるものだけを配布している。** 何を置いてよいかは
+[models/README.md](models/README.md) を参照。

@@ -168,6 +168,10 @@ export class Game {
     if (this.phase !== 'fuseki') return null;   // 考えている間に終局していたら捨てる
     this.fuseki.drop(picked.move);
     this._recordFusekiMove(picked.move);
+    // 40手目なら _recordFusekiMove の中で通常フェーズへ移っている（_transitionToNormal）。
+    // その場合は布石の評価を残さない。残すと、41手目の人間の手番でフェーズだけ「通常」に
+    // 変わり、評価には布石の「採用手の確率」が出たままになる。
+    if (this.phase !== 'fuseki') return null;
     this.lastEval = { kind: 'policy', winRate: picked.value, probability: picked.probability, candidates: picked.candidates };
     return this.lastEval;
   }
@@ -232,6 +236,11 @@ export class Game {
     this.finalSfen = sfen;
     this.phase = 'normal';
     this.engine?.newGame();
+    // 布石フェーズの評価を持ち越さない。価値ヘッドの無いネットでは布石の評価は
+    // 「採用手の確率」で、通常フェーズの評価（やねうら王の評価値）とは別物。
+    // 消さないと、41手目の人間の手番でフェーズだけ「通常」に変わり、評価には
+    // 布石の確率が出たままになる。
+    this.lastEval = null;
 
     // 布石フェーズは王手放置を見ないため、40手完了時点で既に詰んでいることがある
     // （webapp/backend/game.py と同じ理由。ここで見ないと「AIの投了」に化ける）。
