@@ -139,6 +139,7 @@ async function boot() {
   ensureBoard();
   showIdleBoard(sg);
   renderSeats();
+  renderSettingsEnabled();
   try {
     setStatus('布石フェーズのルールを読み込んでいる…');
     const fuseki = await Fuseki.load(ASSETS.fuseki);
@@ -170,8 +171,24 @@ ui.newGame.addEventListener('click', () => {
   sound.unlock();
   startGame();
 });
+// 投了は取り消せない。1回目は確認に変え、2回目で確定する（lishogiも2段階）。
+let resignArmed = null;
+function disarmResign() {
+  clearTimeout(resignArmed);
+  resignArmed = null;
+  ui.resign.textContent = '投了';
+  ui.resign.classList.remove('armed');
+}
 ui.resign.addEventListener('click', () => {
   if (!game || game.phase === 'over') return;
+  if (!resignArmed) {
+    ui.resign.textContent = '本当に投了？';
+    ui.resign.classList.add('armed');
+    // 押しっぱなしにしておくと誤爆するので、少し経ったら戻す。
+    resignArmed = setTimeout(disarmResign, 4000);
+    return;
+  }
+  disarmResign();
   game.resign();
   render();
 });
@@ -236,6 +253,8 @@ function startGame() {
   // （lishogiも対局中に新規対局は始められない）。
   ui.newGame.disabled = true;
   ui.resign.disabled = false;
+  disarmResign();
+  renderSettingsEnabled();
   render();
   drive();
 }
@@ -323,6 +342,15 @@ function renderNav() {
   ui.navNext.disabled = ui.navLast.disabled = n === 0 || viewPly === null;
 }
 
+/** 対局中に変えても効かない設定は触れなくする。
+ *  手番は変更を握りつぶしていたし、持ち時間は対局開始のときにしか読まれない。
+ *  触れるのに何も起きないのは、壊れているのと区別がつかない。 */
+function renderSettingsEnabled() {
+  const playing = !!game && game.phase !== 'over';
+  ui.color.disabled = playing;
+  ui.movetime.disabled = playing;
+}
+
 /** 席の名前・手番の印・時計。対局前でも呼べる。 */
 function renderSeats() {
   const humanColor = game ? game.humanColor : (ui.color.value === GOTE ? GOTE : SENTE);
@@ -374,6 +402,8 @@ function render() {
     setStatus(who, RESULT_TEXT[reason] ?? reason);
     ui.resign.disabled = true;
     ui.newGame.disabled = false;
+    disarmResign();
+    renderSettingsEnabled();
   } else if (viewPly !== null) {
     setStatus(`${viewPly}手目までを表示中`, '盤には触れない。最新へ戻すと指せる（→ / End）。');
   } else if (game.isHumanTurn) {

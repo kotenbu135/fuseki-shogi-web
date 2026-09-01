@@ -79,6 +79,11 @@ body {
 /* ---- 盤まわり ---- */
 
 .board-column { display: flex; flex-direction: column; }
+/* 広いときは座標を盤の外へ出すので、上に筋の数字ぶんの場所を空ける。
+   段の漢数字は盤と駒台のあいだの gap(2vmin) に収まる。 */
+@media (min-width: 56rem) {
+  .board-column { padding-top: 1.3rem; }
+}
 /* 盤の大きさ。画面の広さで決まる幅に倍率を掛ける。lishogiにも同じ調整がある。 */
 /* 盤の大きさは画面の広さで効かせ方を変える。
    広いとき: .app の横幅ごと伸縮させる（盤と右のパネルが一緒に動く）。
@@ -306,29 +311,41 @@ sg-board > piece.dragging.touch { top: -50px; }
 
 /* ---- 座標 ---- */
 
-/* 座標は盤の内側に置く。lishogi と同じ（ui/common/css/shogiground/_coords.scss）。
-   盤の外へ負のオフセットで出すと、上下に駒台が来たときに重なる。
-   実際そうなっていて、筋の数字が後手の駒台に潜り込んでいた。 */
+/* 座標。lishogi の既定は Coords.OUTSIDE（modules/pref/src/main/Pref.scala）で、
+   広い画面では盤の外に出す。内側に置くのは狭い画面のときだけで、
+   lishogi も _coords.scss の内側指定を基本にしつつ、col2 の断層から外へ出している。
+
+   以前ここを内側だけにしていたのは読み違い。外へ出したときに筋の数字が
+   後手の駒台に潜り込んでいたのは座標の置き場所の問題ではなく、駒台が
+   .sg-wrap の外の別要素に生えていたせいで、そちらは hands.inlined で解決済み。 */
 sg-board > coords {
   position: absolute;
   display: flex;
   z-index: 1;
-  color: #fff;
-  /* lishogi は 7px〜11px の可変。盤の font-size に対する相対だと狭い画面で
-     潰れて読めなくなるので、ここだけ実寸で下限を持たせる。 */
   font-size: clamp(8px, 1.5vw, 11px);
   font-weight: 700;
   line-height: 1;
-  text-shadow: 0 1px 2px #0009;
   pointer-events: none;
   user-select: none;
 }
-coords.files { top: .15em; left: 0; width: 100%; height: 1.4em; flex-direction: row; }
+coords.files { left: 0; width: 100%; flex-direction: row; }
 coords.files.gote { flex-direction: row-reverse; }
-coords.ranks { top: 0; right: .15em; width: 1.1em; height: 100%; flex-direction: column-reverse; }
+coords.ranks { top: 0; height: 100%; flex-direction: column-reverse; }
 coords.ranks.gote { flex-direction: column; }
 coords.files coord { flex: 1; text-align: center; }
 coords.ranks coord { flex: 1; display: flex; align-items: center; justify-content: center; }
+
+/* 狭いとき: 盤の外に出す余地が無いので内側。白抜きに影で駒と分ける。 */
+sg-board > coords { color: #fff; text-shadow: 0 1px 2px #0009; }
+coords.files { top: .15em; height: 1.4em; }
+coords.ranks { right: .15em; width: 1.1em; }
+
+/* 広いとき: 盤の外。駒に重ならないので影は要らず、本文と同じ色でよい。 */
+@media (min-width: 56rem) {
+  sg-board > coords { color: var(--ink-soft); text-shadow: none; }
+  coords.files { top: -1.5em; height: 1.2em; }
+  coords.ranks { right: -1.35em; width: 1.1em; }
+}
 
 /* ---- 持ち駒 ---- */
 
@@ -542,9 +559,17 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 }
 .kifu-actions button:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-soft); }
 .kifu-actions button:disabled { opacity: .4; cursor: not-allowed; }
+/* 投了の確認待ち。押すと戻せないので、見た目で1回止める。 */
+.kifu-actions button.armed {
+  background: var(--accent);
+  color: var(--paper-raised);
+  border-color: var(--accent);
+  font-weight: 600;
+}
 
 .controls { display: flex; flex-direction: column; gap: .6rem; }
 .controls label { display: flex; flex-direction: column; gap: .2rem; font-size: .75rem; color: var(--ink-soft); }
+.controls select:disabled { opacity: .5; cursor: not-allowed; }
 .controls select {
   padding: .4rem .5rem;
   background: var(--paper-raised);

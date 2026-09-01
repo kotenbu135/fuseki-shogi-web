@@ -126,6 +126,24 @@ try {
     await evaluate(page, 'document.getElementById("btn-new").disabled') === true);
   check('対局中は投了が押せる',
     await evaluate(page, 'document.getElementById("btn-resign").disabled') === false);
+  // 触れるのに効かない設定は「壊れている」と区別がつかない。対局中は閉じる。
+  check('対局中は手番と持ち時間を変えられない', await evaluate(page, `(() =>
+    document.getElementById('opt-color').disabled &&
+    document.getElementById('opt-movetime').disabled)()`) === true);
+  // 投了は取り消せないので1クリックでは終わらない。
+  const resign = await evaluate(page, `(async () => {
+    const b = document.getElementById('btn-resign');
+    b.click();
+    await new Promise(r => setTimeout(r, 150));
+    return { label: b.textContent,
+             まだ終局していない: document.getElementById('readout-phase').textContent !== '終局' };
+  })()`);
+  check('投了は1回目のクリックでは確定しない',
+    resign.まだ終局していない && resign.label !== '投了', `1回目のラベル: ${resign.label}`);
+  // DOMを手で戻すと main.js 側の確認待ちが残ったままになり、次の1クリックで
+  // 本当に投了してしまう。自前で戻るまで待つ。
+  await evalUntil(page, 'document.getElementById("btn-resign").textContent',
+    v => v === '投了', 6000);
 
   // 先手が人間なので、盤に駒が1枚も無い状態で自分の番になる
   const dests = await evalUntil(page, 'document.querySelectorAll("sq.dest").length', v => v > 0, 30000);
