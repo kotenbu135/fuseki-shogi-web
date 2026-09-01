@@ -10,7 +10,11 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'dist');
+// 既定は dist-local/（--with-model の出力＝重みが入っていて実際に指せる）。
+// 無ければ dist/（配布用。布石AIは動かない）。第1引数で明示もできる。
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = process.argv[2] ? path.resolve(process.argv[2])
+  : (fs.existsSync(path.join(HERE, 'dist-local')) ? path.join(HERE, 'dist-local') : path.join(HERE, 'dist'));
 const PORT = Number(process.argv[2] || 8080);
 
 const TYPES = {
@@ -35,4 +39,4 @@ http.createServer((req, res) => {
     'Cache-Control': 'no-store',
   });
   fs.createReadStream(file).pipe(res);
-}).listen(PORT, () => console.log(`http://localhost:${PORT}/  (dist/ を配信中)`));
+}).listen(PORT, () => console.log(`http://localhost:${PORT}/  (${path.basename(ROOT)}/ を配信中)`));

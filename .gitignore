@@ -1,7 +1,8 @@
 node_modules/
 
-# WASMのビルド成果物（wasm/build.sh で再生成できる）
-wasm/dist/
+# WASMのビルド成果物は**コミットする**。Cloudflare Pages のビルド環境には emsdk が
+# 無く、CI側で wasm/build.sh を回せないため。成果物とソースが食い違っていないことは、
+# ページに出す submodule のコミットIDと fuseki.wasm のハッシュで確かめられる。
 
 # 学習済みモデルはこのリポジトリでは配布しない。
 # 現行モデルは dlshogi with GCT (WCSC31) の派生物で再配布の許諾がないため、
@@ -12,8 +13,11 @@ models/*
 # 参照データ（test/gen_parity_ref.py が生成する）
 parity_ref.json
 
-# バンドルの出力（node build.mjs で再生成できる）
-dist/
+# バンドルの出力（node build.mjs で再生成できる）。先頭の / は必須で、
+# 付け忘れると wasm/dist/ にも当たってWASM成果物がコミットされなくなる。
+/dist/
+# --with-model の出力。重みが入っているので**絶対に配布経路に乗せない**
+/dist-local/
 
 # 方策パリティ検証の中間ファイル（test/policy_probe.mjs が生成する）
 policy_probe.json

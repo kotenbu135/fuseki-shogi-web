@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>布石将棋</title>
+<meta name="description" content="空の盤に20枚ずつ打ってから指す変則将棋「布石将棋」を、ブラウザだけで対局する。準備中。">
+<style>
+  :root {
+    --bg: #f7f5f0; --fg: #1d1b16; --muted: #6b665c; --line: #d9d4c8;
+    --card: #fffdf8; --ok: #2f6b3c; --ng: #a33327; --wait: #7a6a3a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17161a; --fg: #eae7df; --muted: #9b958a; --line: #34313a;
+      --card: #1f1e23; --ok: #7fc08c; --ng: #e08a7d; --wait: #cbb677;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: system-ui, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    line-height: 1.7; padding: 3rem 1.25rem;
+  }
+  .wrap { max-width: 44rem; margin: 0 auto; }
+  h1 { font-size: 1.9rem; margin: 0 0 .3rem; letter-spacing: .02em; }
+  .lead { color: var(--muted); margin: 0 0 2.5rem; }
+  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .12em;
+       color: var(--muted); font-weight: 600; margin: 2.5rem 0 .75rem; }
+  p { margin: 0 0 1rem; }
+  .card { background: var(--card); border: 1px solid var(--line);
+          border-radius: 6px; padding: .25rem 1rem; }
+  .row { display: flex; gap: 1rem; align-items: baseline;
+         padding: .6rem 0; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: 0; }
+  .row .name { flex: 0 0 11rem; }
+  .row .val { flex: 1; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .mark { flex: 0 0 1.2rem; font-weight: 700; }
+  .mark.ok { color: var(--ok); } .mark.ng { color: var(--ng); } .mark.wait { color: var(--wait); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86em; }
+  footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--line);
+           color: var(--muted); font-size: .85rem; }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>布石将棋</h1>
+  <p class="lead">空の盤に交互に20枚ずつ打つ。41手目からは普通の将棋。</p>
+
+  <p><strong>準備中。</strong>対局できるようになるまで、もう少しかかります。</p>
+  <p>
+    布石を指す方策の重みを、再配布できる形に作り直しているところです。
+    盤・ルール・エンジンの読み込みは動いているので、下でその疎通を確認できます。
+  </p>
+
+  <h2>このブラウザでの疎通</h2>
+  <div class="card" id="checks"></div>
+
+  <footer>
+    <p>
+      布石フェーズは布石方策（NN前向き1回）、41手目以降は
+      <a href="https://github.com/mizar/YaneuraOu.wasm">やねうら王</a> のWASMビルドが指す。
+      盤は <a href="https://github.com/WandererXII/shogiground">shogiground</a>、
+      通常将棋のルールは <a href="https://github.com/WandererXII/shogiops">shogiops</a>。
+    </p>
+    <p>GPL-3.0。ソースは <a href="https://github.com/kotenbu135/fuseki-shogi-web">fuseki-shogi-web</a>。</p>
+    <p>ビルド: <!--BUILD_INFO--></p>
+  </footer>
+</div>
+
+<script type="module">
+// 疎通診断。ここで見たいのは「Cloudflare Pages が _headers を効かせているか」と
+// 「その結果 SharedArrayBuffer が使えてやねうら王のワーカーが立つか」の2点。
+// bash からは crossOriginIsolated を確かめられないので、実ブラウザで踏ませる。
+const box = document.getElementById('checks');
+const add = (name) => {
+  const el = document.createElement('div');
+  el.className = 'row';
+  el.innerHTML = '<span class="mark wait">…</span><span class="name"></span><span class="val"></span>';
+  el.querySelector('.name').textContent = name;
+  box.appendChild(el);
+  return (ok, val) => {
+    const m = el.querySelector('.mark');
+    m.className = 'mark ' + (ok ? 'ok' : 'ng');
+    m.textContent = ok ? '✓' : '✕';
+    el.querySelector('.val').textContent = val;
+  };
+};
+
+const t0 = () => performance.now();
+const ms = (t) => `${Math.round(performance.now() - t)}ms`;
+
+const setCoi = add('crossOriginIsolated');
+setCoi(self.crossOriginIsolated === true,
+  self.crossOriginIsolated ? 'true（COOP/COEPが効いている）' : 'false（_headersが効いていない）');
+
+const setSab = add('SharedArrayBuffer');
+setSab(typeof SharedArrayBuffer === 'function', typeof SharedArrayBuffer);
+
+const setCores = add('論理コア数');
+setCores(true, String(navigator.hardwareConcurrency ?? '不明'));
+
+const setFuseki = add('布石WASM');
+(async () => {
+  const t = t0();
+  try {
+    const { default: FusekiModule } = await import('./vendor/fuseki/fuseki.mjs');
+    const M = await FusekiModule();
+    M.ccall('fw_reset', null, [], []);
+    const n = M.ccall('fw_legal_drops', 'number', [], []);
+    setFuseki(n > 0, `初手の合法手 ${n} 通り / 起動 ${ms(t)}`);
+  } catch (e) {
+    setFuseki(false, String(e && e.message || e));
+  }
+})();
+
+const setYane = add('やねうら王');
+(async () => {
+  const t = t0();
+  try {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = './vendor/yaneuraou/yaneuraou.k-p.js';
+      s.onload = () => globalThis.YaneuraOu_K_P ? res() : rej(new Error('グローバルが生えていない'));
+      s.onerror = () => rej(new Error('スクリプトを読めない'));
+      document.head.appendChild(s);
+    });
+    const mod = await globalThis.YaneuraOu_K_P();
+    const wait = (pred, msTimeout = 60000) => new Promise((res, rej) => {
+      const timer = setTimeout(() => rej(new Error('応答なし')), msTimeout);
+      mod.addMessageListener(function h(line) { if (pred(line)) { clearTimeout(timer); res(line); } });
+    });
+    mod.postMessage('usi');
+    await wait(l => l === 'usiok');
+    mod.postMessage('setoption name Threads value 1');
+    mod.postMessage('isready');
+    await wait(l => l === 'readyok');
+    mod.postMessage('position startpos');
+    mod.postMessage('go depth 6');
+    const best = await wait(l => l.startsWith('bestmove'));
+    setYane(true, `${best.split(' ')[1]} / 起動から ${ms(t)}`);
+    mod.terminate();
+  } catch (e) {
+    setYane(false, String(e && e.message || e));
+  }
+})();
+
+const setBuild = add('ビルド情報');
+fetch('./build-info.json').then(r => r.json())
+  .then(j => setBuild(true, `dlshogi ${String(j.dlshogi_commit).slice(0, 12)} / 重み ${j.model ?? 'なし'}`))
+  .catch(e => setBuild(false, String(e && e.message || e)));
+</script>
+</body>
+</html>

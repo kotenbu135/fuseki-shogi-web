@@ -9,14 +9,21 @@
 //   - @mizarjp/yaneuraou.k-p    : document.currentScript.src 相対 → classic scriptで読む
 // onnxruntime-web も .wasm は外に置くので、wasmPaths を明示して vendor/ort/ を指す。
 import esbuild from 'esbuild';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const OUT = path.join(HERE, 'dist');
 const watch = process.argv.includes('--watch');
 const withModel = process.argv.includes('--with-model');
+
+// 出力先を --with-model で分ける。同じ dist/ に「重み入り」と「配布用」を書き分けると、
+// 直前にどちらで叩いたかで dist/ の中身が変わってしまい、`wrangler pages deploy dist` や
+// ダッシュボードへのドラッグ＆ドロップが**その時の状態次第で**再配布になる。
+// パスを分けておけば、配布経路が触るのは常に重みの無いほうになる。
+const OUT = path.join(HERE, withModel ? 'dist-local' : 'dist');
 
 const copy = (from, toDir, name = path.basename(from)) => {
   if (!fs.existsSync(from)) return false;
@@ -28,7 +35,7 @@ const copy = (from, toDir, name = path.basename(from)) => {
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
 
-for (const f of ['index.html', 'style.css']) copy(path.join(HERE, 'src', f), OUT);
+copy(path.join(HERE, 'src', 'style.css'), OUT);
 copy(path.join(HERE, '_headers'), OUT);
 
 // 布石フェーズのWASM（wasm/build.sh の成果物）
@@ -50,20 +57,50 @@ const ORT = path.join(HERE, 'node_modules/onnxruntime-web/dist');
 copy(path.join(ORT, 'ort-wasm-simd-threaded.wasm'), path.join(OUT, 'vendor/ort'));
 
 // 布石方策の重み。現行モデルは dlshogi with GCT (WCSC31) の派生物で再配布の許諾が
-// 無いため（models/README.md）、**既定ではdistに入れない**。dist/ をそのまま
-// Cloudflare Pages へ上げれば配布になるので、手元で動かすときだけ明示的に要求させる。
-//
-//   node build.mjs --with-model   ローカル確認用。このdistは配ってはいけない
-//   node build.mjs                デプロイ用
+// 無いため（models/README.md）、**既定ではdistに入れない**。
+//   node build.mjs --with-model   ローカル確認用。dist-local/ に出る。配ってはいけない
+//   node build.mjs                デプロイ用。dist/ に出る
 const MODEL = 'fuseki_rollout_iter38.onnx';
+let hasModel = false;
 if (withModel) {
-  if (copy(path.join(HERE, 'models', MODEL), path.join(OUT, 'models')))
-    console.warn(`--with-model: dist/models/${MODEL} を含めた。このdistは配布しないこと`);
-  else
-    console.warn(`警告: models/${MODEL} が無いのでdistに含めていない（布石AIは起動時にエラーになる）`);
+  hasModel = copy(path.join(HERE, 'models', MODEL), path.join(OUT, 'models'));
+  if (hasModel) console.warn(`--with-model: ${path.basename(OUT)}/models/${MODEL} を含めた。この出力は配布しないこと`);
+  else console.warn(`警告: models/${MODEL} が無いので含めていない`);
 } else {
-  console.log('重みはdistに入れていない（配布用）。手元で対局するなら --with-model を付ける');
+  console.log('重みは含めていない（配布用）。手元で対局するなら --with-model を付ける');
 }
+
+// ビルドの素性。GPL v3 の「対応するソースの提供」は、配ったバイナリと対応するソースを
+// 指せて初めて意味を持つ。wasm/dist/ をコミットしている以上、成果物とソースが食い違って
+// いないことを利用者が確かめられる必要があるので、submoduleのコミットIDと .wasm の
+// ハッシュをページに出す。gitが無い環境（配布物からのビルド）では unknown にする。
+const git = (...args) => {
+  try { return execFileSync('git', args, { cwd: HERE, encoding: 'utf8' }).trim(); }
+  catch { return 'unknown'; }
+};
+const sha256 = f => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex').slice(0, 16);
+const info = {
+  built_at: new Date().toISOString(),
+  // superproject が記録しているgitlink。submoduleを展開していなくても読める
+  dlshogi_commit: git('rev-parse', 'HEAD:engine/dlshogi'),
+  web_commit: git('rev-parse', 'HEAD'),
+  fuseki_wasm_sha256: sha256(path.join(HERE, 'wasm/dist/fuseki.wasm')),
+  model: hasModel ? MODEL : null,
+};
+fs.writeFileSync(path.join(OUT, 'build-info.json'), JSON.stringify(info, null, 2) + '\n');
+
+// 重みが無いビルドは布石フェーズを指せない。その状態で対局画面をindexに置くと
+// 読み込みエラーが最初に見えるので、準備中ページ（疎通診断つき）をindexにする。
+// 重みが入った時点で index は自動的に対局画面へ戻る。
+const indexSrc = hasModel ? 'index.html' : 'soon.html';
+let html = fs.readFileSync(path.join(HERE, 'src', indexSrc), 'utf8');
+html = html.replace(/<!--BUILD_INFO-->/g,
+  `dlshogi <code>${info.dlshogi_commit.slice(0, 12)}</code> / ` +
+  `web <code>${info.web_commit.slice(0, 12)}</code> / ` +
+  `fuseki.wasm <code>${info.fuseki_wasm_sha256}</code>`);
+fs.writeFileSync(path.join(OUT, 'index.html'), html);
+if (!hasModel) copy(path.join(HERE, 'src', 'index.html'), OUT, 'play.html');
+console.log(`index = src/${indexSrc}  (dlshogi ${info.dlshogi_commit.slice(0, 12)})`);
 
 const options = {
   entryPoints: [path.join(HERE, 'src/main.js')],
