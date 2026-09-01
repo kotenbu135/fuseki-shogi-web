@@ -116,6 +116,9 @@ node test/pipeline_smoke.mjs
 
 # 実際のブラウザで dist/ を開いて対局が始まるところまで
 node build.mjs && node test/browser_smoke.mjs
+
+# 終局した Game から表示に使う値が取り出せるか（ブラウザもエンジンも不要・数秒）
+node test/game_terminal_test.mjs
 ```
 
 実測（`test/sample_sfens.jsonl` は実際の方策が作った41手目局面80件）:
@@ -124,6 +127,13 @@ node build.mjs && node test/browser_smoke.mjs
 - shogiops は 79/80 で局面を受理。唯一の失敗 `ERR_OPPOSITE_CHECK` は、41手目に勝敗が
   確定していて通常フェーズに入らない局面。**つまり拒否されるのは渡してはいけない局面だけ**
 - やねうら王 K-P WASM は 12/12 で合法手を返し、`movetime 1000ms` / `Threads 2` で depth 13〜17
+
+`game_terminal_test.mjs` は「布石フェーズのまま終局した Game」を直接組み立てる。
+この状態は phase が `'over'` で position が `null` になり、表示の取り出し口が phase で
+分岐していると `makeSfen(null)` で落ちる（盤が固まり、新規対局も始められなくなる）。
+入る道は**布石フェーズでの投了**と**41手目の裁定での決着**の2つで、後者は
+「40手完了時点で手番側が相手玉を取れる形」なので普通に起こる。どちらもAIの指し手
+次第でしか再現できないので、道ではなく状態を作って不変条件を留めている。
 
 `parity_test.mjs` が保証するのは「WASMの特徴量がC++版と一致すること」までで、その特徴量を
 食わせたNNが同じlogitを返すかは別問題になる。ここがズレるとAIは落ちずに弱くなるだけなので、
