@@ -1,0 +1,392 @@
+/* shogiground には CSS も駒画像も同梱されていない（npmパッケージに入っているのは
+   esm/ と dist/ だけ）。そこで盤も駒も、画像を1枚も使わずCSSだけで描いている。
+   駒は漢字のテキストなので、拡大しても滲まず、素材のライセンスも発生しない。 */
+
+:root {
+  --paper: #f6f2e9;
+  --paper-raised: #fffdf8;
+  --ink: #24201b;
+  --ink-soft: #6d6459;
+  --rule: #ddd4c2;
+  --board: #e8cd9b;
+  --board-edge: #6f5027;
+  --line: #8a6836;
+  --koma: #f4e2ba;
+  --koma-edge: #a8834b;
+  --accent: #b23a2c;
+  --accent-soft: #b23a2c26;
+  --dest: #3c6b4a;
+  --sans: system-ui, "Hiragino Sans", "Noto Sans JP", Meiryo, sans-serif;
+  --serif: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", "MS Mincho", serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #17161a;
+    --paper-raised: #201e24;
+    --ink: #ece7dd;
+    --ink-soft: #9b9287;
+    --rule: #35323a;
+    --board: #b99764;
+    --board-edge: #2b2018;
+    --line: #6b4f2a;
+    --koma: #e4d0a6;
+    --koma-edge: #8c6b3c;
+    --accent: #e0705f;
+    --accent-soft: #e0705f2e;
+    --dest: #6fae86;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+
+.app {
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+.app-header { margin-bottom: 1.5rem; }
+.app-header h1 {
+  font-family: var(--serif);
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: .18em;
+  margin: 0;
+}
+.tagline { margin: .25rem 0 0; color: var(--ink-soft); font-size: .875rem; }
+
+.layout {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+@media (min-width: 56rem) {
+  .layout { grid-template-columns: minmax(0, 1fr) 17rem; }
+}
+
+/* ---- 盤まわり ---- */
+
+.board-column { display: flex; flex-direction: column; gap: .5rem; }
+.board-wrap { padding: 0 1.6em 0 .3em; }   /* 右の段数表示のぶんを空ける */
+
+.sg-wrap { position: relative; display: block; width: 100%; }
+
+sg-board {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--board);
+  border: 2px solid var(--board-edge);
+  border-radius: 2px;
+  box-shadow: 0 1px 0 #0002, 0 8px 24px #0000001f;
+  font-size: clamp(9px, 2.2vw, 15px);   /* 盤内の文字はここを基準に決まる */
+}
+
+sg-squares {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  grid-template-rows: repeat(9, 1fr);
+}
+
+sq {
+  position: relative;
+  box-shadow: inset -1px -1px 0 0 color-mix(in srgb, var(--line) 55%, transparent);
+}
+sq:nth-child(9n) { box-shadow: inset 0 -1px 0 0 color-mix(in srgb, var(--line) 55%, transparent); }
+sq:nth-last-child(-n + 9) { box-shadow: inset -1px 0 0 0 color-mix(in srgb, var(--line) 55%, transparent); }
+sq:nth-child(81) { box-shadow: none; }
+
+sq.last-dest { background: var(--accent-soft); }
+sq.check { background: radial-gradient(circle, #d3352788 0%, transparent 72%); }
+sq.selected { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.manipulable sq.hover { background: #ffffff2e; }
+
+/* 着手可能なマスの印。空きマスは点、駒がいるマス(.oc)は輪。 */
+sq.dest::before,
+sq.dest.oc::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  border-radius: 50%;
+}
+sq.dest::before {
+  width: 30%;
+  height: 30%;
+  background: color-mix(in srgb, var(--dest) 70%, transparent);
+}
+sq.dest.oc::before {
+  width: 84%;
+  height: 84%;
+  background: none;
+  border: .28em solid color-mix(in srgb, var(--dest) 65%, transparent);
+}
+
+sg-pieces { position: absolute; inset: 0; display: block; }
+/* 矢印描画は切ってあるが、有効にした場合に盤の高さを壊さないよう位置を固定しておく。 */
+sg-board > .sg-shapes,
+sg-board > .sg-custom-svgs,
+sg-board > sg-free-pieces { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* 成りの選択ダイアログ。着手先のマスの上に2択（成/不成）を積む。
+   ここも絶対配置にしないと、開いた瞬間に盤の高さが崩れる。 */
+sg-board > sg-promotion { position: absolute; inset: 0; z-index: 4; }
+sg-promotion-square {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% / 9);
+  height: calc(100% / 9);
+}
+sg-promotion-choices {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 2px;
+  background: var(--paper-raised);
+  border-radius: 3px;
+  box-shadow: 0 3px 12px #00000059;
+}
+sg-promotion-choices.reversed { top: auto; bottom: 0; flex-direction: column-reverse; }
+sg-promotion-choices piece { position: relative; width: 100%; aspect-ratio: 1; }
+
+sg-square-over {
+  position: absolute;
+  top: 0; left: 0;
+  width: calc(100% / 9);
+  height: calc(100% / 9);
+  background: #ffffff40;
+  pointer-events: none;
+}
+
+/* ---- 駒 ---- */
+
+piece {
+  display: block;
+  cursor: pointer;
+  background: linear-gradient(#fbeecd, var(--koma));
+  border: 1px solid var(--koma-edge);
+  /* 駒の五角形。上辺が細く、肩から下がまっすぐ落ちる将棋駒の輪郭。 */
+  clip-path: polygon(50% 2%, 82% 15%, 95% 98%, 5% 98%, 18% 15%);
+  font-family: var(--serif);
+  font-weight: 600;
+  color: #241a10;
+  text-align: center;
+  user-select: none;
+  filter: drop-shadow(0 1px 1px #0000002e);
+}
+piece::before {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding-top: .08em;
+  font-size: 1.55em;
+  line-height: 1;
+}
+/* 後手の駒は上下逆に置く。ここで rotate プロパティを駒そのものに掛けてはいけない。
+   shogiground は駒の位置を transform（translate）で与えており、CSSの合成順は
+   translate → rotate → scale → transform なので、駒を回すと後から掛かる
+   translate が回転後の座標系で効き、駒が盤の外へ飛ぶ。
+   そこで輪郭は clip-path を上下反転させ、文字だけを回す。 */
+piece.gote {
+  background: linear-gradient(0deg, #fbeecd, var(--koma));
+  clip-path: polygon(50% 98%, 82% 85%, 95% 2%, 5% 2%, 18% 85%);
+}
+piece.gote::before { rotate: 180deg; }
+
+/* 成駒は朱字にするのが習わし。 */
+piece.tokin, piece.promotedlance, piece.promotedknight,
+piece.promotedsilver, piece.horse, piece.dragon { color: #9d2b1c; }
+
+piece.pawn::before { content: "歩"; }
+piece.lance::before { content: "香"; }
+piece.knight::before { content: "桂"; }
+piece.silver::before { content: "銀"; }
+piece.gold::before { content: "金"; }
+piece.bishop::before { content: "角"; }
+piece.rook::before { content: "飛"; }
+piece.sente.king::before { content: "玉"; }
+piece.gote.king::before { content: "王"; }
+piece.tokin::before { content: "と"; }
+piece.promotedlance::before { content: "杏"; }
+piece.promotedknight::before { content: "圭"; }
+piece.promotedsilver::before { content: "全"; }
+piece.horse::before { content: "馬"; }
+piece.dragon::before { content: "龍"; }
+
+sg-pieces piece,
+sg-board > piece {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% / 9);
+  height: calc(100% / 9);
+  will-change: transform;
+}
+sg-pieces piece.anim { transition: transform .18s; }
+sg-pieces piece.fading { opacity: .4; transition: opacity .18s; }
+piece.ghost { opacity: .3; }
+sg-board > piece.dragging { cursor: grabbing; z-index: 3; filter: drop-shadow(0 4px 6px #0006); }
+
+/* ---- 座標 ---- */
+
+sg-board > coords {
+  position: absolute;
+  display: flex;
+  color: var(--ink-soft);
+  font-size: .8em;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+coords.files { top: -1.5em; left: 0; width: 100%; flex-direction: row; }
+coords.files.gote { flex-direction: row-reverse; }
+coords.ranks { top: 0; right: -1.3em; height: 100%; flex-direction: column-reverse; }
+coords.ranks.gote { flex-direction: column; }
+coords.files coord { flex: 1; text-align: center; }
+coords.ranks coord { flex: 1; display: flex; align-items: center; justify-content: center; }
+
+/* ---- 持ち駒 ---- */
+
+.hand-row { min-height: 3.2rem; }
+sg-hand-wrap { display: block; }
+sg-hand {
+  display: flex;
+  gap: .4rem;
+  padding: .4rem .5rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
+/* 駒台は指す人から見て右に置く。盤を反転しても位置で決まるので色では分けない。 */
+.hand-bottom sg-hand { justify-content: flex-end; }
+
+sg-hp-wrap {
+  position: relative;
+  width: 2.1rem;
+  aspect-ratio: 5 / 6;
+  font-size: 1.05rem;
+}
+sg-hand piece { position: absolute; inset: 0; width: 100%; height: 100%; }
+sg-hp-wrap::after {
+  content: attr(data-nb);
+  position: absolute;
+  right: -.15rem;
+  bottom: -.3rem;
+  min-width: 1.05em;
+  padding: 0 .18em;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: .6em;
+  font-size: .68rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+}
+sg-hp-wrap[data-nb="0"] { opacity: .22; }
+sg-hp-wrap[data-nb="0"]::after,
+sg-hp-wrap[data-nb="1"]::after { display: none; }
+sg-hp-wrap.selected piece { outline: 2px solid var(--accent); outline-offset: 1px; }
+sg-hp-wrap.last-dest piece { box-shadow: 0 0 0 2px var(--accent-soft); }
+
+/* ---- 右のパネル ---- */
+
+.panel { display: flex; flex-direction: column; gap: 1rem; }
+
+.status {
+  padding: .75rem .9rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+}
+.status-line { margin: 0; font-weight: 600; }
+.status-sub { margin: .15rem 0 0; color: var(--ink-soft); font-size: .8125rem; }
+.status-sub:empty { display: none; }
+
+.readout { display: grid; gap: .35rem; margin: 0; font-size: .8125rem; }
+.readout > div { display: flex; justify-content: space-between; gap: .5rem; }
+.readout dt { color: var(--ink-soft); }
+.readout dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+.kifu-box h2 {
+  margin: 0 0 .4rem;
+  font-size: .75rem;
+  font-weight: 600;
+  letter-spacing: .12em;
+  color: var(--ink-soft);
+}
+.kifu {
+  margin: 0;
+  padding: .3rem;
+  max-height: 16rem;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font-size: .8125rem;
+}
+.kifu li { display: flex; gap: .5rem; padding: .1rem .3rem; }
+.kifu li:nth-child(odd) { background: color-mix(in srgb, var(--rule) 30%, transparent); }
+.kifu .n { width: 2.2em; text-align: right; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.kifu .m { font-family: var(--serif); }
+.kifu li.gote .m { color: var(--ink-soft); }
+
+.controls { display: flex; flex-direction: column; gap: .6rem; }
+.controls label { display: flex; flex-direction: column; gap: .2rem; font-size: .75rem; color: var(--ink-soft); }
+.controls select {
+  padding: .4rem .5rem;
+  background: var(--paper-raised);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font: inherit;
+  font-size: .875rem;
+}
+.buttons { display: flex; flex-wrap: wrap; gap: .5rem; }
+.buttons button {
+  flex: 1 1 auto;
+  padding: .5rem .8rem;
+  background: var(--paper-raised);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font: inherit;
+  font-size: .875rem;
+  cursor: pointer;
+}
+.buttons button:hover:not(:disabled) { border-color: var(--ink-soft); }
+.buttons button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.buttons button:disabled { opacity: .45; cursor: not-allowed; }
+:where(button, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app-footer {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-soft);
+  font-size: .75rem;
+}
+.app-footer p { margin: .2rem 0; }
+.app-footer a { color: inherit; }

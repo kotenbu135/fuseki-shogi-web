@@ -11,7 +11,7 @@
 | 盤UI | [shogiground](https://github.com/WandererXII/shogiground) | GPL-3.0-or-later |
 | 通常将棋のルール・棋譜 | [shogiops](https://github.com/WandererXII/shogiops) | GPL-3.0-or-later |
 | 布石フェーズのルール・特徴量 | `wasm/`（cppshogiをWebAssembly化） | GPL v3 |
-| 布石フェーズのAI | 布石方策 + onnxruntime-web | — |
+| 布石フェーズのAI | 布石方策 + [onnxruntime-web](https://github.com/microsoft/onnxruntime) | MIT |
 | 通常フェーズのAI | [@mizarjp/yaneuraou.k-p](https://www.npmjs.com/package/@mizarjp/yaneuraou.k-p) | GPL-3.0 |
 
 布石フェーズはエンジン側も探索を行わず**1手あたりNN前向き1回**で指しているため、
@@ -22,9 +22,11 @@
 ```
 engine/dlshogi/   dlshogiのフォーク（submodule）。布石フェーズのmovegenと特徴量抽出
 wasm/             cppshogiをEmscriptenでWASMにするビルド
+src/              対局画面（src/README.md 参照）
 test/             同一性の照合とスモークテスト
-src/              対局画面（実装中）
 models/           重みの置き場（コミットしない。models/README.md 参照）
+build.mjs         src/ と3つのエンジンのアセットを dist/ にまとめる
+serve.mjs         dist/ をCOOP/COEP付きでローカルに配る
 ```
 
 `engine/dlshogi` をsubmoduleにしているのは、**ビルドに使ったソースのコミットIDが構成
@@ -38,7 +40,17 @@ git clone --recursive https://github.com/kotenbu135/fuseki-shogi-web.git
 cd fuseki-shogi-web
 npm install
 source ~/emsdk/emsdk_env.sh && wasm/build.sh     # -> wasm/dist/fuseki.{mjs,wasm}
+npm start                                        # -> dist/ を作って http://localhost:8080/
 ```
+
+`npm start` は `node build.mjs` と `node serve.mjs` を続けて実行する。ローカルでも
+COOP/COEPが要るので、`dist/` を普通の静的サーバで開くとやねうら王が起動しない
+（`serve.mjs` はその2行を立てる）。
+
+バンドラを1本だけ入れているのは、shogiops が `@badrap/result` をbare specifierで
+引いていて素のESMではブラウザが解決できないため。バンドルするのは `src/` と
+shogiground・shogiops・onnxruntime-web で、布石WASMとやねうら王は
+**コピーして置くだけ**にしている（理由は [src/README.md](src/README.md)）。
 
 WASMは **209KB + 63KB**、初期化8ms、movegen＋特徴量が1手0.1ms。
 
@@ -57,6 +69,19 @@ node test/parity_test.mjs parity_ref.json
 # 41手目局面に対する shogiops / やねうら王WASM の挙動
 node test/shogiops_smoke.mjs test/sample_sfens.jsonl
 node test/yaneuraou_smoke.mjs test/sample_sfens.jsonl 12 1000
+
+# 布石方策が本家と同じlogitを返すか（onnxruntime-web ↔ Python onnxruntime）
+node test/policy_probe.mjs policy_probe.json
+python3 test/policy_parity.py policy_probe.json models/fuseki_rollout_iter38.onnx
+
+# 41手目の裁定が shogiops の Position より前に効いていること
+node test/adjudication_test.mjs
+
+# 対局画面の経路を1局通す（布石40手 → 41手目の裁定 → 通常フェーズ）
+node test/pipeline_smoke.mjs
+
+# 実際のブラウザで dist/ を開いて対局が始まるところまで
+node build.mjs && node test/browser_smoke.mjs
 ```
 
 実測（`test/sample_sfens.jsonl` は実際の方策が作った41手目局面80件）:
@@ -66,15 +91,43 @@ node test/yaneuraou_smoke.mjs test/sample_sfens.jsonl 12 1000
   確定していて通常フェーズに入らない局面。**つまり拒否されるのは渡してはいけない局面だけ**
 - やねうら王 K-P WASM は 12/12 で合法手を返し、`movetime 1000ms` / `Threads 2` で depth 13〜17
 
+`parity_test.mjs` が保証するのは「WASMの特徴量がC++版と一致すること」までで、その特徴量を
+食わせたNNが同じlogitを返すかは別問題になる。ここがズレるとAIは落ちずに弱くなるだけなので、
+`policy_probe.mjs` + `policy_parity.py` で分けて見ている（実測: 8局面で **logit最大差
+7.9e-06 / value最大差 6.6e-07**、選ぶ手の不一致なし）。
+
+`adjudication_test.mjs` は一様乱数で40手打つのを繰り返し、**裁定が実際に発火した局面**に対して
+「Gameは `fuseki_king_capture` で終局する」「その局面はshogiopsが `ERR_OPPOSITE_CHECK` で
+弾く」の両方を見る（実測: 60局中7局で発火）。順序を入れ替えると後者が例外になって表に出る。
+
+`pipeline_smoke.mjs` は `src/` のモジュールをブラウザと同じ順で呼ぶ（onnxruntime-web の
+wasmバックエンドはNodeでも動く）。実測で布石40手が **1.2秒（1手31ms）**、通常フェーズは
+`movetime` どおり。`browser_smoke.mjs` はそこで見られない部分だけ
+—— COOP/COEPとSharedArrayBuffer、`vendor/` のアセット解決、shogigroundの描画 —— を
+Chromeを起こして確認する。
+
 ## 配信
 
-**Cloudflare Pages**（無料・帯域無制限）。やねうら王のWASMが SharedArrayBuffer を使うため、
-`_headers` で下記を立てる必要がある。GitHub Pages はヘッダを設定できないので使えない。
+**Cloudflare Pages**（無料・帯域無制限）。配るのは `node build.mjs` が作る `dist/` で、
+`_headers` もその中に入る。やねうら王のWASMが SharedArrayBuffer を使うため、
+下記を立てる必要がある。GitHub Pages はヘッダを設定できないので使えない。
 
 ```
 Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
+
+### 重みは既定でdistに入らない
+
+`node build.mjs` はモデルを `dist/` にコピーしない。現行モデルは再配布の許諾が無いため
+（[models/README.md](models/README.md)）、`dist/` をそのまま上げれば配布になってしまう。
+
+```bash
+node build.mjs                # デプロイ用。重みは入らない
+node build.mjs --with-model   # 手元で対局するとき。このdistは配ってはいけない
+```
+
+`npm start` / `npm run watch` はローカル確認用なので `--with-model` が付いている。
 
 ## ライセンス
 

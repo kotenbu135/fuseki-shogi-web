@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>布石将棋</title>
+<meta name="description" content="空の盤に20枚ずつ打ってから指す変則将棋「布石将棋」を、ブラウザだけで対局する。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="app-header">
+    <h1>布石将棋</h1>
+    <p class="tagline">空の盤に交互に20枚ずつ打つ。41手目からは普通の将棋。</p>
+  </header>
+
+  <main class="layout">
+    <section class="board-column">
+      <div class="hand-row" id="hand-top"></div>
+      <div class="board-wrap"><div id="board"></div></div>
+      <div class="hand-row" id="hand-bottom"></div>
+    </section>
+
+    <aside class="panel">
+      <div class="status" id="status" role="status" aria-live="polite">
+        <p class="status-line" id="status-line">読み込み中…</p>
+        <p class="status-sub" id="status-sub"></p>
+      </div>
+
+      <dl class="readout">
+        <div><dt>手数</dt><dd id="readout-ply">—</dd></div>
+        <div><dt>フェーズ</dt><dd id="readout-phase">—</dd></div>
+        <div><dt>評価</dt><dd id="readout-eval">—</dd></div>
+      </dl>
+
+      <div class="kifu-box">
+        <h2>棋譜</h2>
+        <ol class="kifu" id="kifu"></ol>
+      </div>
+
+      <form class="controls" id="controls">
+        <label>手番
+          <select id="opt-color">
+            <option value="sente" selected>先手（下）</option>
+            <option value="gote">後手（上）</option>
+          </select>
+        </label>
+        <label>持ち時間（1手）
+          <select id="opt-movetime">
+            <option value="500">0.5秒</option>
+            <option value="1000" selected>1秒</option>
+            <option value="3000">3秒</option>
+            <option value="10000">10秒</option>
+          </select>
+        </label>
+        <div class="buttons">
+          <button type="button" id="btn-new" class="primary" disabled>対局開始</button>
+          <button type="button" id="btn-resign" disabled>投了</button>
+          <button type="button" id="btn-flip">盤を反転</button>
+        </div>
+      </form>
+    </aside>
+  </main>
+
+  <footer class="app-footer">
+    <p>
+      布石フェーズは布石方策（NN前向き1回）、41手目以降は
+      <a href="https://github.com/mizar/YaneuraOu.wasm">やねうら王</a> のWASMビルドが指す。
+      盤は <a href="https://github.com/WandererXII/shogiground">shogiground</a>、
+      通常将棋のルールは <a href="https://github.com/WandererXII/shogiops">shogiops</a>。
+    </p>
+    <p>
+      GPL-3.0。ソースは <a href="https://github.com/kotenbu135/fuseki-shogi-web">fuseki-shogi-web</a>。
+    </p>
+  </footer>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

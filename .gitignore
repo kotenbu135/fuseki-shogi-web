@@ -11,3 +11,9 @@ models/*
 
 # 参照データ（test/gen_parity_ref.py が生成する）
 parity_ref.json
+
+# バンドルの出力（node build.mjs で再生成できる）
+dist/
+
+# 方策パリティ検証の中間ファイル（test/policy_probe.mjs が生成する）
+policy_probe.json
