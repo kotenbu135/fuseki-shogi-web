@@ -317,6 +317,10 @@ function renderSeats() {
   const turn = game && game.phase !== 'over' ? game.turnColor : null;
   ui.seatTop.classList.toggle('turn', turn === top);
   ui.seatBottom.classList.toggle('turn', turn === bottom);
+  // 考えているのはAIのときだけ。人間の番で脈を打たせると急かしているように見える。
+  const thinking = busy && turn !== null && turn !== humanColor;
+  ui.seatTop.classList.toggle('thinking', thinking && turn === top);
+  ui.seatBottom.classList.toggle('thinking', thinking && turn === bottom);
 }
 
 function render() {

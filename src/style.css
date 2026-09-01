@@ -422,6 +422,16 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   background: var(--rule);
 }
 .seat.turn { border-color: var(--accent); }
+/* AIが考えている間。通常フェーズは1手に数秒かかるので、
+   何も動かないと固まったように見える。手番の丸印を脈打たせる。 */
+.seat.thinking .seat-name::before { animation: seat-pulse 1s ease-in-out infinite alternate; }
+@keyframes seat-pulse {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: .25; transform: scale(.7); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .seat.thinking .seat-name::before { animation: none; }
+}
 .seat.turn .seat-name { color: var(--ink); font-weight: 600; }
 .seat.turn .seat-name::before { background: var(--accent); }
 .clock {

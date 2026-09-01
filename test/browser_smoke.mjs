@@ -332,6 +332,16 @@ async function playWholeGame(page) {
     check('布石の評価を持ち越していない', s.evaluation === '—', s.evaluation);
 
     // ---- 通常フェーズ ----
+    // やねうら王が考えている間、席の印が脈打つ。布石フェーズのAIは同期的で
+    // イベントループに戻らないため印が出る隙が無いが、通常フェーズは別スレッドなので
+    // ここでしか確かめられない。
+    await evaluate(page, `(() => {
+      window.__thinkingSeen = 0;
+      window.__thinkingTimer = setInterval(() => {
+        if (document.querySelector('.seat.thinking')) window.__thinkingSeen++;
+      }, 20);
+    })()`);
+
     for (let i = 0; i < NORMAL_PLIES && s.phase === '通常'; i++) {
       const before = s.kifu;
       if (!await moveAnyPiece(page))
@@ -339,6 +349,10 @@ async function playWholeGame(page) {
       s = await waitTurn(page, before + 1);
       if (!alive(s)) return;
     }
+
+    const thinkingSeen = await evaluate(page,
+      'clearInterval(window.__thinkingTimer), window.__thinkingSeen');
+    check('AIが考えている間、席の印が動く', thinkingSeen > 0, `観測 ${thinkingSeen} 回`);
     check('通常フェーズで手が進んだ', s.kifu > 40, `${s.kifu}手`);
     // やねうら王が指したので、評価の出どころが替わっている（formatEval のもう一方の枝）。
     check('通常フェーズの評価がやねうら王のものになった',
