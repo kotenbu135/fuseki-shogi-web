@@ -16,9 +16,9 @@
 
   <main class="layout">
     <section class="board-column">
-      <div class="hand-row" id="hand-top"></div>
-      <div class="board-wrap"><div id="board"></div></div>
-      <div class="hand-row" id="hand-bottom"></div>
+      <!-- 駒台のDOMは shogiground が .sg-wrap の直下に作る（board.js の hands.inlined）。
+           ここに器を置くと二重になるので置かない。 -->
+      <div id="board"></div>
     </section>
 
     <aside class="panel">

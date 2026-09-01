@@ -6,7 +6,7 @@ import { Fuseki } from './fuseki.js';
 import { FusekiPolicy } from './policy.js';
 import { NormalEngine, loadYaneuraOuFactory } from './normal.js';
 import { Game, SENTE, GOTE } from './game.js';
-import { createBoard, syncBoard } from './board.js';
+import { createBoard, showIdleBoard, syncBoard } from './board.js';
 
 const ASSETS = {
   fuseki: new URL('./vendor/fuseki/fuseki.mjs', import.meta.url).href,
@@ -41,9 +41,25 @@ let sg = null;
 let orientation = SENTE;
 let busy = false;     // AIが考えている間の二重駆動を防ぐ
 
+/** 盤を1枚だけ作る。対局前から出しておきたいので、起動時にも呼ぶ。 */
+function ensureBoard() {
+  if (!sg) {
+    sg = createBoard({
+      wrapEl: el('board'), orientation, onDrop: handleDrop, onMove: handleMove,
+    });
+  } else if (sg.state.orientation !== orientation) {
+    sg.toggleOrientation();
+  }
+  return sg;
+}
+
 boot();
 
 async function boot() {
+  // エンジン3本のロードには時間がかかる。その間に盤を出しておかないと、
+  // 待っている人の前にあるのがパネルだけの空白になる。
+  ensureBoard();
+  showIdleBoard(sg);
   try {
     setStatus('布石フェーズのルールを読み込んでいる…');
     const fuseki = await Fuseki.load(ASSETS.fuseki);
@@ -76,6 +92,14 @@ ui.resign.addEventListener('click', () => {
   game.resign();
   render();
 });
+// 対局前に手番を変えたら、盤の向きも先に合わせる（対局開始を押す前に確かめられる）。
+ui.color.addEventListener('change', () => {
+  if (game && game.phase !== 'over') return;
+  orientation = ui.color.value === GOTE ? GOTE : SENTE;
+  ensureBoard();
+  showIdleBoard(sg);
+});
+
 ui.flip.addEventListener('click', () => {
   if (!sg) return;
   // set({orientation}) では駄目。向きはマスのsgKeyと駒台の色に焼き込まれていて、
@@ -90,14 +114,7 @@ function startGame() {
   orientation = humanColor;
   game = new Game({ ...engines, humanColor, movetimeMs: Number(ui.movetime.value) });
 
-  if (!sg) {
-    sg = createBoard({
-      wrapEl: el('board'), handTopEl: el('hand-top'), handBottomEl: el('hand-bottom'),
-      orientation, onDrop: handleDrop, onMove: handleMove,
-    });
-  } else if (sg.state.orientation !== orientation) {
-    sg.toggleOrientation();
-  }
+  ensureBoard();
   ui.resign.disabled = false;
   render();
   drive();
@@ -161,7 +178,12 @@ const RESULT_TEXT = {
 };
 
 function render() {
-  if (!game) return;
+  // 対局前は空の盤と満杯の駒台を出し、読み出しは空にしておく。
+  if (!game) {
+    if (sg) showIdleBoard(sg);
+    ui.ply.textContent = ui.phase.textContent = ui.evaluation.textContent = '—';
+    return;
+  }
   if (sg) syncBoard(sg, game);
 
   ui.ply.textContent = game.phase === 'over' ? `${game.kifu.length}手で終局` : `${game.ply}手目`;

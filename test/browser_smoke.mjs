@@ -123,10 +123,19 @@ try {
   const dests = await evalUntil(page, 'document.querySelectorAll("sq.dest").length', v => v > 0, 30000);
   check('駒台の駒を選ぶ前に打てるマスが出る前段階（盤が描かれている）',
     await evaluate(page, 'document.querySelectorAll("sg-squares sq").length') === 81, '81マス');
+  // 駒台は shogiground が .sg-wrap の直下に作る（board.js の hands.inlined）。
+  // HTML側の器は無くなったので、hand-bottom クラスで引く。
   check('持ち駒が8種並んでいる',
-    await evaluate(page, 'document.querySelectorAll("#hand-bottom sg-hp-wrap").length') === 8);
+    await evaluate(page, 'document.querySelectorAll("sg-hand-wrap.hand-bottom sg-hp-wrap").length') === 8);
   check('玉が持ち駒にある（布石では玉も打つ）',
-    await evaluate(page, 'document.querySelectorAll("#hand-bottom piece.king").length') === 1);
+    await evaluate(page, 'document.querySelectorAll("sg-hand-wrap.hand-bottom piece.king").length') === 1);
+  check('駒台が盤と同じ .sg-wrap の中にある（gridで盤の左右へ回すため）',
+    await evaluate(page, 'document.querySelectorAll(".sg-wrap > sg-hand-wrap").length') === 2);
+  check('対局前から盤が出ている', await evaluate(page, `(() => {
+    const sq = document.querySelectorAll('sg-squares sq').length;
+    const hp = document.querySelectorAll('sg-hp-wrap').length;
+    return sq === 81 && hp === 16;
+  })()`), '起動直後に空の盤と満杯の駒台が描かれる');
 
   // 人間の1手目を打ってAIに応じさせる
   // 成りダイアログは開くまでDOMに中身が無いので、器の配置だけ先に見る。
@@ -147,9 +156,9 @@ try {
   })()`));
 
   // 盤の反転。set({orientation}) では再ラップされず、マスのキーと駒台の色が古いまま残る。
-  const senteBefore = await evaluate(page, 'document.querySelectorAll("#hand-bottom piece.sente").length');
+  const senteBefore = await evaluate(page, 'document.querySelectorAll("sg-hand-wrap.hand-bottom piece.sente").length');
   await evaluate(page, 'document.getElementById("btn-flip").click()');
-  const goteAfter = await evaluate(page, 'document.querySelectorAll("#hand-bottom piece.gote").length');
+  const goteAfter = await evaluate(page, 'document.querySelectorAll("sg-hand-wrap.hand-bottom piece.gote").length');
   check('盤を反転すると手前の駒台が入れ替わる', senteBefore === 8 && goteAfter === 8, `前=${senteBefore} 後=${goteAfter}`);
   await evaluate(page, 'document.getElementById("btn-flip").click()');
 
@@ -161,7 +170,7 @@ try {
 
   // shogiground は合成イベントを弾く（drag.unwantedEvent が isTrusted を見る）。
   // 本物の入力として届くよう Input.dispatchMouseEvent を使う。
-  await click(page, await center(page, '#hand-bottom piece.pawn'));
+  await click(page, await center(page, 'sg-hand-wrap.hand-bottom piece.pawn'));
   const shown = await evalUntil(page, 'document.querySelectorAll("sq.dest").length', v => v > 0, 10000);
   check('駒台の歩を選ぶと打てるマスが光る', shown > 0, `${shown}マス`);
 
@@ -307,7 +316,7 @@ function elementAt(page, { x, y }) {
  * マスが光る駒が見つかるまで順に試す。
  */
 async function dropAnyPiece(page) {
-  const sel = '#hand-bottom sg-hp-wrap:not([data-nb="0"]) piece';
+  const sel = 'sg-hand-wrap.hand-bottom sg-hp-wrap:not([data-nb="0"]) piece';
   const total = await evaluate(page, `document.querySelectorAll(${JSON.stringify(sel)}).length`);
   for (let i = 0; i < total; i++) {
     const at = await centerOfNth(page, sel, i);
@@ -327,7 +336,7 @@ async function dropAnyPiece(page) {
 
 /** 手前の駒台の残数。落ちたときにどの駒で詰まったのかを見るために出す。 */
 function handText(page) {
-  return evaluate(page, `[...document.querySelectorAll('#hand-bottom sg-hp-wrap')]
+  return evaluate(page, `[...document.querySelectorAll('sg-hand-wrap.hand-bottom sg-hp-wrap')]
     .map(w => w.dataset.nb + '×' + (w.querySelector('piece')?.className ?? '?')).join(' ')`);
 }
 

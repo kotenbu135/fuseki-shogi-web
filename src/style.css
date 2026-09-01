@@ -81,10 +81,39 @@ body {
 
 /* ---- 盤まわり ---- */
 
-.board-column { display: flex; flex-direction: column; gap: .5rem; }
-.board-wrap { padding: 0 1.6em 0 .3em; }   /* 右の段数表示のぶんを空ける */
+.board-column { display: flex; flex-direction: column; }
 
-.sg-wrap { position: relative; display: block; width: 100%; }
+/* 盤と駒台の配置。lishogi と同じで、狭いときは盤の上下、広いときは盤の左右に
+   駒台を置く（ui/common/css/component/_board.scss）。
+   .sg-wrap の直下が sg-hand-wrap / sg-board / sg-hand-wrap の順に並ぶのは
+   shogiground の hands.inlined が作る構造。
+   行・列を auto と fr で割ってあるので高さの計算は要らない。盤は
+   aspect-ratio で自分の幅から高さを決め、駒台の1コマは常にマス1つ分になる。 */
+.sg-wrap {
+  position: relative;
+  display: grid;
+  width: 100%;
+  gap: .6rem;
+  grid-template-areas: 'sg-hand-top' 'sg-board' 'sg-hand-bottom';
+}
+sg-board { grid-area: sg-board; }
+sg-hand-wrap.hand-top { grid-area: sg-hand-top; }
+sg-hand-wrap.hand-bottom { grid-area: sg-hand-bottom; justify-self: end; }
+
+@media (min-width: 56rem) {
+  .sg-wrap {
+    /* 9マスの盤に対して駒台を左右1マスずつ。列がマス1つ分になるので、
+       駒台の駒と盤の駒が同じ大きさになる。 */
+    grid-template-columns: 1fr 9fr 1fr;
+    grid-template-areas: 'sg-hand-top sg-board sg-hand-bottom';
+    gap: 2vmin;
+  }
+  /* 駒台は盤の端に揃える。後手は上、先手は下。
+     align-self を指定しないと stretch で列いっぱいに伸び、
+     column-reverse が中身を下へ寄せるので後手の駒台だけ1コマ下がる。 */
+  sg-hand-wrap.hand-top { align-self: start; }
+  sg-hand-wrap.hand-bottom { align-self: end; }
+}
 
 sg-board {
   position: relative;
@@ -281,59 +310,87 @@ sg-board > piece.dragging.touch { top: -50px; }
 
 /* ---- 座標 ---- */
 
+/* 座標は盤の内側に置く。lishogi と同じ（ui/common/css/shogiground/_coords.scss）。
+   盤の外へ負のオフセットで出すと、上下に駒台が来たときに重なる。
+   実際そうなっていて、筋の数字が後手の駒台に潜り込んでいた。 */
 sg-board > coords {
   position: absolute;
   display: flex;
-  color: var(--ink-soft);
+  z-index: 1;
+  color: #fff;
   font-size: .8em;
+  font-weight: 700;
   line-height: 1;
+  text-shadow: 0 1px 2px #0009;
   pointer-events: none;
   user-select: none;
 }
-coords.files { top: -1.5em; left: 0; width: 100%; flex-direction: row; }
+coords.files { top: .15em; left: 0; width: 100%; height: 1.4em; flex-direction: row; }
 coords.files.gote { flex-direction: row-reverse; }
-coords.ranks { top: 0; right: -1.3em; height: 100%; flex-direction: column-reverse; }
+coords.ranks { top: 0; right: .15em; width: 1.1em; height: 100%; flex-direction: column-reverse; }
 coords.ranks.gote { flex-direction: column; }
 coords.files coord { flex: 1; text-align: center; }
 coords.ranks coord { flex: 1; display: flex; align-items: center; justify-content: center; }
 
 /* ---- 持ち駒 ---- */
 
-.hand-row { min-height: 3.2rem; }
-sg-hand-wrap { display: block; }
+/* 布石は玉を含めて8種。shogiground が駒種の数だけ r-8 のようなクラスを付けるので
+   （wrap.ts の roleCntCls）、そこに寸法を掛ける。lishogi が定義しているのは
+   r-5/r-4/r-3/r-0 だけなので、8種ぶんはこちらで書く。 */
+sg-hand-wrap {
+  display: block;
+  font-size: clamp(9px, 2.2vw, 15px);   /* 個数バッジの基準。盤と揃える */
+}
+sg-hand-wrap.r-8 { width: calc(100% / 9 * 8); }
+
 sg-hand {
   display: flex;
-  gap: .4rem;
-  padding: .4rem .5rem;
-  background: var(--paper-raised);
-  border: 1px solid var(--rule);
-  border-radius: 4px;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
 }
-/* 駒台は指す人から見て右に置く。盤を反転しても位置で決まるので色では分けない。 */
-.hand-bottom sg-hand { justify-content: flex-end; }
+/* 後手側は並びを鏡にする。駒が180度回っているので、これで後手から見た並びが
+   先手と同じになる（盤の左右に立てたときの column-reverse と同じ理屈）。 */
+sg-hand-wrap.hand-top sg-hand { flex-direction: row-reverse; }
 
+/* flex-grow を効かせてはいけない。駒台を縦に立てたときに8個で高さを割りにいって、
+   aspect-ratio が潰れて駒が縦長になる。大きさはマス1つ分に固定する。 */
 sg-hp-wrap {
   position: relative;
-  width: 2.1rem;
-  aspect-ratio: 5 / 6;
-  font-size: 1.05rem;
+  flex: 0 0 12.5%;    /* 8種で駒台の幅ちょうど */
+  aspect-ratio: 1;
 }
 sg-hand piece { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* 広いときは盤の左右に立てる。列がマス1つ分の幅なので、駒はそのまま盤と同じ大きさ。 */
+@media (min-width: 56rem) {
+  sg-hand-wrap.r-8 { width: 100%; }
+  sg-hand { flex-direction: column; }
+  sg-hp-wrap { flex: 0 0 auto; width: 100%; }
+  /* 後手の駒台は上下を返す。駒自体が180度回っているので、これで
+     後手から見た並びが先手と同じ（玉が手前、歩が奥）になる。 */
+  sg-hand-wrap.hand-top sg-hand { flex-direction: column-reverse; }
+}
+
 sg-hp-wrap::after {
   content: attr(data-nb);
   position: absolute;
-  right: -.15rem;
-  bottom: -.3rem;
-  min-width: 1.05em;
-  padding: 0 .18em;
-  background: var(--ink);
-  color: var(--paper);
-  border-radius: .6em;
-  font-size: .68rem;
-  font-weight: 600;
-  line-height: 1.4;
+  right: 0;
+  bottom: 0;
+  min-width: 1.15em;
+  padding: 0 .15em;
+  background: var(--paper-raised);
+  color: var(--ink);
+  border: 1px solid var(--ink-soft);
+  border-radius: .3em;
+  font-size: .8em;
+  font-weight: 700;
+  line-height: 1.3;
   text-align: center;
+  z-index: 2;
 }
+/* 後手側はバッジを上に出す。駒が180度回っているので、下だと隣の駒に被る。 */
+sg-hand-wrap.hand-top sg-hp-wrap::after { bottom: auto; top: 0; }
 /* 持っていない駒はほぼ消す。lishogi は .1 まで落とす。 */
 sg-hp-wrap[data-nb="0"] { opacity: .1; }
 sg-hp-wrap[data-nb="0"]::after,
