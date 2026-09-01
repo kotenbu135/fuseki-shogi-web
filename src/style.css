@@ -8,14 +8,19 @@
   --ink: #24201b;
   --ink-soft: #6d6459;
   --rule: #ddd4c2;
-  --board: #e8cd9b;
+  --board: #f9b34e;
   --board-edge: #6f5027;
-  --line: #8a6836;
+  --line: #000;
   --koma: #f4e2ba;
   --koma-edge: #a8834b;
   --accent: #b23a2c;
   --accent-soft: #b23a2c26;
-  --dest: #3c6b4a;
+  /* 盤上の印は lishogi の値をそのまま使う（ui/common/css/theme/_dark.scss）。
+     選択マスと着手可能マスの点を同じ色にしてあるのが要点で、色を分けると散らかる。 */
+  --selected: rgba(20, 85, 30, .5);
+  --selected-hover: rgba(20, 85, 30, .25);
+  --last-dest: rgba(169, 199, 0, .41);
+  --check: rgba(204, 51, 34, .5);
   --sans: system-ui, "Hiragino Sans", "Noto Sans JP", Meiryo, sans-serif;
   --serif: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", "MS Mincho", serif;
 }
@@ -27,14 +32,13 @@
     --ink: #ece7dd;
     --ink-soft: #9b9287;
     --rule: #35323a;
-    --board: #b99764;
+    /* 盤そのものの色は明暗で変えない。lishogiも盤テーマはテーマ非依存で、
+       ここを暗くすると駒の朱字と成駒の判別が落ちる。 */
     --board-edge: #2b2018;
-    --line: #6b4f2a;
     --koma: #e4d0a6;
     --koma-edge: #8c6b3c;
     --accent: #e0705f;
     --accent-soft: #e0705f2e;
-    --dest: #6fae86;
   }
 }
 
@@ -87,7 +91,18 @@ sg-board {
   display: block;
   width: 100%;
   aspect-ratio: 1;
-  background: var(--board);
+  /* 木目。lishogi の既定盤 wood.png は「縦方向に完全一様で、横方向にだけ
+     約200本の帯が入った画像」なので、周期の違う縞を重ねれば同じものが出る。
+     実測（明度 mean 189.0 / sd 2.84 / コントラスト幅 6.8%）に合わせてある。
+     画像を持たないのは、lishogi の盤画像が AGPLv3+ でこのリポジトリの
+     GPL-3.0-only と混ざるため（THIRD_PARTY.md）。 */
+  background-color: var(--board);
+  background-image:
+    repeating-linear-gradient(90deg, #00000007 0 1px, #0000 1px 4px),
+    repeating-linear-gradient(90deg, #ffffff09 0 1px, #0000 1px 7px),
+    repeating-linear-gradient(90deg, #00000004 0 2px, #0000 2px 11px),
+    repeating-linear-gradient(90deg, #ffffff06 0 3px, #0000 3px 17px),
+    repeating-linear-gradient(90deg, #00000004 0 1px, #0000 1px 23px);
   border: 2px solid var(--board-edge);
   border-radius: 2px;
   box-shadow: 0 1px 0 #0002, 0 8px 24px #0000001f;
@@ -102,38 +117,44 @@ sg-squares {
   grid-template-rows: repeat(9, 1fr);
 }
 
+/* 罫線は lishogi と同じく上と左を sg-squares、下と右を各マスが持つ。 */
+sg-squares { border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+
 sq {
   position: relative;
-  box-shadow: inset -1px -1px 0 0 color-mix(in srgb, var(--line) 55%, transparent);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
-sq:nth-child(9n) { box-shadow: inset 0 -1px 0 0 color-mix(in srgb, var(--line) 55%, transparent); }
-sq:nth-last-child(-n + 9) { box-shadow: inset -1px 0 0 0 color-mix(in srgb, var(--line) 55%, transparent); }
-sq:nth-child(81) { box-shadow: none; }
 
-sq.last-dest { background: var(--accent-soft); }
-sq.check { background: radial-gradient(circle, #d3352788 0%, transparent 72%); }
-sq.selected { background: color-mix(in srgb, var(--accent) 22%, transparent); }
-.manipulable sq.hover { background: #ffffff2e; }
-
-/* 着手可能なマスの印。空きマスは点、駒がいるマス(.oc)は輪。 */
-sq.dest::before,
-sq.dest.oc::before {
+/* 星。3四・6四・3七・6七の交点に置く。マス目の左上角が交点なので、
+   点の直径の半分だけ負のマージンで引き戻す。 */
+sq:nth-child(31)::after,
+sq:nth-child(34)::after,
+sq:nth-child(58)::after,
+sq:nth-child(61)::after {
   content: "";
   position: absolute;
-  inset: 0;
-  margin: auto;
+  top: 0;
+  left: 0;
+  width: 10%;
+  height: 10%;
+  margin: -5%;
+  background: var(--line);
   border-radius: 50%;
 }
-sq.dest::before {
-  width: 30%;
-  height: 30%;
-  background: color-mix(in srgb, var(--dest) 70%, transparent);
-}
-sq.dest.oc::before {
-  width: 84%;
-  height: 84%;
-  background: none;
-  border: .28em solid color-mix(in srgb, var(--dest) 65%, transparent);
+
+sq.last-dest { background-color: var(--last-dest); }
+sq.check { background-color: var(--check); }
+sq.selected { background-color: var(--selected); }
+.manipulable sq.hover { background-color: #ffffff2e; }
+
+/* 着手可能なマスの印。空きマスは点、駒がいるマス(.oc)は輪。
+   どちらも選択マスと同じ色で描く（lishogi の _shogiground.scss と同じ）。 */
+sq.dest { background: radial-gradient(var(--selected) 19%, rgba(0, 0, 0, 0) 20%); }
+sq.dest.oc { background: radial-gradient(transparent 0%, transparent 80%, var(--selected) 80%); }
+sq.dest.hover { background: var(--selected-hover); }
+sq.last-dest.dest.oc:not(.hover) {
+  background: radial-gradient(var(--last-dest) 0%, var(--last-dest) 80%, var(--selected) 80%);
 }
 
 sg-pieces { position: absolute; inset: 0; display: block; }
@@ -144,7 +165,8 @@ sg-board > sg-free-pieces { position: absolute; inset: 0; width: 100%; height: 1
 
 /* 成りの選択ダイアログ。着手先のマスの上に2択（成/不成）を積む。
    ここも絶対配置にしないと、開いた瞬間に盤の高さが崩れる。 */
-sg-board > sg-promotion { position: absolute; inset: 0; z-index: 4; }
+/* 開いている間は盤を暗く落とす。lishogi と同じで、どのマスの話かを見失わせない。 */
+sg-board > sg-promotion { position: absolute; inset: 0; z-index: 4; background-color: #0000003f; }
 sg-promotion-square {
   position: absolute;
   top: 0;
@@ -168,12 +190,17 @@ sg-promotion-choices {
 sg-promotion-choices.reversed { top: auto; bottom: 0; flex-direction: column-reverse; }
 sg-promotion-choices piece { position: relative; width: 100%; aspect-ratio: 1; }
 
+/* 掴んだ駒が今どのマスの上にいるか。lishogi は黒い円で、駒の下から覗く。 */
 sg-square-over {
   position: absolute;
   top: 0; left: 0;
+  box-sizing: content-box;
   width: calc(100% / 9);
   height: calc(100% / 9);
-  background: #ffffff40;
+  padding: 6%;
+  margin: -6%;
+  background: #00000050;
+  border-radius: 50%;
   pointer-events: none;
 }
 
@@ -243,10 +270,14 @@ sg-board > piece {
   height: calc(100% / 9);
   will-change: transform;
 }
-sg-pieces piece.anim { transition: transform .18s; }
-sg-pieces piece.fading { opacity: .4; transition: opacity .18s; }
+sg-pieces piece.anim { transition: transform .25s; }
+sg-pieces piece.fading { opacity: .5; transition: opacity .25s; }
 piece.ghost { opacity: .3; }
 sg-board > piece.dragging { cursor: grabbing; z-index: 3; filter: drop-shadow(0 4px 6px #0006); }
+/* 指で掴んだときは駒を指の上へ逃がす。これが無いと駒が指の下に隠れて、
+   どこへ置こうとしているのかが見えない。shogiground が .touch を付けてくれる
+   （node_modules/shogiground/src/drag.ts）。 */
+sg-board > piece.dragging.touch { top: -50px; }
 
 /* ---- 座標 ---- */
 
@@ -303,11 +334,18 @@ sg-hp-wrap::after {
   line-height: 1.4;
   text-align: center;
 }
-sg-hp-wrap[data-nb="0"] { opacity: .22; }
+/* 持っていない駒はほぼ消す。lishogi は .1 まで落とす。 */
+sg-hp-wrap[data-nb="0"] { opacity: .1; }
 sg-hp-wrap[data-nb="0"]::after,
 sg-hp-wrap[data-nb="1"]::after { display: none; }
-sg-hp-wrap.selected piece { outline: 2px solid var(--accent); outline-offset: 1px; }
-sg-hp-wrap.last-dest piece { box-shadow: 0 0 0 2px var(--accent-soft); }
+/* 選んだ駒は盤のマスと同じ色で背面を塗る。盤上の selected と揃うので、
+   「今この駒を持っている」が駒台と盤で同じ意味に見える。 */
+sg-hp-wrap.selected {
+  opacity: 1;
+  background-color: var(--selected);
+  border-radius: 3px;
+}
+sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 
 /* ---- 右のパネル ---- */
 
