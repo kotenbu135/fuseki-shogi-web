@@ -320,6 +320,11 @@ sg-board > piece {
 }
 sg-pieces piece.anim { transition: transform .25s; }
 sg-pieces piece.fading { opacity: .5; transition: opacity .25s; }
+/* 動きを減らす設定では駒を滑らせない。着手の結果は残るので情報は落ちない。 */
+@media (prefers-reduced-motion: reduce) {
+  sg-pieces piece.anim,
+  sg-pieces piece.fading { transition: none; }
+}
 piece.ghost { opacity: .3; }
 sg-board > piece.dragging { cursor: grabbing; z-index: 3; filter: drop-shadow(0 4px 6px #0006); }
 /* 指で掴んだときは駒を指の上へ逃がす。これが無いと駒が指の下に隠れて、
@@ -353,8 +358,10 @@ coords.ranks.gote { flex-direction: column; }
 coords.files coord { flex: 1; text-align: center; }
 coords.ranks coord { flex: 1; display: flex; align-items: center; justify-content: center; }
 
-/* 狭いとき: 盤の外に出す余地が無いので内側。白抜きに影で駒と分ける。 */
-sg-board > coords { color: #fff; text-shadow: 0 1px 2px #0009; }
+/* 狭いとき: 盤の外に出す余地が無いので内側。
+   白抜きにすると盤（#f9b34e）に対して1.81:1、駒地に対して1.18:1しかなく
+   ほとんど読めない。濃い色に明るい縁を付けると、盤で7.6:1、駒地で11.7:1になる。 */
+sg-board > coords { color: #3a2a12; text-shadow: 0 0 2px #f7ecc9, 0 0 3px #f7ecc9; }
 coords.files { top: .15em; height: 1.4em; }
 coords.ranks { right: .15em; width: 1.1em; }
 
