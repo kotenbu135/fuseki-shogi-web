@@ -7,6 +7,7 @@ import { FusekiPolicy } from './policy.js';
 import { NormalEngine, loadYaneuraOuFactory } from './normal.js';
 import { Game, SENTE, GOTE } from './game.js';
 import { createBoard, showIdleBoard, syncBoard } from './board.js';
+import { Sound, VOICES } from './sound.js';
 
 const ASSETS = {
   fuseki: new URL('./vendor/fuseki/fuseki.mjs', import.meta.url).href,
@@ -31,9 +32,21 @@ const ui = {
   statusLine: el('status-line'), statusSub: el('status-sub'),
   ply: el('readout-ply'), phase: el('readout-phase'), evaluation: el('readout-eval'),
   kifu: el('kifu'),
-  color: el('opt-color'), movetime: el('opt-movetime'),
+  color: el('opt-color'), movetime: el('opt-movetime'), volume: el('opt-volume'),
   newGame: el('btn-new'), resign: el('btn-resign'), flip: el('btn-flip'),
 };
+
+const sound = new Sound();
+// 音は合成なので、鳴っているかを外から数値で確かめられるようにしておく。
+// test/browser_smoke.mjs が OfflineAudioContext に差し替えて振幅を見る。
+globalThis.__VOICES = VOICES;
+ui.volume.value = String(Math.round(sound.volume * 100));
+ui.volume.addEventListener('input', () => {
+  sound.setVolume(Number(ui.volume.value) / 100);
+  sound.unlock();          // スライダーを動かすのも利用者の操作なので、ここで起こしてよい
+});
+let soundedKifu = 0;       // 音を鳴らし終えた手数
+let soundedOver = false;
 
 let engines = null;   // { fuseki, policy, engine }
 let game = null;
@@ -86,7 +99,11 @@ async function boot() {
   }
 }
 
-ui.newGame.addEventListener('click', () => startGame());
+ui.newGame.addEventListener('click', () => {
+  // AudioContext は利用者の操作の中でしか起こせない。対局開始のクリックが最初の機会。
+  sound.unlock();
+  startGame();
+});
 ui.resign.addEventListener('click', () => {
   if (!game || game.phase === 'over') return;
   game.resign();
@@ -113,6 +130,8 @@ function startGame() {
   const humanColor = ui.color.value === GOTE ? GOTE : SENTE;
   orientation = humanColor;
   game = new Game({ ...engines, humanColor, movetimeMs: Number(ui.movetime.value) });
+  soundedKifu = 0;
+  soundedOver = false;
 
   ensureBoard();
   ui.resign.disabled = false;
@@ -192,6 +211,7 @@ function render() {
     : game.phase === 'normal' ? '通常' : '終局';
   ui.evaluation.textContent = formatEval(game.lastEval);
   renderKifu();
+  playMoveSounds();
 
   if (game.phase === 'over') {
     const { winner, reason } = game.result;
@@ -203,6 +223,22 @@ function render() {
     setStatus(game.phase === 'fuseki' ? 'あなたの番。駒台から駒を打つ。' : 'あなたの番。');
   } else {
     setStatus('AIが考えている…', game.phase === 'fuseki' ? '布石方策（探索なし）' : 'やねうら王');
+  }
+}
+
+/** 棋譜が伸びたぶんだけ音を鳴らす。render()は何度も呼ばれるので、
+ *  鳴らした位置を覚えておかないと同じ手で何度も鳴る。 */
+function playMoveSounds() {
+  if (game.kifu.length > soundedKifu) {
+    const last = game.kifu[game.kifu.length - 1];
+    // 王手は駒音を含んだ別の音にする（lishogiも王手だけ差し替えている）。
+    sound.play(game.checks() ? 'check' : last.capture ? 'capture' : 'move');
+    soundedKifu = game.kifu.length;
+  }
+  if (game.phase === 'over' && !soundedOver) {
+    soundedOver = true;
+    const { winner } = game.result;
+    sound.play(winner === null ? 'draw' : winner === game.humanColor ? 'win' : 'lose');
   }
 }
 

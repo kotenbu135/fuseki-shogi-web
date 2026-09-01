@@ -251,8 +251,13 @@ export class Game {
     // 棋譜の文字列は指す前の局面でないと作れない（どの駒が動いたかの区別が要る）。
     const color = this.position.turn;
     const text = makeJapaneseMoveOrDrop(this.position, md, this._lastDestSquare);
+    // 駒を取ったかは指す前にしか分からない。音を出し分けるのに使う。
+    const capture = this.position.board.get(md.to) !== undefined;
     this.position.play(md);
-    this.kifu.push({ ply: 40 + this.normalMoves.length + 1, color, usi, text: `${MARK[color]}${text ?? usi}` });
+    this.kifu.push({
+      ply: 40 + this.normalMoves.length + 1, color, usi, capture,
+      text: `${MARK[color]}${text ?? usi}`,
+    });
     this.normalMoves.push(usi);
     this._lastDestSquare = md.to;
     this.lastDests = 'from' in md

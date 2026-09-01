@@ -449,6 +449,14 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   font: inherit;
   font-size: .875rem;
 }
+.controls input[type="range"] {
+  width: 100%;
+  height: 1.1rem;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .buttons { display: flex; flex-wrap: wrap; gap: .5rem; }
 .buttons button {
   flex: 1 1 auto;
@@ -464,7 +472,7 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .buttons button:hover:not(:disabled) { border-color: var(--ink-soft); }
 .buttons button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .buttons button:disabled { opacity: .45; cursor: not-allowed; }
-:where(button, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:where(button, select, input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .app-footer {
   margin-top: 2.5rem;

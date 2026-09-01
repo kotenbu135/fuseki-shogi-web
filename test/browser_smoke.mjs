@@ -149,6 +149,30 @@ try {
     });
   })()`) === true, '駒画像が image/svg+xml で配られているか');
 
+  // 音は合成なので、鳴らないまま気づかない事故が起きやすい。
+  // OfflineAudioContext で書き出して、無音でないことを数値で見る。
+  const sound = await evaluate(page, `(async () => {
+    const mod = await import('./app.js').catch(() => null);
+    const VOICES = window.__VOICES;
+    if (!VOICES) return 'VOICES が公開されていない';
+    const out = {};
+    for (const name of Object.keys(VOICES)) {
+      const ctx = new OfflineAudioContext(1, 44100 * 1.5, 44100);
+      VOICES[name](ctx, 0);
+      const buf = await ctx.startRendering();
+      const d = buf.getChannelData(0);
+      let peak = 0, sum = 0;
+      for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > peak) peak = a; sum += d[i] * d[i]; }
+      out[name] = { peak: +peak.toFixed(3), rms: +Math.sqrt(sum / d.length).toFixed(4) };
+    }
+    return out;
+  })()`);
+  check('6種類の音がすべて無音でない',
+    typeof sound === 'object' && Object.keys(sound).length === 6
+      && Object.values(sound).every(v => v.peak > 0.02 && v.rms > 0.001),
+    typeof sound === 'string' ? sound
+      : Object.entries(sound).map(([k, v]) => `${k} peak=${v.peak}`).join(' / '));
+
   check('対局前から盤が出ている', await evaluate(page, `(() => {
     const sq = document.querySelectorAll('sg-squares sq').length;
     const hp = document.querySelectorAll('sg-hp-wrap').length;
