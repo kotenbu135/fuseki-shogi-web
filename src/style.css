@@ -308,7 +308,9 @@ sg-board > coords {
   display: flex;
   z-index: 1;
   color: #fff;
-  font-size: .8em;
+  /* lishogi は 7px〜11px の可変。盤の font-size に対する相対だと狭い画面で
+     潰れて読めなくなるので、ここだけ実寸で下限を持たせる。 */
+  font-size: clamp(8px, 1.5vw, 11px);
   font-weight: 700;
   line-height: 1;
   text-shadow: 0 1px 2px #0009;
