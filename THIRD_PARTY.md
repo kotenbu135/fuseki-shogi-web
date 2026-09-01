@@ -17,6 +17,7 @@
 | [@mizarjp/yaneuraou.k-p](https://www.npmjs.com/package/@mizarjp/yaneuraou.k-p) | `vendor/yaneuraou/` | GPL-3.0 |
 | cppshogi のWASM化（`wasm/`） | `vendor/fuseki/` | GPL v3 |
 | 対局画面（`src/`） | `app.js`, `index.html`, `style.css` | GPL-3.0-only |
+| 駒の画像 kanji_light（下記） | `pieces/*.svg` | CC BY 4.0 |
 | 布石方策の重み（下記） | `models/fuseki_degct_b3_iter4.onnx` | 本リポジトリの著作物 |
 
 `app.js` にバンドルした分の著作権表示は `app.js.LEGAL.txt` に出している
@@ -38,6 +39,27 @@ GPL v3 は、配ったバイナリに対応するソースを受け取った人�
 `wasm/dist/*` はビルド成果物だがコミットしている。Cloudflare Pages のビルド環境に
 Emscripten が無く、CI側で `wasm/build.sh` を回せないため。成果物とソースが食い違って
 いないことは上記のコミットIDとハッシュで確かめられる。
+
+### 駒の画像
+
+`pieces/*.svg`（30枚）は lishogi の駒セット **kanji_light** をそのまま使っている。
+
+- 作者: [Ka-hu](https://github.com/Ka-hu)
+- ライセンス: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+- 出所: <https://github.com/WandererXII/lishogi> の
+  `ui/@build/pieces/assets/standard/kanji_light`（同リポジトリの `COPYING.md`）
+
+CC BY 4.0 は表示のみを求めるので、GPL-3.0-only の配布物に同梱できる。この節が
+その表示にあたる。ファイル名の `0`/`1` は先手/後手で、後手の駒は**回転済みの
+別ファイル**として入っている。CSSで回してはいけない（`src/style.css` の注記を参照）。
+
+**盤の画像は取り込んでいない。** lishogi の `images/boards` は駒セットと違って
+AGPLv3+ で、GPL-3.0-only の配布物に混ぜると配布物全体に AGPL 13条のネットワーク
+経由のソース提供義務が乗る。既定盤 `wood.png` を調べたところ、1100x1200のうち
+縦方向は全ピクセル同一で、横方向にだけ約200本の帯が入っているだけだった
+（明度 mean 189.0 / sd 2.84 / コントラスト幅 6.8%）。つまり1次元のグラデーションを
+引き伸ばした画像なので、`style.css` の `repeating-linear-gradient` で同等のものを
+描いている（実測 sd 2.84 に対して 2.84）。
 
 ### 布石方策の重み
 

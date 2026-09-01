@@ -59,6 +59,8 @@ const TYPES = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.wasm': 'application/wasm', '.onnx': 'application/octet-stream',
+  // 駒の画像。octet-stream で配るとブラウザがSVGとしてデコードせず、駒が消える。
+  '.svg': 'image/svg+xml',
 };
 const server = http.createServer((req, res) => {
   const rel = decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/^\/+/, '') || 'index.html';
@@ -131,6 +133,22 @@ try {
     await evaluate(page, 'document.querySelectorAll("sg-hand-wrap.hand-bottom piece.king").length') === 1);
   check('駒台が盤と同じ .sg-wrap の中にある（gridで盤の左右へ回すため）',
     await evaluate(page, 'document.querySelectorAll(".sg-wrap > sg-hand-wrap").length') === 2);
+  // 駒はCSSの背景画像。URLが通っていても Content-Type が image/svg+xml でないと
+  // ブラウザがデコードせず、要素は在るのに何も描かれない（盤が空に見える）。
+  // 見た目だけの失敗はDOMの数え上げをすり抜けるので、実際に読ませて確かめる。
+  check('駒の画像がデコードできる', await evaluate(page, `(async () => {
+    const piece = document.querySelector('sg-hand piece');
+    if (!piece) return 'sg-hand piece が無い';
+    const url = getComputedStyle(piece).backgroundImage.match(/url\\("?([^")]+)"?\\)/)?.[1];
+    if (!url) return '背景画像が設定されていない';
+    return await new Promise(r => {
+      const img = new Image();
+      img.onload = () => r(img.naturalWidth > 0);
+      img.onerror = () => r('デコードできない: ' + url);
+      img.src = url;
+    });
+  })()`) === true, '駒画像が image/svg+xml で配られているか');
+
   check('対局前から盤が出ている', await evaluate(page, `(() => {
     const sq = document.querySelectorAll('sg-squares sq').length;
     const hp = document.querySelectorAll('sg-hp-wrap').length;

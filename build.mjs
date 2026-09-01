@@ -40,6 +40,18 @@ fs.mkdirSync(OUT, { recursive: true });
 copy(path.join(HERE, 'src', 'style.css'), OUT);
 copy(path.join(HERE, '_headers'), OUT);
 
+// 駒の画像（CC BY 4.0 / Ka-hu。THIRD_PARTY.md を参照）。
+// style.css が pieces/<ファイル名> の相対で引くので、dist直下に同じ名前で置く。
+{
+  const from = path.join(HERE, 'src', 'pieces', 'kanji_light');
+  const files = fs.existsSync(from) ? fs.readdirSync(from).filter(f => f.endsWith('.svg')) : [];
+  if (files.length !== 30) {
+    console.error(`src/pieces/kanji_light の駒画像が30個ない（${files.length}個）。`);
+    process.exit(1);
+  }
+  for (const f of files) copy(path.join(from, f), path.join(OUT, 'pieces'));
+}
+
 // 布石フェーズのWASM（wasm/build.sh の成果物）
 const fusekiOk = ['fuseki.mjs', 'fuseki.wasm']
   .map(f => copy(path.join(HERE, 'wasm/dist', f), path.join(OUT, 'vendor/fuseki')))

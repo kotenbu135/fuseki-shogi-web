@@ -23,6 +23,8 @@ const TYPES = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.wasm': 'application/wasm', '.onnx': 'application/octet-stream',
+  // 駒の画像。octet-stream で配るとブラウザがSVGとしてデコードせず、駒が消える。
+  '.svg': 'image/svg+xml',
   '.json': 'application/json', '.map': 'application/json',
 };
 
