@@ -135,9 +135,19 @@ export class Fuseki {
     };
   }
 
-  /** 指し手 (pt, sq) が方策出力2268次元のどこに載るか。 */
+  /** 指し手 (pt, sq) が方策出力2268次元のどこに載るか（resnet10_swish系）。 */
   moveLabel(pt, sq, color) {
     return this.M.ccall('fw_move_label', 'number', ['number', 'number', 'number'], [pt, sq, color]);
+  }
+
+  /**
+   * 指し手 (pt, sq) が方策出力648次元のどこに載るか（布石専用ネット fuseki6x64系）。
+   * moveLabel から 81×(28−8)=1620 を引いた値だが、引き算はC++側
+   * (make_fuseki_compact_label) に閉じてある。どちらのラベル空間を使うかは
+   * FusekiPolicy がモデルの出力次元から自動判定する（旗を足さない）。
+   */
+  compactLabel(pt, sq, color) {
+    return this.M.ccall('fw_compact_label', 'number', ['number', 'number', 'number'], [pt, sq, color]);
   }
 }
 

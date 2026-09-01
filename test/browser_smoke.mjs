@@ -4,7 +4,7 @@
 // （COOP/COEPとSharedArrayBuffer、vendor/以下のアセット解決、shogigroundの描画）は
 // 素通りしてしまう。ここはその差分だけを見るためのもの。
 //
-//   node build.mjs && node test/browser_smoke.mjs
+//   node build.mjs && node test/browser_smoke.mjs [dist ディレクトリ]
 //
 // Chrome を --headless で起こして CDP で叩く（Node 26 の組み込み WebSocket を使うので
 // 追加の依存は要らない）。CHROME 環境変数で実行ファイルを差し替えられる。
@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
-const DIST = path.join(ROOT, 'dist');
+const DIST = process.argv[2] ? path.resolve(process.argv[2]) : path.join(ROOT, 'dist');
 const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
 const PORT = 8099;
 
@@ -149,6 +149,11 @@ try {
     await evaluate(page, '[...document.querySelectorAll("#kifu li .m")].map(e => e.textContent).join(" ")'));
 
   const errors = logs.filter(l => l.startsWith('EXCEPTION'));
+  // 評価の表示。布石専用ネットは価値ヘッドを持たないので勝率が出せず、
+  // undefined を素通しすると "NaN%" と出る（落ちないので気付けない）。
+  const evalText = await evaluate(page, 'document.getElementById("readout-eval").textContent');
+  check('評価の表示がNaNでない', !/NaN|undefined/.test(evalText), evalText);
+
   check('未処理の例外が無い', errors.length === 0, errors.join(' / '));
 } finally {
   cdp.close();

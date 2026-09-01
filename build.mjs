@@ -60,12 +60,18 @@ copy(path.join(ORT, 'ort-wasm-simd-threaded.wasm'), path.join(OUT, 'vendor/ort')
 // 無いため（models/README.md）、**既定ではdistに入れない**。
 //   node build.mjs --with-model   ローカル確認用。dist-local/ に出る。配ってはいけない
 //   node build.mjs                デプロイ用。dist/ に出る
-const MODEL = 'fuseki_rollout_iter38.onnx';
+// --model <パス> で差し替えられる。布石専用ネット（648出力・価値ヘッド無し）の
+// 動作確認や、学習中の途中経過を当てるときに使う。dist側のファイル名は
+// esbuildのdefineでmain.jsへ渡すので、モデル名の定義はここ1箇所で済む。
+const modelArg = process.argv[process.argv.indexOf('--model') + 1];
+const MODEL_SRC = process.argv.includes('--model')
+  ? path.resolve(modelArg) : path.join(HERE, 'models', 'fuseki_rollout_iter38.onnx');
+const MODEL = path.basename(MODEL_SRC);
 let hasModel = false;
 if (withModel) {
-  hasModel = copy(path.join(HERE, 'models', MODEL), path.join(OUT, 'models'));
+  hasModel = copy(MODEL_SRC, path.join(OUT, 'models'));
   if (hasModel) console.warn(`--with-model: ${path.basename(OUT)}/models/${MODEL} を含めた。この出力は配布しないこと`);
-  else console.warn(`警告: models/${MODEL} が無いので含めていない`);
+  else console.warn(`警告: ${MODEL_SRC} が無いので含めていない`);
 } else {
   console.log('重みは含めていない（配布用）。手元で対局するなら --with-model を付ける');
 }
@@ -115,6 +121,9 @@ const options = {
   outfile: path.join(OUT, 'app.js'),
   sourcemap: true,
   legalComments: 'linked', // GPLの著作権表示をdist側にも残す
+  // モデルのファイル名をmain.jsへ渡す。main.js側に名前を書くと定義が2箇所になり、
+  // --model で差し替えたときに片方だけが古い名前を指す。
+  define: { __MODEL_FILE__: JSON.stringify(MODEL) },
   logLevel: 'info',
 };
 

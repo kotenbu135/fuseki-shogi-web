@@ -5,8 +5,11 @@
 // **その特徴量を食わせたNNが本家と同じlogitを返すか**は誰も見ていない。ここがズレると
 // AIは落ちずに弱くなるだけなので、UIのバグと区別できない。
 //
-//   node test/policy_probe.mjs policy_probe.json [手数]
+//   node test/policy_probe.mjs policy_probe.json [局面数] [モデル.onnx]
 //   python3 test/policy_parity.py policy_probe.json models/fuseki_rollout_iter38.onnx
+//
+// モデルは第3引数で差し替えられる（布石専用ネットの検証や、開発リポジトリ側に置いた
+// 途中経過のONNXを当てるため）。省略すると従来どおり models/fuseki_rollout_iter38.onnx。
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -17,7 +20,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
 const OUT = process.argv[2] || path.join(ROOT, 'policy_probe.json');
 const SAMPLES = Number(process.argv[3] || 8);
-const MODEL = path.join(ROOT, 'models/fuseki_rollout_iter38.onnx');
+const MODEL = process.argv[4] || path.join(ROOT, 'models/fuseki_rollout_iter38.onnx');
 
 const fuseki = await Fuseki.load(pathToFileURL(path.join(ROOT, 'wasm/dist/fuseki.mjs')).href);
 const policy = await FusekiPolicy.load({ model: new Uint8Array(fs.readFileSync(MODEL)) });
@@ -43,14 +46,20 @@ for (let ply = 0; ply < 40; ply++) {
       ply, turn: color,
       input1: [...input1], input2: [...input2],
       logits: [...logits], value,
-      legal: legal.map(d => ({ usi: d.usi, label: fuseki.moveLabel(d.pt, d.sq, color) })),
+      // ラベル空間はモデルの出力次元で決まる（policy.js が判定した結果を使う）。
+      // ここで moveLabel を決め打つと、布石専用ネットのときだけ 2268空間の
+      // 添字で 648次元の配列を引いて、静かに undefined になる。
+      legal: legal.map(d => ({ usi: d.usi, label: fuseki[policy.labelFn](d.pt, d.sq, color) })),
     });
   }
   const picked = await policy.pick(fuseki, { rng });
   fuseki.drop(picked.move);
 }
 
-fs.writeFileSync(OUT, JSON.stringify({ model: path.basename(MODEL), samples }));
+fs.writeFileSync(OUT, JSON.stringify({
+  model: path.basename(MODEL), labelFn: policy.labelFn, hasValue: policy.hasValue, samples,
+}));
 const bytes = fs.statSync(OUT).size;
 console.log(`${samples.length}局面を ${OUT} に書き出した (${(bytes / 1024 / 1024).toFixed(1)}MB)`);
-console.log(`照合: python3 test/policy_parity.py ${OUT} models/${path.basename(MODEL)}`);
+console.log(`方策の出力: ${policy.labelFn} / 価値ヘッド: ${policy.hasValue ? 'あり' : '無し'}`);
+console.log(`照合: python3 test/policy_parity.py ${OUT} ${MODEL}`);

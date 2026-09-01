@@ -13,7 +13,10 @@ const ASSETS = {
   // onnxruntime-web は bundle 版を使っているのでJSグルーは同梱されている。
   // 差し替えるのは .wasm だけ（文字列で渡すと .mjs も外部から取りにいってしまう）。
   ortWasm: { wasm: new URL('./vendor/ort/ort-wasm-simd-threaded.wasm', import.meta.url).href },
-  model: new URL('./models/fuseki_rollout_iter38.onnx', import.meta.url).href,
+  // ファイル名は build.mjs が define で渡す（--model で差し替えられる）。
+  // esbuildを通さずに素で読み込んだときのために既定値を持たせる。
+  model: new URL(`./models/${typeof __MODEL_FILE__ === 'undefined'
+    ? 'fuseki_rollout_iter38.onnx' : __MODEL_FILE__}`, import.meta.url).href,
   yaneuraou: new URL('./vendor/yaneuraou/yaneuraou.k-p.js', import.meta.url).href,
 };
 
@@ -195,8 +198,15 @@ function renderKifu() {
 
 function formatEval(evaluation) {
   if (!evaluation) return '—';
-  if (evaluation.kind === 'policy')
+  if (evaluation.kind === 'policy') {
+    // 布石専用ネットは価値ヘッドを持たない（採点はやねうら王がやる）ので勝率が出ない。
+    // その場合は方策が採用手に与えた確率を出す。undefinedを%にして "NaN%" と
+    // 表示させないこと。
+    // 布石の合法手は序盤で288手あるので、整数%だと採用手が "0%" になる。小数1桁にする。
+    if (evaluation.winRate == null)
+      return `採用手の確率 ${(evaluation.probability * 100).toFixed(1)}%`;
     return `勝率 ${(evaluation.winRate * 100).toFixed(0)}%（手番側）`;
+  }
   if (evaluation.scoreKind === 'mate') return `${evaluation.score > 0 ? '' : '-'}${Math.abs(evaluation.score)}手詰`;
   if (evaluation.scoreKind === 'cp') return `${evaluation.score > 0 ? '+' : ''}${evaluation.score}（深さ${evaluation.depth ?? '?'}）`;
   return '—';

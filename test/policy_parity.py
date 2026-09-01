@@ -21,6 +21,12 @@ def main(probe_path: str, model_path: str) -> int:
         probe = json.load(f)
 
     sess = onnxruntime.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+    dim = sess.get_outputs()[0].shape[1]
+    print(f"モデル: {model_path} / 方策の次元 {dim} / "
+          f"価値ヘッド {'あり' if len(sess.get_outputs()) > 1 else '無し'}")
+    if probe.get("labelFn") and (dim == 648) != (probe["labelFn"] == "compactLabel"):
+        print(f"NG: probeのラベル空間({probe['labelFn']})とモデルの次元({dim})が食い違う")
+        return 1
     max_logit_diff = 0.0
     max_value_diff = 0.0
     argmax_mismatch = 0
@@ -28,11 +34,16 @@ def main(probe_path: str, model_path: str) -> int:
     for s in probe["samples"]:
         f1 = np.array(s["input1"], dtype=np.float32).reshape(1, 62, 9, 9)
         f2 = np.array(s["input2"], dtype=np.float32).reshape(1, 59, 9, 9)
-        policy, value = sess.run(None, {"input1": f1, "input2": f2})
+        # 出力名で受ける。布石専用ネットは output_policy しか持たない
+        # （価値ヘッドが無い。採点はやねうら王がやる）ので、2つに展開すると落ちる。
+        outs = dict(zip([o.name for o in sess.get_outputs()],
+                        sess.run(None, {"input1": f1, "input2": f2})))
+        policy = outs["output_policy"]
+        value = outs.get("output_value")
 
         web_logits = np.array(s["logits"], dtype=np.float32)
         logit_diff = float(np.max(np.abs(policy[0] - web_logits)))
-        value_diff = abs(float(value[0][0]) - s["value"])
+        value_diff = 0.0 if value is None else abs(float(value[0][0]) - s["value"])
         max_logit_diff = max(max_logit_diff, logit_diff)
         max_value_diff = max(max_value_diff, value_diff)
 

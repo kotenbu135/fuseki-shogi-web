@@ -7,6 +7,11 @@
 import * as ort from 'onnxruntime-web/wasm';
 
 const PLANES1 = 62, PLANES2 = 59;
+// 方策出力の次元でラベル空間を見分ける。2268 = 28スロット×81（resnet10_swish系、
+// 通常フェーズと共有）、648 = 8スロット×81（布石専用ネット）。
+// **旗（コンストラクタ引数や設定）にしないこと。** 288/648/2268の取り違えは、
+// 落ちずにargmaxだけが別の手になる壊れ方をするので、判定する場所を1つに閉じる。
+const LABEL_DIMS = { 2268: 'moveLabel', 648: 'compactLabel' };
 
 export class FusekiPolicy {
   /**
@@ -29,19 +34,46 @@ export class FusekiPolicy {
     }
     for (const name of ['input1', 'input2'])
       if (!session.inputNames.includes(name)) throw new Error(`ONNXの入力 ${name} が無い: ${session.inputNames}`);
-    return new FusekiPolicy(session);
+
+    // ラベル空間と価値ヘッドの有無をモデル自身から判定する。出力の形は
+    // session.outputNames だけでは分からないので、零入力で1回だけ前向きする
+    // （1.95MBのネットで数ms。読み込み時の1回きり）。
+    const probe = await session.run({
+      input1: new ort.Tensor('float32', new Float32Array(PLANES1 * 81), [1, PLANES1, 9, 9]),
+      input2: new ort.Tensor('float32', new Float32Array(PLANES2 * 81), [1, PLANES2, 9, 9]),
+    });
+    const dim = probe.output_policy.dims[1];
+    const labelFn = LABEL_DIMS[dim];
+    if (!labelFn) throw new Error(`方策出力の次元 ${dim} に対応するラベル空間が無い`
+      + `（既知: ${Object.keys(LABEL_DIMS).join(', ')}）`);
+    const hasValue = session.outputNames.includes('output_value');
+    return new FusekiPolicy(session, labelFn, hasValue);
   }
 
-  constructor(session) { this.session = session; }
+  /**
+   * @param {string} labelFn Fuseki側のラベル関数名（'moveLabel' か 'compactLabel'）。
+   * @param {boolean} hasValue 価値ヘッドの有無。布石専用ネットには無い（採点はやねうら王）。
+   */
+  constructor(session, labelFn = 'moveLabel', hasValue = true) {
+    this.session = session;
+    this.labelFn = labelFn;
+    this.hasValue = hasValue;
+  }
 
-  /** 現局面の方策logitと勝率を返す。value は手番側から見た勝率（sigmoid済み）。 */
+  /**
+   * 現局面の方策logitと勝率を返す。value は手番側から見た勝率（sigmoid済み）。
+   * 価値ヘッドを持たないネットでは value は null になる。
+   */
   async evaluate(fuseki) {
     const { input1, input2 } = fuseki.policyInputs();
     const out = await this.session.run({
       input1: new ort.Tensor('float32', input1, [1, PLANES1, 9, 9]),
       input2: new ort.Tensor('float32', input2, [1, PLANES2, 9, 9]),
     });
-    return { logits: out.output_policy.data, value: out.output_value.data[0] };
+    return {
+      logits: out.output_policy.data,
+      value: this.hasValue ? out.output_value.data[0] : null,
+    };
   }
 
   /**
@@ -58,7 +90,7 @@ export class FusekiPolicy {
     let maxLogit = -Infinity;
     const raw = new Float64Array(legal.length);
     for (let i = 0; i < legal.length; i++) {
-      raw[i] = logits[fuseki.moveLabel(legal[i].pt, legal[i].sq, color)];
+      raw[i] = logits[fuseki[this.labelFn](legal[i].pt, legal[i].sq, color)];
       if (raw[i] > maxLogit) maxLogit = raw[i];
     }
     let total = 0;

@@ -5,7 +5,7 @@
 // までを1本に繋いで、途中で壊れないことを見る。src/ のモジュールを
 // ブラウザと同じものを同じ順で呼んでいる（onnxruntime-web/wasm はNodeでも動く）。
 //
-//   node test/pipeline_smoke.mjs [通常フェーズの手数] [movetime ms]
+//   node test/pipeline_smoke.mjs [通常フェーズの手数] [movetime ms] [モデル.onnx]
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -20,7 +20,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
 const NORMAL_PLIES = Number(process.argv[2] || 6);
 const MOVETIME = Number(process.argv[3] || 1000);
-const MODEL = path.join(ROOT, 'models/fuseki_rollout_iter38.onnx');
+const MODEL = process.argv[4] || path.join(ROOT, 'models/fuseki_rollout_iter38.onnx');
 
 let failures = 0;
 const check = (label, cond, detail = '') => {
@@ -105,13 +105,31 @@ if (game.phase === 'over') {
   }
   // 人間の着手の経路（AIのbestmoveではなく playNormalMove）も1手通す。
   if (game.phase === 'normal') {
-    const [orig, dests] = [...game.moveDests()][0];
+    // moveDests()の先頭を決め打って `orig+dest` を指してはいけない。成りが**強制**される手
+    // （桂が1〜2段目へ跳ぶ、歩・香が1段目へ行く）は接尾辞 '+' が無いと非合法で、
+    // 盤面によってここで落ちる。実際にiter4の局面で 7d6b が弾かれた。
+    // 成り無し→成り有りの順に試し、通った最初の1手を人間の着手とする。
+    const pairs = [...game.moveDests()].flatMap(([orig, dests]) => dests.map(d => [orig, d]));
     const before = game.normalMoves.length;
-    game.playNormalMove(`${orig}${dests[0]}`);
-    check('人間の着手が通った', game.normalMoves.length === before + 1, game.kifu.at(-1)?.text);
+    let played = null;
+    for (const [orig, dest] of pairs) {
+      for (const usi of [`${orig}${dest}`, `${orig}${dest}+`]) {
+        try { game.playNormalMove(usi); played = usi; break; } catch { /* 次の候補へ */ }
+      }
+      if (played) break;
+    }
+    check('人間の着手が通った', played !== null && game.normalMoves.length === before + 1,
+      `${played ?? '（候補 ' + pairs.length + '手すべてが非合法）'} ${game.kifu.at(-1)?.text ?? ''}`);
+    // 非合法手を '1a1b' のように決め打つと、盤面によっては**本当に合法**で
+    // 弾かれない（実際にiter4の局面で起きた）。合法手一覧から作る:
+    // ある駒の移動先として挙がっていないマスは、その駒からは必ず非合法である。
+    const [orig2, dests2] = [...game.moveDests()][0];
+    const all = [];
+    for (const f of '123456789') for (const r of 'abcdefghi') all.push(f + r);
+    const illegalDest = all.find(sq => sq !== orig2 && !dests2.includes(sq));
     let rejected = false;
-    try { game.playNormalMove('1a1b'); } catch { rejected = true; }
-    check('非合法手は弾かれる', rejected);
+    try { game.playNormalMove(`${orig2}${illegalDest}`); } catch { rejected = true; }
+    check('非合法手は弾かれる', rejected, `${orig2}${illegalDest}`);
   }
 
   const normalMs = Date.now() - t4;
