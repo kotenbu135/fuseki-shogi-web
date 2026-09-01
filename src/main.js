@@ -181,6 +181,9 @@ function startGame() {
   clockTimer = setInterval(renderSeats, 250);
 
   ensureBoard();
+  // 対局中に押せると、進行中の対局が黙って消える。投了で終わらせてから始める
+  // （lishogiも対局中に新規対局は始められない）。
+  ui.newGame.disabled = true;
   ui.resign.disabled = false;
   render();
   drive();
@@ -287,6 +290,7 @@ function render() {
       : `${winner === SENTE ? '先手' : '後手'}の勝ち${winner === game.humanColor ? '（あなた）' : ''}`;
     setStatus(who, RESULT_TEXT[reason] ?? reason);
     ui.resign.disabled = true;
+    ui.newGame.disabled = false;
   } else if (game.isHumanTurn) {
     setStatus(game.phase === 'fuseki' ? 'あなたの番。駒台から駒を打つ。' : 'あなたの番。');
   } else {

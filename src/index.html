@@ -43,6 +43,11 @@
       <div class="kifu-box">
         <h2>棋譜</h2>
         <ol class="kifu" id="kifu"></ol>
+        <!-- 対局中の操作は棋譜のすぐ下。lishogiもここに置いている。 -->
+        <div class="kifu-actions">
+          <button type="button" id="btn-flip" title="盤を反転">盤を反転</button>
+          <button type="button" id="btn-resign" disabled title="投了する">投了</button>
+        </div>
       </div>
 
       <div class="seat" id="seat-bottom">
@@ -71,8 +76,6 @@
         </label>
         <div class="buttons">
           <button type="button" id="btn-new" class="primary" disabled>対局開始</button>
-          <button type="button" id="btn-resign" disabled>投了</button>
-          <button type="button" id="btn-flip">盤を反転</button>
         </div>
       </form>
     </aside>

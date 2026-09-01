@@ -121,6 +121,12 @@ try {
   if (FULL) await evaluate(page, 'document.getElementById("opt-movetime").value = "500"');
   await evaluate(page, 'document.getElementById("btn-new").click()');
 
+  // 対局中に「対局開始」が押せると、進行中の対局が黙って消える。
+  check('対局中は対局開始が押せない',
+    await evaluate(page, 'document.getElementById("btn-new").disabled') === true);
+  check('対局中は投了が押せる',
+    await evaluate(page, 'document.getElementById("btn-resign").disabled') === false);
+
   // 先手が人間なので、盤に駒が1枚も無い状態で自分の番になる
   const dests = await evalUntil(page, 'document.querySelectorAll("sq.dest").length', v => v > 0, 30000);
   check('駒台の駒を選ぶ前に打てるマスが出る前段階（盤が描かれている）',

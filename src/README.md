@@ -10,7 +10,9 @@
 | `policy.js` | 布石方策。onnxruntime-web で1手あたりNN前向き1回 |
 | `normal.js` | やねうら王WASMとのUSIの往復 |
 | `board.js` | [shogiground](https://github.com/WandererXII/shogiground) の生成とGameからの同期 |
-| `index.html` / `style.css` | 画面。駒は画像を使わず、漢字＋`clip-path`でCSSだけで描いている |
+| `sound.js` | 対局音。音源は持たずWebAudioで合成する |
+| `pieces/` | 駒の画像30枚（kanji_light / CC BY 4.0。[THIRD_PARTY.md](../THIRD_PARTY.md)） |
+| `index.html` / `style.css` | 画面。見た目は lishogi に寄せてある（下記） |
 
 ## 守っていること
 
@@ -25,6 +27,35 @@
 
 **エンジンの `bestmove` をそのまま盤に適用しない。** 通常フェーズは
 `Position.isLegal()` で照合してから進める。
+
+## 見た目をlishogiに寄せるときに踏んだところ
+
+**駒台は `hands.inlined: true` で shogiground に作らせる。** false（既定）だと
+駒台がHTML側の別の要素に生えて、盤と同じ `.sg-wrap` の中に入らない。lishogi の
+`grid-template-areas` は `.sg-wrap` 直下の3要素に掛かるので、その構造では
+どうやっても駒台を盤の左右に回せない。
+
+**後手の駒をCSSで回さない。** shogiground は駒の位置を transform の translate で
+与えており、CSSの合成順は translate → rotate なので、駒を回すと後から掛かる
+translate が回転後の座標系で効いて駒が盤の外へ飛ぶ。駒セットに入っている
+回転済みの別ファイル（`1*.svg`）を使う。
+
+**座標は盤の内側に置く。** 盤の外へ負のオフセットで出すと、上下に駒台が来たときに
+重なる（実際に筋の数字が後手の駒台に潜り込んでいた）。
+
+**駒画像は `image/svg+xml` で配る。** `application/octet-stream` になると
+ブラウザがデコードせず、要素は在るのに盤が空に見える。DOMの数え上げでは
+すり抜けるので、`browser_smoke.mjs` が実際に `Image` で読ませて確かめる。
+配信側は `_headers` で明示している。
+
+**対局前の盤に `viewOnly` を使わない。** shogiground の `set()` は
+`forceRedrawProps` を `cRes &&` で判定していて偽値を弾くため、`true → false` の
+切り替えが落ちる。すると対局開始後もドラッグ用のDOMが生えてこない。
+`activeColor` を空にすれば盤は触れなくなる。
+
+**盤の木目はCSSで描く。** lishogi の盤画像は AGPLv3+ で、駒セットの CC BY 4.0 とは
+別のライセンス。既定盤 `wood.png` は縦方向に一様な縞なので `repeating-linear-gradient`
+で同等のものが出る（[THIRD_PARTY.md](../THIRD_PARTY.md) に実測値）。
 
 ## エンジンの読み込み方が3者で違う理由
 

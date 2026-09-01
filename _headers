@@ -1,3 +1,9 @@
 /*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
+
+# 駒の画像。Pagesは拡張子から推測するが、octet-stream で配られるとブラウザが
+# SVGとしてデコードせず、要素は在るのに盤が空に見える（実際に手元で踏んだ）。
+# 推測に頼らず明示する。build.mjs はこのディレクトリへSVGを30枚だけ置く。
+/pieces/*
+  Content-Type: image/svg+xml

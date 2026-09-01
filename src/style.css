@@ -480,6 +480,21 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .kifu li.current .m,
 .kifu li.current .n { color: var(--ink); font-weight: 600; }
 
+.kifu-actions { display: flex; gap: .4rem; margin-top: .4rem; }
+.kifu-actions button {
+  flex: 1;
+  padding: .35rem .5rem;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font: inherit;
+  font-size: .8125rem;
+  cursor: pointer;
+}
+.kifu-actions button:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-soft); }
+.kifu-actions button:disabled { opacity: .4; cursor: not-allowed; }
+
 .controls { display: flex; flex-direction: column; gap: .6rem; }
 .controls label { display: flex; flex-direction: column; gap: .2rem; font-size: .75rem; color: var(--ink-soft); }
 .controls select {

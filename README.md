@@ -22,7 +22,7 @@
 ```
 engine/dlshogi/   dlshogiのフォーク（submodule）。布石フェーズのmovegenと特徴量抽出
 wasm/             cppshogiをEmscriptenでWASMにするビルド
-src/              対局画面（src/README.md 参照）
+src/              対局画面（src/README.md 参照）。駒の画像は src/pieces/
 test/             同一性の照合とスモークテスト
 models/           布石方策の重み。再配布できるものだけコミットする（models/README.md）
 build.mjs         src/ と3つのエンジンのアセットを dist/ にまとめる
