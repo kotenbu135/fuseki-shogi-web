@@ -11,16 +11,16 @@
   --board: #f9b34e;
   --board-edge: #6f5027;
   --line: #000;
-  --koma: #f4e2ba;
-  --koma-edge: #a8834b;
   --accent: #b23a2c;
-  --accent-soft: #b23a2c26;
   /* 盤上の印は lishogi の値をそのまま使う（ui/common/css/theme/_dark.scss）。
      選択マスと着手可能マスの点を同じ色にしてあるのが要点で、色を分けると散らかる。 */
   --selected: rgba(20, 85, 30, .5);
   --selected-hover: rgba(20, 85, 30, .25);
   --last-dest: rgba(169, 199, 0, .41);
   --check: rgba(204, 51, 34, .5);
+  /* 盤の大きさ。main.js が localStorage の値で上書きする。 */
+  --board-scale: 100%;
+  --board-scale-f: 1;
   --sans: system-ui, "Hiragino Sans", "Noto Sans JP", Meiryo, sans-serif;
   --serif: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", "MS Mincho", serif;
 }
@@ -35,10 +35,7 @@
     /* 盤そのものの色は明暗で変えない。lishogiも盤テーマはテーマ非依存で、
        ここを暗くすると駒の朱字と成駒の判別が落ちる。 */
     --board-edge: #2b2018;
-    --koma: #e4d0a6;
-    --koma-edge: #8c6b3c;
     --accent: #e0705f;
-    --accent-soft: #e0705f2e;
   }
 }
 
