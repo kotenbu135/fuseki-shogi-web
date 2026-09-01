@@ -211,6 +211,23 @@ try {
     set(100); await wait();
     return { small: +small.toFixed(1), big: +big.toFixed(1), smallOver, bigOver };
   })()`);
+  // 盤の下端が画面の外に出ると、指すたびにスクロールすることになる。
+  // 縦に余裕のある画面では起きないので、横長の画面に変えて見る。
+  // 1366x768 と 1280x720 は実際にはみ出していた。
+  for (const [w, h] of [[1366, 768], [1280, 720], [1920, 1080]]) {
+    await page.send('Emulation.setDeviceMetricsOverride',
+      { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+    await new Promise(r => setTimeout(r, 250));
+    const fits = await evaluate(page, `(() => {
+      const r = document.querySelector('.board-column').getBoundingClientRect();
+      return { bottom: +r.bottom.toFixed(0), viewport: innerHeight };
+    })()`);
+    check(`盤が画面の高さに収まる（${w}x${h}）`, fits.bottom <= fits.viewport,
+      `盤の下端 ${fits.bottom}px / 画面 ${fits.viewport}px`);
+  }
+  await page.send('Emulation.clearDeviceMetricsOverride');
+  await new Promise(r => setTimeout(r, 250));
+
   check('盤の大きさを変えても横スクロールが出ない',
     scale.small < scale.big && !scale.smallOver && !scale.bigOver,
     `70%=${scale.small}px / 115%=${scale.big}px`);
