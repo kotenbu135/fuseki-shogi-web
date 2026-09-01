@@ -34,6 +34,9 @@ const ui = {
   kifu: el('kifu'),
   color: el('opt-color'), movetime: el('opt-movetime'), volume: el('opt-volume'),
   newGame: el('btn-new'), resign: el('btn-resign'), flip: el('btn-flip'),
+  seatTop: el('seat-top'), seatBottom: el('seat-bottom'),
+  seatTopName: el('seat-top-name'), seatBottomName: el('seat-bottom-name'),
+  clockTop: el('clock-top'), clockBottom: el('clock-bottom'),
 };
 
 const sound = new Sound();
@@ -47,6 +50,42 @@ ui.volume.addEventListener('input', () => {
 });
 let soundedKifu = 0;       // 音を鳴らし終えた手数
 let soundedOver = false;
+
+// 時計。1手ごとの持ち時間ではなく、その色が考えた累計を数え上げる。
+// 布石将棋に時間切れ負けのルールは無いので、減らすのではなく増やす。
+const clock = { sente: 0, gote: 0, running: null, since: 0 };
+let clockTimer = null;
+
+/** 手番が変わったところで、前の手番の消費を確定して次を回し始める。 */
+function tickClock(turn) {
+  const now = performance.now();
+  if (clock.running && clock.running !== turn) {
+    clock[clock.running] += now - clock.since;
+    clock.running = null;
+  }
+  if (turn && clock.running !== turn) {
+    clock.running = turn;
+    clock.since = now;
+  }
+  if (!turn && clock.running) {
+    clock[clock.running] += now - clock.since;
+    clock.running = null;
+  }
+}
+
+function clockMs(color) {
+  const extra = clock.running === color ? performance.now() - clock.since : 0;
+  return clock[color] + extra;
+}
+
+function formatClock(ms) {
+  const total = Math.floor(ms / 1000);
+  const mmss = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  // 布石フェーズのAIはNN前向き1回で、1手が数十msで終わる。秒までしか出さないと
+  // 何手指しても 0:00 のままで、時計が壊れているように見える。10秒未満は
+  // 小数第1位まで出して、速さがそのまま見えるようにする。
+  return total < 10 ? `${mmss}.${Math.floor(ms / 100) % 10}` : mmss;
+}
 
 let engines = null;   // { fuseki, policy, engine }
 let game = null;
@@ -73,6 +112,7 @@ async function boot() {
   // 待っている人の前にあるのがパネルだけの空白になる。
   ensureBoard();
   showIdleBoard(sg);
+  renderSeats();
   try {
     setStatus('布石フェーズのルールを読み込んでいる…');
     const fuseki = await Fuseki.load(ASSETS.fuseki);
@@ -115,6 +155,7 @@ ui.color.addEventListener('change', () => {
   orientation = ui.color.value === GOTE ? GOTE : SENTE;
   ensureBoard();
   showIdleBoard(sg);
+  renderSeats();
 });
 
 ui.flip.addEventListener('click', () => {
@@ -123,6 +164,7 @@ ui.flip.addEventListener('click', () => {
   // 変更には再ラップが要る。それをやるのが toggleOrientation。
   sg.toggleOrientation();
   orientation = sg.state.orientation;
+  renderSeats();
 });
 
 function startGame() {
@@ -132,6 +174,11 @@ function startGame() {
   game = new Game({ ...engines, humanColor, movetimeMs: Number(ui.movetime.value) });
   soundedKifu = 0;
   soundedOver = false;
+  clock.sente = clock.gote = 0;
+  clock.running = null;
+  // 時計は手番が変わったときにしか進まないので、表示だけ別に回す。
+  clearInterval(clockTimer);
+  clockTimer = setInterval(renderSeats, 250);
 
   ensureBoard();
   ui.resign.disabled = false;
@@ -196,11 +243,28 @@ const RESULT_TEXT = {
   engine_illegal_move: 'エンジンが非合法手を返した',
 };
 
+/** 席の名前・手番の印・時計。対局前でも呼べる。 */
+function renderSeats() {
+  const humanColor = game ? game.humanColor : (ui.color.value === GOTE ? GOTE : SENTE);
+  // 下が手前（自分）。盤を反転しても席の並びは動かさない。
+  const bottom = orientation;
+  const top = bottom === SENTE ? GOTE : SENTE;
+  const label = c => `${c === SENTE ? '先手' : '後手'}（${c === humanColor ? 'あなた' : '布石AI'}）`;
+  ui.seatTopName.textContent = label(top);
+  ui.seatBottomName.textContent = label(bottom);
+  ui.clockTop.textContent = formatClock(clockMs(top));
+  ui.clockBottom.textContent = formatClock(clockMs(bottom));
+  const turn = game && game.phase !== 'over' ? game.turnColor : null;
+  ui.seatTop.classList.toggle('turn', turn === top);
+  ui.seatBottom.classList.toggle('turn', turn === bottom);
+}
+
 function render() {
   // 対局前は空の盤と満杯の駒台を出し、読み出しは空にしておく。
   if (!game) {
     if (sg) showIdleBoard(sg);
     ui.ply.textContent = ui.phase.textContent = ui.evaluation.textContent = '—';
+    renderSeats();
     return;
   }
   if (sg) syncBoard(sg, game);
@@ -210,10 +274,14 @@ function render() {
     ? `布石（残り${40 - game.fusekiMoves.length}手）`
     : game.phase === 'normal' ? '通常' : '終局';
   ui.evaluation.textContent = formatEval(game.lastEval);
+  tickClock(game.phase === 'over' ? null : game.turnColor);
+  renderSeats();
   renderKifu();
   playMoveSounds();
 
   if (game.phase === 'over') {
+    clearInterval(clockTimer);
+    clockTimer = null;
     const { winner, reason } = game.result;
     const who = winner === null ? '引き分け'
       : `${winner === SENTE ? '先手' : '後手'}の勝ち${winner === game.humanColor ? '（あなた）' : ''}`;
@@ -252,6 +320,10 @@ function renderKifu() {
     li.innerHTML = `<span class="n">${entry.ply}</span><span class="m">${entry.text}</span>`;
     ui.kifu.appendChild(li);
   }
+  // 直前の手だけ塗る。前の手の塗りは消す。
+  const cur = ui.kifu.lastElementChild;
+  for (const li of ui.kifu.querySelectorAll('li.current')) if (li !== cur) li.classList.remove('current');
+  if (cur) cur.classList.add('current');
   ui.kifu.scrollTop = ui.kifu.scrollHeight;
 }
 

@@ -54,7 +54,7 @@ body {
 }
 
 .app {
-  max-width: 62rem;
+  max-width: 72rem;
   margin: 0 auto;
   padding: 1.5rem 1.25rem 3rem;
 }
@@ -76,7 +76,7 @@ body {
   align-items: start;
 }
 @media (min-width: 56rem) {
-  .layout { grid-template-columns: minmax(0, 1fr) 17rem; }
+  .layout { grid-template-columns: minmax(0, 1fr) 19rem; }
 }
 
 /* ---- 盤まわり ---- */
@@ -398,6 +398,43 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 
 .panel { display: flex; flex-direction: column; gap: 1rem; }
 
+/* 席（対局者と時計）。lishogiは盤の向こう側と手前を棋譜で挟む。 */
+.seat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  padding: .35rem .6rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font-size: .8125rem;
+}
+.seat-name { display: flex; align-items: center; gap: .4rem; color: var(--ink-soft); }
+/* 手番の側に印を出す。文字だけだとどちらの番か一目で分からない。 */
+.seat-name::before {
+  content: "";
+  width: .5rem;
+  height: .5rem;
+  border-radius: 50%;
+  background: var(--rule);
+}
+.seat.turn { border-color: var(--accent); }
+.seat.turn .seat-name { color: var(--ink); font-weight: 600; }
+.seat.turn .seat-name::before { background: var(--accent); }
+.clock {
+  min-width: 4.2em;
+  text-align: center;
+  padding: .1rem .45rem;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--rule) 40%, transparent);
+  font-variant-numeric: tabular-nums;
+  font-size: .9375rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.seat.turn .clock { background: var(--accent); color: var(--paper-raised); }
+
 .status {
   padding: .75rem .9rem;
   background: var(--paper-raised);
@@ -424,7 +461,8 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .kifu {
   margin: 0;
   padding: .3rem;
-  max-height: 16rem;
+  max-height: 22rem;
+  min-height: 6rem;
   overflow-y: auto;
   list-style: none;
   background: var(--paper-raised);
@@ -437,6 +475,10 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .kifu .n { width: 2.2em; text-align: right; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 .kifu .m { font-family: var(--serif); }
 .kifu li.gote .m { color: var(--ink-soft); }
+/* 直前の手。lishogiも現在の手を1行だけ塗って示す。 */
+.kifu li.current { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.kifu li.current .m,
+.kifu li.current .n { color: var(--ink); font-weight: 600; }
 
 .controls { display: flex; flex-direction: column; gap: .6rem; }
 .controls label { display: flex; flex-direction: column; gap: .2rem; font-size: .75rem; color: var(--ink-soft); }
