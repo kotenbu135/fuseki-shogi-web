@@ -194,7 +194,12 @@ body {
 @media (min-width: 56rem) {
   /* 広いときはゲージを盤の左に立てる。行にしても盤の大きさの計算は変わらない
      （.sg-wrap の幅は width:100% と下の max-width で決まる）。 */
-  .board-column { padding-top: 1.3rem; flex-direction: row; align-items: stretch; gap: .7rem; }
+  /* align-self: start が要る。.layout は align-items: stretch で、盤の列も行の高さまで
+     引き伸ばされる。この列は row の flex なので、伸びた高さがそのまま .sg-wrap の
+     高さになり、盤が正方形を保とうとして横にも太る。終局してパネルに設定と
+     「もう一局」が戻ると、パネルが盤より背高になってこれが見えた。 */
+  .board-column { padding-top: 1.3rem; flex-direction: row; align-items: stretch; gap: .7rem;
+                  align-self: start; }
   .board-column > .sg-wrap { flex: 1 1 auto; min-width: 0; }
   .eval-gauge { flex: 0 0 8px; width: 8px; height: auto; margin: 0; }
   .eval-gauge-fill { width: 100%; height: calc(var(--eval-p, .5) * 100%); }

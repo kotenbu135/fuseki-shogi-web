@@ -118,6 +118,10 @@ let aiLevel = 3;
     renderSeats();
   });
 }
+// 対局前に持ち時間を変えたら、席の時計もその場で書き換える。
+{
+  ui.time.addEventListener('change', renderSeats);
+}
 
 // 盤の大きさ。localStorageに残す。
 const SCALE_KEY = 'fuseki-board-scale';
@@ -218,13 +222,28 @@ function clockMs(color) {
   return clock[color] + extra;
 }
 
-/** 席に出す時計の文字列。人間側だけ、持ち時間を選んでいれば減る表示になる。 */
+/**
+ * 席に出す時計の文字列。
+ *
+ * 無制限のときは数えない。増えていく数字を時計の場所に置くと、持ち時間が
+ * あるように見えて紛らわしい。時間の制約が無いことをそのまま書く。
+ * 持ち時間があるときは、人間側は残り、AI側は考えた累計（AIの予算はレベルが決める）。
+ */
 function clockText(color) {
-  if (!timeCtl || !game || color !== game.humanColor) return formatClock(clockMs(color));
+  // 対局前は選んでいる設定を見せる。対局中は始めたときの設定のまま。
+  const tc = game ? timeCtl : (TIME_CONTROLS[ui.time.value] ?? null);
+  if (!tc) return '無制限';
+  if (!game) {
+    // 10秒将棋は本時間0なので、0:00 と出すと切れているように見える。
+    return tc.initialMs === 0 && tc.byoyomiMs
+      ? `秒読み ${(tc.byoyomiMs / 1000).toFixed(1)}`
+      : formatClock(tc.initialMs);
+  }
+  if (color !== game.humanColor) return formatClock(clockMs(color));
   const st = humanClockState();
   // 秒読み中は小数第1位まで。ここは1秒が意味を持つ場面なので秒だけでは足りない。
   // 秒読みの無い設定（切れ負け・加算）では出さない。本時間が0になった＝そこで負け。
-  if (st.inByoyomi && (timeCtl.byoyomiMs ?? 0) > 0) return `秒読み ${(st.byMs / 1000).toFixed(1)}`;
+  if (st.inByoyomi && (tc.byoyomiMs ?? 0) > 0) return `秒読み ${(st.byMs / 1000).toFixed(1)}`;
   return formatClock(st.mainMs);
 }
 
