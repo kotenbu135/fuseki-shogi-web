@@ -194,6 +194,12 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .eval-gauge-fill { transition: none; }
 }
+/* ゲージが出入りするたびに盤の大きさが変わる。終局した瞬間に評価を見せる作りなので、
+   投了したら盤が一回り縮んで右へずれた（1440幅で盤 716.7px → 701px）。
+   場所は常に取り、見せるか見せないかだけを切り替える。
+   [hidden] の display:none（ファイル末尾・!important）より特異度が高いので勝つ。
+   広いときは盤の左の8px、狭いときは盤の上の6px。どちらの跳ねも これで止まる。 */
+.eval-gauge[hidden] { display: block !important; visibility: hidden; }
 
 /* エンジンの言い分。読み筋（通常フェーズ）と候補手（布石フェーズ）。 */
 .engine { display: grid; gap: .1rem; font-size: .75rem; color: var(--ink-soft); }

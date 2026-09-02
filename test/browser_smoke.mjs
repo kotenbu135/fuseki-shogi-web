@@ -313,6 +313,27 @@ try {
   })()`);
   check('盤が正方形のまま', squareBoard);
 
+  // 評価ゲージは出入りしても盤の大きさと位置を動かしてはいけない。
+  // 終局した瞬間に評価を見せる作りなので、これが動くと投了した瞬間に盤が縮んで見える
+  // （実際に 1440幅で 716.7px → 701px、右へ17px ずれた）。
+  // 対局の状態には触らずに hidden だけを切り替えて測る。ゲージが出る条件
+  // （通常フェーズ・探索の評価）を作らないと再現しないので、投了の検査に相乗りさせない。
+  const gaugeShift = await evaluate(page, `(() => {
+    const g = document.getElementById('eval-gauge');
+    const r = () => { const b = document.querySelector('sg-board').getBoundingClientRect();
+      return { w: +b.width.toFixed(1), x: +b.left.toFixed(1) }; };
+    const was = g.hidden;
+    g.hidden = true; const hidden = r(); const display = getComputedStyle(g).display;
+    g.hidden = false; const shown = r();
+    g.hidden = was;
+    return { hidden, shown, display };
+  })()`);
+  check('評価ゲージの出入りで盤が動かない',
+    Math.abs(gaugeShift.hidden.w - gaugeShift.shown.w) < 0.5
+    && Math.abs(gaugeShift.hidden.x - gaugeShift.shown.x) < 0.5
+    && gaugeShift.display !== 'none',
+    `隠す ${gaugeShift.hidden.w}px@${gaugeShift.hidden.x} / 出す ${gaugeShift.shown.w}px@${gaugeShift.shown.x} / 隠したときの display=${gaugeShift.display}`);
+
   // shogiground は合成イベントを弾く（drag.unwantedEvent が isTrusted を見る）。
   // 本物の入力として届くよう Input.dispatchMouseEvent を使う。
   await click(page, await center(page, 'sg-hand-wrap.hand-bottom piece.pawn'));
