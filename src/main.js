@@ -462,6 +462,8 @@ ui.flip.addEventListener('click', () => {
   sg.toggleOrientation();
   orientation = sg.state.orientation;
   renderSeats();
+  // 帯の向きは orientation で決まる。ここで描き直さないと反転のあいだ裏返ったまま。
+  if (game) renderGauge();
 });
 
 function startGame() {
@@ -787,7 +789,11 @@ function renderGauge() {
   const cp = ev.scoreKind === 'mate' ? (ev.score > 0 ? 1e5 : -1e5) : ev.score;
   const fromSente = (ev.side ?? game.aiColor) === SENTE ? cp : -cp;
   const p = 1 / (1 + Math.exp(-fromSente / 400));
-  ui.gauge.style.setProperty('--eval-p', String(p));
+  // 帯は手前（盤の下側）から伸びる。後手を持つと手前は後手なので、そのままでは
+  // 自分が押しているときに相手側から伸びて見える。盤の向きに合わせて裏返す。
+  // 見ているのは humanColor ではなく orientation。盤を反転したら帯も付いてくる。
+  const bottom = orientation === SENTE ? p : 1 - p;
+  ui.gauge.style.setProperty('--eval-p', String(bottom));
 }
 
 /**

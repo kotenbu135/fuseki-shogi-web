@@ -307,6 +307,38 @@ try {
   check('盤を反転すると手前の駒台が入れ替わる', senteBefore === 8 && goteAfter === 8, `前=${senteBefore} 後=${goteAfter}`);
   await evaluate(page, 'document.getElementById("btn-flip").click()');
 
+  // 駒の絵は色ごとに向きが焼き込んである（1*.svg が180度回した側）。手前＝自分の駒が
+  // 上を向いていないと自分の駒に見えない。後手を持つと自分の駒だけ逆さまだった。
+  // 手前の色は 0*.svg、向こうの色は 1*.svg。これはどちらの向きでも成り立つ。
+  // 盤に出るのは8種だけなので、使い捨ての piece を挿して14種すべてを測る。
+  const facing = () => evaluate(page, `(() => {
+    const roles = ['pawn', 'lance', 'knight', 'silver', 'gold', 'bishop', 'rook', 'king',
+      'tokin', 'promotedlance', 'promotedknight', 'promotedsilver', 'horse', 'dragon'];
+    const wrap = document.querySelector('.sg-wrap');
+    const near = wrap.classList.contains('orientation-gote') ? 'gote' : 'sente';
+    const bad = [];
+    for (const role of roles) for (const color of ['sente', 'gote']) {
+      const el = document.createElement('piece');
+      el.className = color + ' ' + role;
+      el.style.cssText = 'position:absolute;width:1px;height:1px';
+      wrap.appendChild(el);
+      const url = getComputedStyle(el).backgroundImage;
+      el.remove();
+      // url("…/pieces/0FU.svg") の 0/1 が向き。先頭1文字だけ見る。
+      const file = url.slice(url.lastIndexOf('/') + 1);
+      if (file[0] !== (color === near ? '0' : '1')) bad.push(role + '/' + color + '=' + file);
+    }
+    return { near, bad };
+  })()`);
+  const facingSente = await facing();
+  await evaluate(page, 'document.getElementById("btn-flip").click()');
+  const facingGote = await facing();
+  await evaluate(page, 'document.getElementById("btn-flip").click()');
+  check('どちらの向きでも手前の駒が上を向く',
+    facingSente.near === 'sente' && facingGote.near === 'gote'
+    && facingSente.bad.length === 0 && facingGote.bad.length === 0,
+    `先手向き ${facingSente.bad.join(' ') || 'ずれ無し'} / 後手向き ${facingGote.bad.join(' ') || 'ずれ無し'}`);
+
   const squareBoard = await evaluate(page, `(() => {
     const r = document.querySelector('sg-board').getBoundingClientRect();
     return Math.abs(r.width - r.height) < 2;
@@ -568,6 +600,23 @@ async function playWholeGame(page) {
     // やねうら王が指したので、評価の出どころが替わっている（formatEval のもう一方の枝）。
     check('通常フェーズの評価がやねうら王のものになった',
       s.phase === '終局' || /深さ|手詰/.test(s.evaluation), s.evaluation);
+
+    // 帯は手前（盤の下側）から伸びる。後手を持つと手前は後手なので、盤の向きに
+    // 合わせて裏返さないと、自分が押しているのに相手側から伸びて見える。
+    // 決めるのは humanColor ではなく orientation（盤を反転したら帯も付いてくる）。
+    const gaugeFlip = await evaluate(page, `(() => {
+      const g = document.getElementById('eval-gauge');
+      const p = () => parseFloat(getComputedStyle(g).getPropertyValue('--eval-p'));
+      const before = p();
+      document.getElementById('btn-flip').click();
+      const after = p();
+      document.getElementById('btn-flip').click();
+      return { before, after, hidden: g.hidden };
+    })()`);
+    check('盤を反転すると評価の帯も裏返る',
+      s.phase === '終局'
+      || (!gaugeFlip.hidden && Math.abs(gaugeFlip.before + gaugeFlip.after - 1) < 1e-6),
+      `反転前 ${gaugeFlip.before} / 反転後 ${gaugeFlip.after}`);
 
     // 布石と通常はフェーズが違い、盤の出どころ（boardPieces / shogiopsのPosition）も違う。
     // 通常フェーズから布石の局面へ戻れるかは、この継ぎ目でしか壊れない。

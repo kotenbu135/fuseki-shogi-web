@@ -440,34 +440,47 @@ piece {
   filter: drop-shadow(0 1px 1px #00000024);
 }
 
-piece.sente.pawn { background-image: url("pieces/0FU.svg"); }
-piece.gote.pawn { background-image: url("pieces/1FU.svg"); }
-piece.sente.lance { background-image: url("pieces/0KY.svg"); }
-piece.gote.lance { background-image: url("pieces/1KY.svg"); }
-piece.sente.knight { background-image: url("pieces/0KE.svg"); }
-piece.gote.knight { background-image: url("pieces/1KE.svg"); }
-piece.sente.silver { background-image: url("pieces/0GI.svg"); }
-piece.gote.silver { background-image: url("pieces/1GI.svg"); }
-piece.sente.gold { background-image: url("pieces/0KI.svg"); }
-piece.gote.gold { background-image: url("pieces/1KI.svg"); }
-piece.sente.bishop { background-image: url("pieces/0KA.svg"); }
-piece.gote.bishop { background-image: url("pieces/1KA.svg"); }
-piece.sente.rook { background-image: url("pieces/0HI.svg"); }
-piece.gote.rook { background-image: url("pieces/1HI.svg"); }
-piece.sente.tokin { background-image: url("pieces/0TO.svg"); }
-piece.gote.tokin { background-image: url("pieces/1TO.svg"); }
-piece.sente.promotedlance { background-image: url("pieces/0NY.svg"); }
-piece.gote.promotedlance { background-image: url("pieces/1NY.svg"); }
-piece.sente.promotedknight { background-image: url("pieces/0NK.svg"); }
-piece.gote.promotedknight { background-image: url("pieces/1NK.svg"); }
-piece.sente.promotedsilver { background-image: url("pieces/0NG.svg"); }
-piece.gote.promotedsilver { background-image: url("pieces/1NG.svg"); }
-piece.sente.horse { background-image: url("pieces/0UM.svg"); }
-piece.gote.horse { background-image: url("pieces/1UM.svg"); }
-piece.sente.dragon { background-image: url("pieces/0RY.svg"); }
-piece.gote.dragon { background-image: url("pieces/1RY.svg"); }
+/* 駒の絵は色ごとに向きが焼き込んである（1*.svg が180度回した側）。
+   盤を後手向きにしたら、手前＝自分の駒が上を向いていないと自分の駒に見えない。
+   後手向きのときは色と絵の対応を入れ替える。回転（transform）は使えない。
+   盤上の駒の位置は shogiground が inline の transform: translate() で書いていて、
+   CSSのtransformは負けるし、rotateプロパティを足すと平行移動まで回って位置がずれる。
+   .orientation-gote は .sg-wrap と sg-hand-wrap の両方に付くので、
+   盤・駒台・掴んでいる駒・成りの選択肢が1つの前置きで揃う。
+   影（drop-shadow）は下向きのまま。光の向きは盤を回しても変わらない。 */
+piece.sente.pawn, .orientation-gote piece.gote.pawn { background-image: url("pieces/0FU.svg"); }
+piece.gote.pawn, .orientation-gote piece.sente.pawn { background-image: url("pieces/1FU.svg"); }
+piece.sente.lance, .orientation-gote piece.gote.lance { background-image: url("pieces/0KY.svg"); }
+piece.gote.lance, .orientation-gote piece.sente.lance { background-image: url("pieces/1KY.svg"); }
+piece.sente.knight, .orientation-gote piece.gote.knight { background-image: url("pieces/0KE.svg"); }
+piece.gote.knight, .orientation-gote piece.sente.knight { background-image: url("pieces/1KE.svg"); }
+piece.sente.silver, .orientation-gote piece.gote.silver { background-image: url("pieces/0GI.svg"); }
+piece.gote.silver, .orientation-gote piece.sente.silver { background-image: url("pieces/1GI.svg"); }
+piece.sente.gold, .orientation-gote piece.gote.gold { background-image: url("pieces/0KI.svg"); }
+piece.gote.gold, .orientation-gote piece.sente.gold { background-image: url("pieces/1KI.svg"); }
+piece.sente.bishop, .orientation-gote piece.gote.bishop { background-image: url("pieces/0KA.svg"); }
+piece.gote.bishop, .orientation-gote piece.sente.bishop { background-image: url("pieces/1KA.svg"); }
+piece.sente.rook, .orientation-gote piece.gote.rook { background-image: url("pieces/0HI.svg"); }
+piece.gote.rook, .orientation-gote piece.sente.rook { background-image: url("pieces/1HI.svg"); }
+piece.sente.tokin, .orientation-gote piece.gote.tokin { background-image: url("pieces/0TO.svg"); }
+piece.gote.tokin, .orientation-gote piece.sente.tokin { background-image: url("pieces/1TO.svg"); }
+piece.sente.promotedlance, .orientation-gote piece.gote.promotedlance { background-image: url("pieces/0NY.svg"); }
+piece.gote.promotedlance, .orientation-gote piece.sente.promotedlance { background-image: url("pieces/1NY.svg"); }
+piece.sente.promotedknight, .orientation-gote piece.gote.promotedknight { background-image: url("pieces/0NK.svg"); }
+piece.gote.promotedknight, .orientation-gote piece.sente.promotedknight { background-image: url("pieces/1NK.svg"); }
+piece.sente.promotedsilver, .orientation-gote piece.gote.promotedsilver { background-image: url("pieces/0NG.svg"); }
+piece.gote.promotedsilver, .orientation-gote piece.sente.promotedsilver { background-image: url("pieces/1NG.svg"); }
+piece.sente.horse, .orientation-gote piece.gote.horse { background-image: url("pieces/0UM.svg"); }
+piece.gote.horse, .orientation-gote piece.sente.horse { background-image: url("pieces/1UM.svg"); }
+piece.sente.dragon, .orientation-gote piece.gote.dragon { background-image: url("pieces/0RY.svg"); }
+piece.gote.dragon, .orientation-gote piece.sente.dragon { background-image: url("pieces/1RY.svg"); }
+/* 玉と王だけは向きのほかに文字が違う（先手が玉将・後手が王将）。色の約束なので
+   盤を回しても入れ替えない。上下だけ替えた絵が両方あるのでそれを使う
+   （0OU=上向きの王 / 1GY=逆さの玉）。 */
 piece.sente.king { background-image: url("pieces/0GY.svg"); }
 piece.gote.king { background-image: url("pieces/1OU.svg"); }
+.orientation-gote piece.gote.king { background-image: url("pieces/0OU.svg"); }
+.orientation-gote piece.sente.king { background-image: url("pieces/1GY.svg"); }
 
 sg-pieces piece,
 sg-board > piece {
