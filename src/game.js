@@ -218,8 +218,11 @@ export class Game {
     const md = parseUsi(usi);
     // やねうら王のbestmoveをそのまま信じない。非合法手を適用すると盤が静かに壊れる。
     if (!md || !this.position.isLegal(md)) { this._end(this.humanColor, 'engine_illegal_move'); return null; }
+    const mover = this.aiColor;
     this._applyNormalMove(usi, md);
-    this.lastEval = { kind: 'search', ...info };
+    // side は「この評価値が誰から見た値か」。USIの score は探索した側から見た値で、
+    // ここではAI。人間の手番に画面が聞いたぶんは main.js が humanColor を入れる。
+    this.lastEval = { kind: 'search', ...info, side: mover };
     return this.lastEval;
   }
 
@@ -322,6 +325,28 @@ export class Game {
    */
   timeout() {
     if (this.phase !== 'over') this._end(this.aiColor, 'human_timeout');
+  }
+
+  /**
+   * 読み筋を日本語の指し手に直す。いまの局面の複製を1手ずつ進めて作る。
+   * 別の局面の読み筋が遅れて届くことがあるので、非合法手に当たったらそこで止める
+   * （途中まででも読める。例外にすると表示だけのために対局が止まる）。
+   */
+  pvText(pv) {
+    if (!this.position || !pv?.length) return '';
+    const pos = this.position.clone();
+    let lastDest = this._lastDestSquare;
+    const out = [];
+    for (const usi of pv) {
+      const md = parseUsi(usi);
+      if (!md || !pos.isLegal(md)) break;
+      const color = pos.turn;
+      const text = makeJapaneseMoveOrDrop(pos, md, lastDest);
+      out.push(`${MARK[color]}${text ?? usi}`);
+      pos.play(md);
+      lastDest = md.to;
+    }
+    return out.join(' ');
   }
 
   /**

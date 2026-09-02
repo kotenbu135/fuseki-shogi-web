@@ -148,6 +148,19 @@ if (game.phase === 'over') {
   // 進行後の局面がSFENとして往復できること（表示と真実がズレていない）
   const roundtrip = parseAndRemake(game);
   check('局面のSFENラウンドトリップ', roundtrip.ok, roundtrip.detail);
+
+  // 表示のための解析と、対局の指し手が重なる経路。
+  // 1つのエンジンに go を重ねると bestmove の待ち合わせが交差して、解析の待ち手に
+  // 対局の指し手が返る（またはその逆）。落ちずに、盤に入る手だけが入れ替わる。
+  {
+    const analysis = engine.analyze({ sfen: game.finalSfen, moves: [], movetimeMs: 3000 });
+    const move = engine.bestMove({ sfen: game.finalSfen, moves: [], movetimeMs: 300 });
+    const [info, best] = await Promise.all([analysis, move]);
+    check('解析と重なっても指し手が返る',
+      typeof best?.usi === 'string' && best.usi.length >= 4, JSON.stringify(best));
+    check('解析は指し手を横取りしない', info === null || typeof info === 'object',
+      JSON.stringify(info));
+  }
 }
 
 // ---- 待った（undoTo） ----

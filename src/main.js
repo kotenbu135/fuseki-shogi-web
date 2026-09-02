@@ -5,7 +5,7 @@
 import { Fuseki } from './fuseki.js';
 import { FusekiPolicy } from './policy.js';
 import { NormalEngine, loadYaneuraOuFactory } from './normal.js';
-import { Game, SENTE, GOTE, fusekiDropText } from './game.js';
+import { Game, SENTE, GOTE } from './game.js';
 import { createBoard, showIdleBoard, showSnapshot, syncBoard } from './board.js';
 import { Sound, VOICES } from './sound.js';
 
@@ -35,9 +35,12 @@ const ui = {
   color: el('opt-color'), level: el('opt-level'), volume: el('opt-volume'),
   scale: el('opt-scale'), time: el('opt-time'), theme: el('opt-theme'),
   app: document.querySelector('.app'), controls: el('controls'),
+  settingsAgain: el('btn-settings-again'),
   gear: el('btn-settings'), settingsPop: el('display-settings'),
   ioMoves: el('io-moves'), ioSfen: el('io-sfen'), ioNote: el('io-note'),
   ioLoad: el('btn-io-load'), ioCopy: el('btn-io-copy'),
+  ioOpen: el('btn-io-open'), ioDialog: el('io-dialog'),
+  showEval: el('opt-show-eval'), evalRow: el('readout-eval-row'),
   engine: el('engine'), engineHead: el('engine-head'), enginePv: el('engine-pv'),
   gauge: el('eval-gauge'),
   resultActions: el('result-actions'),
@@ -70,6 +73,32 @@ function applyTheme(v) {
   applyTheme(saved);
   ui.theme.addEventListener('change', () => applyTheme(ui.theme.value));
 }
+
+// 対局中にAIの評価を見せるか。既定は隠す。形勢が見えると対局として面白くない
+// （lishogiも対局中は解析を出さない）。終局したら設定に関わらず出す。
+const EVAL_KEY = 'fuseki-show-eval';
+let showEvalInPlay = false;
+{
+  try { showEvalInPlay = localStorage.getItem(EVAL_KEY) === '1'; } catch { /* 既定は隠す */ }
+  ui.showEval.checked = showEvalInPlay;
+  ui.showEval.addEventListener('change', () => {
+    showEvalInPlay = ui.showEval.checked;
+    try { localStorage.setItem(EVAL_KEY, showEvalInPlay ? '1' : '0'); } catch { /* 残せなくても効く */ }
+    render();
+    analyzeForHuman();   // その場から見えるように、人間の手番なら聞きに行く
+  });
+}
+
+/** いま評価を出してよいか。対局中は設定しだい、終局後は常に出す。 */
+function evalVisible() {
+  return !!game && (game.phase === 'over' || showEvalInPlay);
+}
+
+// 局面の受け渡しはダイアログ。パネルの中に置くと開いたときにレイアウトが崩れる。
+ui.ioOpen.addEventListener('click', () => {
+  closeSettings();
+  ui.ioDialog.showModal();
+});
 
 // 表示の設定は歯車の中。対局中も触れる（対局の設定は対局前だけ）。
 function closeSettings() {
@@ -108,6 +137,8 @@ const LEVELS = {
   5: { movetimeMs: 10000, temperature: 1.0 },
 };
 let aiLevel = 3;
+// 終局後に「設定を変える」を押したか。対局を始めるたびに畳み直す。
+let settingsOpen = false;
 {
   const v = Number(ui.level.value);
   if (LEVELS[v]) aiLevel = v;
@@ -230,6 +261,10 @@ function clockMs(color) {
  * 持ち時間があるときは、人間側は残り、AI側は考えた累計（AIの予算はレベルが決める）。
  */
 function clockText(color) {
+  // 持ち時間があるのは人間側だけ。AIの予算はレベル（1手あたりの思考時間）が決めていて、
+  // 席に置く数字が無い。空にして .clock:empty で席から消す。
+  const human = game ? game.humanColor : (ui.color.value === GOTE ? GOTE : orientation);
+  if (color !== human) return '';
   // 対局前は選んでいる設定を見せる。対局中は始めたときの設定のまま。
   const tc = game ? timeCtl : (TIME_CONTROLS[ui.time.value] ?? null);
   if (!tc) return '無制限';
@@ -239,7 +274,6 @@ function clockText(color) {
       ? `秒読み ${(tc.byoyomiMs / 1000).toFixed(1)}`
       : formatClock(tc.initialMs);
   }
-  if (color !== game.humanColor) return formatClock(clockMs(color));
   const st = humanClockState();
   // 秒読み中は小数第1位まで。ここは1秒が意味を持つ場面なので秒だけでは足りない。
   // 秒読みの無い設定（切れ負け・加算）では出さない。本時間が0になった＝そこで負け。
@@ -319,6 +353,11 @@ function newGameClicked() {
 ui.newGame.addEventListener('click', newGameClicked);
 ui.again.addEventListener('click', newGameClicked);
 ui.replay.addEventListener('click', () => goToPly(0));
+ui.settingsAgain.addEventListener('click', () => {
+  settingsOpen = true;
+  renderSettingsEnabled();
+  ui.controls.scrollIntoView({ block: 'nearest' });
+});
 ui.copyKifu.addEventListener('click', () => game && copyText(kifuText(), ui.copyKifu, '棋譜をコピー'));
 ui.ioCopy.addEventListener('click', () => game && copyText(movesText(), ui.ioCopy, '手順をコピー'));
 ui.ioLoad.addEventListener('click', loadMoves);
@@ -455,6 +494,7 @@ function startGame() {
   ui.newGame.disabled = true;
   ui.resign.disabled = false;
   ui.resultActions.hidden = true;
+  settingsOpen = false;
   disarmResign();
   renderSettingsEnabled();
   render();
@@ -499,6 +539,28 @@ function handleMove(orig, dest, prom) {
   drive();
 }
 
+/**
+ * 人間の手番のあいだ、いまの局面をやねうら王に見てもらう。指し手は使わず数字だけ取る。
+ *
+ * 布石フェーズはやらない。布石エンジンに価値ヘッドが無く（policy.js の hasValue）、
+ * 出せる数字が「自分の手にどれだけ自信があるか」しかない。それは形勢ではないし、
+ * 候補手を出せば人間への手筋の示唆になって対局の性質が変わる。
+ */
+async function analyzeForHuman() {
+  if (!engines || !game || game.phase !== 'normal' || !game.isHumanTurn) return;
+  if (!showEvalInPlay) return;
+  // 待ったは epoch、着手は手数で見分ける。どちらも動いていたら、この結果は別の局面のもの。
+  const at = game.kifu.length;
+  const epoch = game.epoch;
+  const info = await engines.engine
+    .analyze({ sfen: game.finalSfen, moves: game.normalMoves, movetimeMs: 800 })
+    .catch(() => null);
+  if (!info || !game || game.kifu.length !== at || game.epoch !== epoch) return;
+  // lastEval は表示用の置き場。人間の手番ぶんはここから入れる。
+  game.lastEval = { kind: 'search', ...info, side: game.humanColor };
+  render();
+}
+
 /** 人間の手番になるか終局するまでAIに指させる。 */
 async function drive() {
   if (busy || !game) return;
@@ -515,6 +577,7 @@ async function drive() {
   } finally {
     busy = false;
     render();
+    analyzeForHuman();   // 人間の手番に戻ったので、見せる設定なら聞きに行く
   }
 }
 
@@ -566,9 +629,13 @@ function renderSettingsEnabled() {
   ui.color.disabled = playing;
   ui.level.disabled = playing;
   ui.time.disabled = playing;
-  // 対局中は畳む。無効化して灰色のまま置くと、棋譜に回せる高さを食うだけになる。
-  // 要素は消さない（disabled を外から見られるようにしておく）。
-  ui.controls.hidden = playing;
+  // 対局の設定は対局前だけ出す。対局中は無効化して灰色のまま置いても場所を食うだけだし、
+  // 終局後は「もう一局」がすぐ上にあって同じことをするボタンが2つ並ぶ。
+  // どちらの場合もパネルが盤より背高になり、右の列と盤の下端が揃わなくなる。
+  // 設定を変えたいときは「設定を変える」で出す。要素は消さない
+  // （disabled を外から見られるようにしておく）。
+  const over = !!game && game.phase === 'over';
+  ui.controls.hidden = playing || (over && !settingsOpen);
 }
 
 /** 席の名前・手番の印・時計。対局前でも呼べる。 */
@@ -621,6 +688,7 @@ function render() {
     if (sg) showIdleBoard(sg);
     ui.ply.textContent = ui.phase.textContent = ui.evaluation.textContent = '—';
     ui.engine.hidden = ui.gauge.hidden = ui.resultActions.hidden = true;
+    ui.evalRow.hidden = false;
     ui.undo.disabled = true;
     ui.ioSfen.value = '';
     renderSeats();
@@ -638,6 +706,8 @@ function render() {
   renderSeats();
   renderKifu();
   renderNav();
+  // 評価の数字も対局中は隠す。エンジンの行だけ隠しても readout に残っていては同じこと。
+  ui.evalRow.hidden = !evalVisible();
   renderEngine();
   renderGauge();
   ui.ioSfen.value = game.sfen();
@@ -681,24 +751,20 @@ function resultLine() {
 /** エンジンの言い分。数字が誰のものかを画面に出す。 */
 function renderEngine() {
   const ev = game.lastEval;
-  if (!ev) { ui.engine.hidden = true; return; }
+  if (!ev || !evalVisible()) { ui.engine.hidden = true; return; }
   ui.engine.hidden = false;
   if (ev.kind === 'policy') {
-    ui.engineHead.textContent = '布石方策（探索なし）';
-    // 候補手は方策が既に返している（policy.js の pick）。探索を増やさずに
-    // 読み筋相当が作れる唯一の材料なので出す。
-    ui.enginePv.textContent = (ev.candidates ?? [])
-      .map(c => `${fusekiDropText(c.move.usi, c.move.role)} ${(c.probability * 100).toFixed(1)}%`)
-      .join('  ');
+    ui.engineHead.textContent = '布石エンジン';
+    ui.enginePv.textContent = '';
     return;
   }
   const bits = ['やねうら王'];
   if (ev.depth != null) bits.push(`深さ${ev.depth}`);
   if (ev.nps != null) bits.push(formatNps(ev.nps));
   ui.engineHead.textContent = bits.join(' · ');
-  // 読み筋はUSIのまま。日本語表記にするにはPositionを複製して1手ずつ進める必要があり、
-  // それ自体が別の仕事になる。
-  ui.enginePv.textContent = ev.pv?.length ? `読み筋 ${ev.pv.join(' ')}` : '';
+  // 読み筋は8手まで。全部出すと狭いパネルで3行になり、棋譜に回せる高さを食う。
+  const pv = game.pvText(ev.pv?.slice(0, 8));
+  ui.enginePv.textContent = pv ? `読み筋 ${pv}` : '';
 }
 
 function formatNps(n) {
@@ -713,12 +779,13 @@ function formatNps(n) {
  */
 function renderGauge() {
   const ev = game.lastEval;
-  const show = ev && ev.kind === 'search' && ev.score != null;
+  const show = ev && ev.kind === 'search' && ev.score != null && evalVisible();
   ui.gauge.hidden = !show;
   if (!show) return;
-  // USIの評価値は探索した側（＝AI）から見た値。先手から見た値に直す。
+  // USIの評価値は探索した側から見た値。AIが指した手のときはAIの側、
+  // 人間の手番に画面が聞いたときは人間の側。先手から見た値に直す。
   const cp = ev.scoreKind === 'mate' ? (ev.score > 0 ? 1e5 : -1e5) : ev.score;
-  const fromSente = game.aiColor === SENTE ? cp : -cp;
+  const fromSente = (ev.side ?? game.aiColor) === SENTE ? cp : -cp;
   const p = 1 / (1 + Math.exp(-fromSente / 400));
   ui.gauge.style.setProperty('--eval-p', String(p));
 }
@@ -802,6 +869,7 @@ function loadMoves() {
     return;
   }
   note(`${moves.length}手を読み込みました。`);
+  ui.ioDialog.close();
   viewPly = null;
   soundedKifu = game.kifu.length;   // 読み込んだぶんの駒音は鳴らさない
   render();

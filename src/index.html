@@ -43,6 +43,12 @@
           <option value="dark">暗い</option>
         </select>
       </label>
+      <!-- 対局中に形勢が見えると、対局として面白くない。既定では隠す。 -->
+      <label class="check">
+        <input type="checkbox" id="opt-show-eval">
+        <span>対局中もAIの評価を見せる</span>
+      </label>
+      <button type="button" class="pop-link" id="btn-io-open">局面の受け渡し…</button>
     </div>
   </header>
 
@@ -74,7 +80,7 @@
       <dl class="readout">
         <div><dt>手数</dt><dd id="readout-ply">—</dd></div>
         <div><dt>フェーズ</dt><dd id="readout-phase">—</dd></div>
-        <div><dt>評価</dt><dd id="readout-eval">—</dd></div>
+        <div id="readout-eval-row"><dt>評価</dt><dd id="readout-eval">—</dd></div>
       </dl>
 
       <!-- 誰がその数字を言っているか。通常フェーズはやねうら王の深さ・NPS・読み筋、
@@ -112,26 +118,8 @@
         <button type="button" id="btn-again" class="primary">もう一局</button>
         <button type="button" id="btn-replay">並べ直す</button>
         <button type="button" id="btn-copy-kifu">棋譜をコピー</button>
+        <button type="button" id="btn-settings-again">設定を変える</button>
       </div>
-
-      <!-- 局面の受け渡し。布石フェーズには局面を書き込むAPIが無い（fuseki.js は
-           reset と drop だけ）ので、真は手順のほう。SFENは出力だけ。 -->
-      <details class="moves-io" id="moves-io">
-        <summary>局面の受け渡し</summary>
-        <label>手順（USI）
-          <textarea id="io-moves" rows="3" spellcheck="false"
-                    placeholder="P*5g P*5c G*4h … と空白区切りで貼る"></textarea>
-        </label>
-        <div class="moves-io-actions">
-          <button type="button" id="btn-io-load">この手順から始める</button>
-          <button type="button" id="btn-io-copy">手順をコピー</button>
-        </div>
-        <p class="io-note" id="io-note"></p>
-        <label>SFEN（出力のみ）
-          <input type="text" id="io-sfen" readonly spellcheck="false" value="">
-        </label>
-        <p class="io-note">布石フェーズのSFENは持ち駒に玉が入る布石将棋の拡張で、ふつうの将棋ソフトでは読めない。41手目以降は標準のSFEN。</p>
-      </details>
 
       <div class="seat" id="seat-bottom">
         <span class="seat-name" id="seat-bottom-name">先手</span>
@@ -164,16 +152,40 @@
             <option value="5m+5s">5分＋5秒加算</option>
           </select>
         </label>
-        <div class="buttons">
+        <div class="buttons" id="start-row">
           <button type="button" id="btn-new" class="primary" disabled>対局開始</button>
         </div>
       </form>
     </aside>
   </main>
 
+  <!-- 局面の受け渡し。パネルの中に置くと、開いたときにパネルが盤より背高になって
+       レイアウトが崩れる。dialog はフローの外なので、どの画面幅でも盤に触らない。
+       布石フェーズには局面を書き込むAPIが無い（fuseki.js は reset と drop だけ）ので、
+       渡せるのは手順のほう。SFENは出力だけ。 -->
+  <dialog class="io-dialog" id="io-dialog">
+    <form method="dialog" class="io-dialog-head">
+      <h2>局面の受け渡し</h2>
+      <button class="io-close" value="close" aria-label="閉じる">✕</button>
+    </form>
+    <label>手順（USI）
+      <textarea id="io-moves" rows="4" spellcheck="false"
+                placeholder="P*5g P*5c G*4h … と空白区切りで貼る"></textarea>
+    </label>
+    <div class="moves-io-actions">
+      <button type="button" id="btn-io-load">この手順から始める</button>
+      <button type="button" id="btn-io-copy">手順をコピー</button>
+    </div>
+    <p class="io-note" id="io-note"></p>
+    <label>SFEN（出力のみ）
+      <input type="text" id="io-sfen" readonly spellcheck="false" value="">
+    </label>
+    <p class="io-note">布石フェーズのSFENは持ち駒に玉が入る布石将棋の拡張で、ふつうの将棋ソフトでは読めない。41手目以降は標準のSFEN。</p>
+  </dialog>
+
   <footer class="app-footer">
     <p>
-      布石フェーズは布石方策（NN前向き1回）、41手目以降は
+      布石フェーズは布石エンジン、41手目以降は
       <a href="https://github.com/mizar/YaneuraOu.wasm">やねうら王</a> のWASMビルドが指す。
       盤は <a href="https://github.com/WandererXII/shogiground">shogiground</a>、
       通常将棋のルールは <a href="https://github.com/WandererXII/shogiops">shogiops</a>。

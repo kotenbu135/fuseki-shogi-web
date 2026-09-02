@@ -331,8 +331,22 @@ try {
   // それ以降に出た例外を1件も見なくなる。
   // 評価の表示。布石専用ネットは価値ヘッドを持たないので勝率が出せず、
   // undefined を素通しすると "NaN%" と出る（落ちないので気付けない）。
-  const evalText = await evaluate(page, 'document.getElementById("readout-eval").textContent');
-  check('評価の表示がNaNでない', !/NaN|undefined/.test(evalText), evalText);
+  // 対局中は形勢が見えないように既定で隠している。隠れたままの textContent を見ても
+  // 「画面に何が出ているか」を見たことにならないので、歯車の設定を立ててから読む。
+  // hidden 属性を立てただけでは隠れない（.readout > div の display に負ける）。
+  // 属性ではなく、実際に画面から消えているかを見る。
+  check('対局中は既定でAIの評価を隠している', await evaluate(page, `(() => {
+    const row = document.getElementById('readout-eval-row');
+    return row.hidden && getComputedStyle(row).display === 'none';
+  })()`) === true);
+  const evalShown = await evaluate(page, `(() => {
+    const c = document.getElementById('opt-show-eval');
+    c.checked = true; c.dispatchEvent(new Event('change'));
+    return { text: document.getElementById('readout-eval').textContent,
+             hidden: document.getElementById('readout-eval-row').hidden };
+  })()`);
+  check('評価の表示がNaNでない', !/NaN|undefined/.test(evalShown.text) && !evalShown.hidden,
+    JSON.stringify(evalShown));
 
   // ---- 棋譜をさかのぼる ----
   // 「盤に映っているのが対局中の局面ではない」という壊れ方をしうるので、
@@ -404,7 +418,8 @@ try {
   // 1局目で溜めた状態（棋譜・時計・音を鳴らした位置・さかのぼり位置）を
   // 落とし忘れると、2局目に持ち越される。押す場所が同じなので気づきにくい。
   const second = await (async () => {
-    await click(page, await center(page, '#btn-new'));
+    // 終局後は対局開始を出さない（すぐ上に「もう一局」がある）ので、そちらを押す。
+    await click(page, await center(page, '#btn-again'));
     await evalUntil(page, 'document.querySelectorAll("sg-hp-wrap").length', v => v > 0, 20000);
     await evalUntil(page, 'document.getElementById("status-line").textContent',
       v => v && v.startsWith('あなたの番'), 30000);
@@ -417,6 +432,7 @@ try {
       navFirst無効: document.getElementById('nav-first').disabled,
       投了の文言: document.getElementById('btn-resign').textContent,
       対局開始無効: document.getElementById('btn-new').disabled,
+      対局設定を畳んでいる: document.getElementById('controls').hidden,
       持ち駒: document.querySelectorAll('sg-hand-wrap.hand-bottom sg-hp-wrap:not([data-nb="0"])').length,
     })`);
   })();
@@ -424,9 +440,9 @@ try {
     second.棋譜 === 0 && second.盤上 === 0 && second.さかのぼり中 === false
       && second.navFirst無効 === true && second.投了の文言 === '投了'
       && second.対局開始無効 === true && second.持ち駒 === 8
-      // 1局目は数秒動いているので、'0:0' で始まるだけでは持ち越しを見逃す。
-      // 1秒未満（0:00.x）まで絞る。
-      && second.時計上 === '無制限' && second.時計下 === '無制限',
+      && second.対局設定を畳んでいる === true
+      // 人間側だけが持ち時間を持つ。AI側（上の席）は空で、席から時計が消える。
+      && second.時計上 === '' && second.時計下 === '無制限',
     JSON.stringify(second));
 
   check('布石フェーズの途中で投了しても落ちない',

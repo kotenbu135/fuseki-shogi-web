@@ -120,6 +120,22 @@ body {
   font-size: .75rem; color: var(--ink-soft); min-width: 0;
 }
 .settings-pop select { min-width: 0; width: 100%; }
+.settings-pop label.check {
+  flex-direction: row; align-items: center; gap: .45rem; cursor: pointer;
+}
+.settings-pop label.check input { margin: 0; accent-color: var(--accent); }
+.pop-link {
+  padding: .35rem .5rem;
+  background: none;
+  color: var(--ink-soft);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font: inherit;
+  font-size: .75rem;
+  text-align: left;
+  cursor: pointer;
+}
+.pop-link:hover { color: var(--ink); border-color: var(--ink-soft); }
 
 .app-header h1 {
   font-family: var(--serif);
@@ -240,9 +256,8 @@ body {
   .engine         { order: 5; }
   .kifu-box       { order: 6; }
   .result-actions { order: 7; }
-  .moves-io       { order: 8; }
-  #seat-bottom    { order: 9; }
-  .controls       { order: 10; }
+  #seat-bottom    { order: 8; }
+  .controls       { order: 9; }
 
   /* 一度指し始めたら見出しを畳む。畳まないと1画面の1/4を説明文が食う。 */
   .app.playing .app-header h1 { font-size: 1.15rem; }
@@ -634,6 +649,8 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 }
 .seat.turn .clock { background: var(--accent); color: var(--paper-raised); }
 .clock { white-space: nowrap; }
+/* AI側には持ち時間が無いので clockText が空を返す。枠だけ残さない。 */
+.clock:empty { display: none; }
 /* 残り30秒を切ったか、秒読みに入ったか。 */
 /* 手番のときは .seat.turn .clock の accent 背景のほうが強く、そちらが勝つ。 */
 .clock.low { color: var(--accent); font-weight: 700; }
@@ -715,10 +732,13 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 
 .kifu-actions { display: flex; gap: .4rem; margin-top: .4rem; }
 /* 終局後の行き先。結果のすぐそばに置く（対局開始は設定の一番下で遠い）。 */
+/* 終局後の行き先。4つを1行に詰めると文字が折れるので、2つずつ2行に落とす。 */
 .result-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; }
+.result-actions button { flex: 1 1 8rem; }
 .kifu-actions button,
 .result-actions button {
   flex: 1;
+  white-space: nowrap;
   padding: .35rem .5rem;
   background: var(--paper-raised);
   color: var(--ink-soft);
@@ -743,37 +763,58 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   font-weight: 600;
 }
 
-/* 局面の受け渡し。畳んでおけば高さをほとんど取らない。 */
-.moves-io { font-size: .75rem; color: var(--ink-soft); }
-.moves-io summary { cursor: pointer; padding: .2rem 0; }
-.moves-io > label { display: flex; flex-direction: column; gap: .2rem; margin-top: .5rem; }
-.moves-io textarea,
-.moves-io input[type="text"] {
+/* 局面の受け渡しはダイアログ。パネルの中に置くと、開いたときにパネルが盤より
+   背高になってレイアウトが崩れる。dialog はフローの外なので盤にも席にも触らない。 */
+.io-dialog {
+  width: min(34rem, calc(100vw - 2rem));
+  padding: 1rem 1.1rem 1.2rem;
+  background: var(--paper-raised);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-size: .8125rem;
+}
+.io-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.io-dialog-head { display: flex; align-items: center; gap: .6rem; margin-bottom: .6rem; }
+.io-dialog-head h2 { flex: 1 1 auto; margin: 0; font-size: 1rem; }
+.io-close {
+  padding: .2rem .5rem;
+  background: none; color: var(--ink-soft);
+  border: 1px solid var(--rule); border-radius: 4px;
+  font: inherit; cursor: pointer;
+}
+.io-close:hover { color: var(--ink); border-color: var(--ink-soft); }
+.io-dialog > label {
+  display: flex; flex-direction: column; gap: .2rem; margin-top: .6rem;
+  color: var(--ink-soft);
+}
+.io-dialog textarea,
+.io-dialog input[type="text"] {
   width: 100%;
   min-width: 0;
-  padding: .35rem .45rem;
-  background: var(--paper-raised);
+  padding: .4rem .5rem;
+  background: var(--paper);
   color: var(--ink);
   border: 1px solid var(--rule);
   border-radius: 4px;
   font: inherit;
-  font-size: .75rem;
+  font-size: .8125rem;
   resize: vertical;
 }
-.moves-io-actions { display: flex; gap: .4rem; margin-top: .4rem; }
+.moves-io-actions { display: flex; gap: .4rem; margin-top: .5rem; }
 .moves-io-actions button {
   flex: 1;
-  padding: .3rem .4rem;
-  background: var(--paper-raised);
+  padding: .4rem .5rem;
+  background: var(--paper);
   color: var(--ink-soft);
   border: 1px solid var(--rule);
   border-radius: 4px;
   font: inherit;
-  font-size: .75rem;
+  font-size: .8125rem;
   cursor: pointer;
 }
 .moves-io-actions button:hover { color: var(--ink); border-color: var(--ink-soft); }
-.io-note { margin: .35rem 0 0; line-height: 1.5; }
+.io-note { margin: .4rem 0 0; line-height: 1.5; color: var(--ink-soft); font-size: .75rem; }
 .io-note:empty { display: none; }
 
 /* 設定は2列。1列に積むと縦に伸びて、棋譜に回せる高さを食う。 */
@@ -835,8 +876,9 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .app-footer p { margin: .2rem 0; }
 .app-footer a { color: inherit; }
 
-/* hidden 属性は作者スタイルの display に負ける（詳細度は同じで、後に書いた方が勝つ）。
-   display を持つ要素を hidden で隠しているところ（.engine / .result-actions）は、
-   ここで落とす。**このファイルの最後に置くこと。**
+/* hidden 属性は作者スタイルの display に負ける。詳細度が同じなら後に書いた方が、
+   高ければそちらが勝つ（.readout > div の display:flex に実際に負けて、
+   hidden を立てた評価の行がそのまま見えていた）。
+   ここは「隠す」という一点だけの規則なので !important で押し切る。
    落とさないと、見えないまま場所を取り、クリックまで横取りする。 */
-[hidden] { display: none; }
+[hidden] { display: none !important; }

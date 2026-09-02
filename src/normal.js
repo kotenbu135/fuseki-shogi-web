@@ -43,7 +43,11 @@ export class NormalEngine {
   constructor(module) {
     this.module = module;
     this._waiters = [];
-    this.lastInfo = null;   // 直近の探索情報（depth / score）。UIの表示用。
+    this.lastInfo = null;   // 直近の探索情報（depth / score / nps / pv）。UIの表示用。
+    // 探索は1つずつ。人間の手番に表示のための解析を走らせるようになったので、
+    // 対局の指し手と重なりうる。
+    this._chain = Promise.resolve();
+    this._searching = false;
   }
 
   _onLine(line) {
@@ -71,17 +75,50 @@ export class NormalEngine {
   newGame() { this.module.postMessage('usinewgame'); }
 
   /**
+   * 探索を1本ずつ順番に流す。
+   *
+   * 1つのエンジンに go を重ねてはいけない。重ねると bestmove の待ち合わせが交差して、
+   * 解析の待ち手に対局の指し手が返る（またはその逆）。落ちずに、盤に入る手だけが
+   * 入れ替わる壊れ方をする。
+   */
+  _go({ sfen, moves = [], movetimeMs = 1000 }) {
+    const run = async () => {
+      this._searching = true;
+      this.lastInfo = null;
+      const position = `position sfen ${sfen}` + (moves.length ? ` moves ${moves.join(' ')}` : '');
+      this.module.postMessage(position);
+      this.module.postMessage(`go movetime ${movetimeMs}`);
+      try {
+        const line = await this._waitFor(l => l.startsWith('bestmove'));
+        return { usi: line.split(' ')[1], info: this.lastInfo };
+      } finally {
+        this._searching = false;
+      }
+    };
+    const p = this._chain.then(run, run);
+    this._chain = p.then(() => {}, () => {});
+    return p;
+  }
+
+  /** 走っている探索を早めに切り上げる。指し手を待たせないために使う。 */
+  stopSearch() {
+    if (this._searching) this.module.postMessage('stop');
+  }
+
+  /**
    * 局面を渡して1手考えさせる。返るのはUSIの指し手か 'resign' / 'win'。
    * @param {string} sfen 41手目局面のSFEN（布石フェーズが作ったもの）
    * @param {string[]} moves そこからの指し手
    */
-  async bestMove({ sfen, moves = [], movetimeMs = 1000 }) {
-    this.lastInfo = null;
-    const position = `position sfen ${sfen}` + (moves.length ? ` moves ${moves.join(' ')}` : '');
-    this.module.postMessage(position);
-    this.module.postMessage(`go movetime ${movetimeMs}`);
-    const line = await this._waitFor(l => l.startsWith('bestmove'));
-    return { usi: line.split(' ')[1], info: this.lastInfo };
+  bestMove(opts) {
+    // 表示のための解析が走っていたら切り上げる。対局の手をそのぶん待たせない。
+    this.stopSearch();
+    return this._go(opts);
+  }
+
+  /** 表示のためだけの解析。指し手は使わず、深さ・NPS・読み筋だけ取る。 */
+  async analyze(opts) {
+    return (await this._go(opts)).info;
   }
 
   terminate() { this.module.terminate(); }
