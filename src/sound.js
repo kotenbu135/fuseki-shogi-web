@@ -10,55 +10,86 @@
 
 const STORE_KEY = 'fuseki-sound';
 
-/** 駒が盤に当たる音。木の板を弾いたときの、高い当たりと低い胴鳴り。 */
-function komaOto(ctx, t, { gain = 1, pitch = 1, thud = 0 } = {}) {
-  // 当たりの成分。短いノイズを帯域で削って「パチッ」にする。
-  const len = Math.ceil(ctx.sampleRate * 0.05);
+/** 帯域を削った短いノイズ。駒が当たった瞬間の「芯」を作る。 */
+function noiseBurst(ctx, t, { dur, freq, q, type, gain }) {
+  const len = Math.max(1, Math.ceil(ctx.sampleRate * dur));
   const buf = ctx.createBuffer(1, len, ctx.sampleRate);
   const d = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 2;
-  const noise = ctx.createBufferSource();
-  noise.buffer = buf;
+  // 3乗で落とす。1乗だと尾を引いて「シャッ」と擦れた音になる。
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 3;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
 
-  const bp = ctx.createBiquadFilter();
-  bp.type = 'bandpass';
-  bp.frequency.value = 2400 * pitch;
-  bp.Q.value = 1.4;
+  const f = ctx.createBiquadFilter();
+  f.type = type;
+  f.frequency.value = freq;
+  f.Q.value = q;
 
-  const ng = ctx.createGain();
-  ng.gain.setValueAtTime(0.9 * gain, t);
-  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
-  noise.connect(bp).connect(ng).connect(ctx.destination);
-  noise.start(t);
-  noise.stop(t + 0.05);
+  src.connect(f).connect(g).connect(ctx.destination);
+  src.start(t);
+  src.stop(t + dur + 0.005);
+}
 
-  // 胴鳴り。盤の低い響きで、これが無いと乾いた雑音にしか聞こえない。
-  for (const [f, a, dur] of [[190 * pitch, 0.5, 0.09], [320 * pitch, 0.22, 0.06]]) {
-    const osc = ctx.createOscillator();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(f, t);
-    osc.frequency.exponentialRampToValueAtTime(f * 0.72, t + dur);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(a * gain, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    osc.connect(g).connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + dur + 0.01);
-  }
+/** 木の共振。音程は動かさない。下げると「ボヨン」と鳴ってゴムに聞こえる。 */
+function woodMode(ctx, t, freq, gain, dur) {
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  const g = ctx.createGain();
+  // 0から1msで立ち上げる。いきなり最大にすると波形が切れてデジタル臭い
+  // クリックが乗るが、長く取ると当たりの鋭さが鈍る。
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(gain, t + 0.001);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(g).connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + dur + 0.005);
+}
 
-  // 駒を取ったときだけ、下に一撃足して重くする。
+/**
+ * 駒が盤に当たる音。榧の盤に黄楊の駒。
+ *
+ * 3つの層でできている。
+ *   1. 当たり   6msで消える明るいノイズ。「パチッ」の芯はここだけで出る。
+ *   2. 木の響き 整数倍でない3つの山。木は弦ではないので倍音が並ばない。
+ *   3. 盤の胴   200Hz前後を小さく。重さを足すだけで、主役にはしない。
+ *
+ * 前の版が鈍く聞こえたのは、当たりのノイズを45msも伸ばし（芯ではなく擦れになる）、
+ * 190Hzの三角波を0.5という大きさで鳴らしていたため。低い唸りが主役になっていた。
+ * さらに響きの音程を0.72倍まで下げていて、木ではなくゴムの弾みに聞こえていた。
+ */
+function komaOto(ctx, t, { gain = 1, pitch = 1, thud = 0 } = {}) {
+  // 同じ波形が続くと機械に聞こえる。1回ごとに少しだけ散らす。
+  const p = pitch * (1 + (Math.random() - 0.5) * 0.08);
+  const g0 = gain * (1 + (Math.random() - 0.5) * 0.18);
+
+  // 1. 当たり。短いほど固くなる。ここを伸ばすと途端に鈍る。
+  noiseBurst(ctx, t, { dur: 0.006, freq: 4200 * p, q: 0.7, type: 'highpass', gain: 0.5 * g0 });
+  noiseBurst(ctx, t, { dur: 0.018, freq: 1900 * p, q: 1.1, type: 'bandpass', gain: 0.42 * g0 });
+
+  // 2. 木の響き。どれも短い。木は鳴り続けない。
+  for (const [f, a, dur] of [[1180, 0.20, 0.055], [1960, 0.12, 0.040], [3050, 0.07, 0.028]])
+    woodMode(ctx, t, f * p, a * g0, dur);
+
+  // 3. 盤の胴。
+  woodMode(ctx, t, 205 * p, 0.13 * g0, 0.075);
+
+  // 駒を取ったときだけ、下に一撃足して重くする。前の版より短く、低く残さない。
   if (thud) {
     const osc = ctx.createOscillator();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(110, t + 0.012);
-    osc.frequency.exponentialRampToValueAtTime(62, t + 0.16);
+    osc.frequency.setValueAtTime(150, t + 0.006);
+    osc.frequency.exponentialRampToValueAtTime(85, t + 0.1);
     const g = ctx.createGain();
-    g.gain.setValueAtTime(thud * gain, t + 0.012);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+    g.gain.setValueAtTime(thud * g0, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
     osc.connect(g).connect(ctx.destination);
-    osc.start(t + 0.012);
-    osc.stop(t + 0.18);
+    osc.start(t + 0.006);
+    osc.stop(t + 0.12);
   }
 }
 
@@ -80,11 +111,17 @@ function tone(ctx, t, freq, dur, gain = 0.28, type = 'sine') {
  *  OfflineAudioContext に差し替えれば鳴っているかを数値で確かめられる。 */
 export const VOICES = {
   move: (ctx, t) => komaOto(ctx, t, { gain: 0.85 }),
-  capture: (ctx, t) => komaOto(ctx, t, { gain: 1, pitch: 0.92, thud: 0.42 }),
+  // 駒を取るのは2つの音でできている。弾かれた駒が鳴り、そのあと自分の駒が盤に着く。
+  // 1つの音を重くするより、この間（22ms）のほうが「取った」に聞こえる。
+  capture: (ctx, t) => {
+    komaOto(ctx, t, { gain: 0.5, pitch: 1.15 });
+    komaOto(ctx, t + 0.022, { gain: 0.95, pitch: 0.95, thud: 0.3 });
+  },
   check: (ctx, t) => {
     komaOto(ctx, t, { gain: 0.85 });
-    tone(ctx, t + 0.04, 880, 0.16, 0.2, 'triangle');
-    tone(ctx, t + 0.14, 1320, 0.2, 0.16, 'triangle');
+    // 駒音が明るくなったぶん、合図は控えめにする。三角波だと1320Hzが耳に刺さる。
+    tone(ctx, t + 0.05, 880, 0.16, 0.15);
+    tone(ctx, t + 0.15, 1320, 0.2, 0.11);
   },
   win: (ctx, t) => [523.25, 659.25, 783.99].forEach((f, i) => tone(ctx, t + i * 0.11, f, 0.34)),
   lose: (ctx, t) => [493.88, 415.30, 329.63].forEach((f, i) => tone(ctx, t + i * 0.13, f, 0.4, 0.24)),
