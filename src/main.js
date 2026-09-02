@@ -323,7 +323,7 @@ async function boot() {
 
     // 内訳は onnxruntime-web の .wasm 13.3MB と重み 1.9MB（dist/ の実測）。
     // ここが起動でいちばん待たされる。数字を直すときは両方を測り直すこと。
-    setStatus('布石方策を読み込んでいる…', '約15MB');
+    setStatus('布石エンジンを読み込んでいる…', '約15MB');
     const policy = await FusekiPolicy.load({ model: ASSETS.model, wasmPaths: ASSETS.ortWasm });
 
     // やねうら王はSharedArrayBufferを使う。COOP/COEPが立っていない配信では
@@ -647,7 +647,7 @@ function renderSeats() {
   const bottom = orientation;
   const top = bottom === SENTE ? GOTE : SENTE;
   // AI側にはレベルを書く。どのくらいの相手と指しているかが席にないと分からない。
-  // エンジン名（布石方策／やねうら王）は入れない。考えている間は setStatus の
+  // エンジン名（布石エンジン／やねうら王）は入れない。考えている間は setStatus の
   // 副題に出ていて二重になる。
   const label = c => {
     const name = c === SENTE ? '先手' : '後手';
@@ -736,7 +736,7 @@ function render() {
       setStatus(game.phase === 'fuseki' ? 'あなたの番。駒台から駒を打つ。' : 'あなたの番。');
     }
   } else {
-    setStatus('AIが考えている…', game.phase === 'fuseki' ? '布石方策（探索なし）' : 'やねうら王');
+    setStatus('AIが考えている…', game.phase === 'fuseki' ? '布石エンジン' : 'やねうら王');
   }
 }
 

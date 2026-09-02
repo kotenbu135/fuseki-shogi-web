@@ -29,7 +29,7 @@ export class FusekiPolicy {
     } catch (e) {
       // 公開デプロイには重みを載せていない（models/README.md）。404をスタックトレースで
       // 出すと原因が分からないので、何が足りないかを言って止まる。
-      throw new Error(`布石方策を読み込めなかった。models/ に重みがあるか、`
+      throw new Error(`布石エンジンを読み込めなかった。models/ に重みがあるか、`
         + `vendor/ort/ にonnxruntime-webの.wasmがあるかを確認する: ${e.message}`);
     }
     for (const name of ['input1', 'input2'])
