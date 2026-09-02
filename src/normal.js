@@ -90,9 +90,14 @@ export class NormalEngine {
 function parseInfo(line) {
   const depth = line.match(/depth (\d+)/);
   const score = line.match(/score (cp|mate) (-?\d+)/);
+  const nps = line.match(/nps (\d+)/);
+  // pv は行末まで取る。USIの規約上 pv の後ろに別のトークンは来ない。
+  const pv = line.match(/ pv (.+)$/);
   return {
     depth: depth ? Number(depth[1]) : undefined,
     scoreKind: score ? score[1] : undefined,
     score: score ? Number(score[2]) : undefined,
+    nps: nps ? Number(nps[1]) : undefined,
+    pv: pv ? pv[1].trim().split(/\s+/) : undefined,
   };
 }

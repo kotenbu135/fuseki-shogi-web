@@ -32,12 +32,18 @@ export class Game {
    * @param {NormalEngine} engine 通常フェーズのAI
    * @param {'sente'|'gote'} humanColor
    */
-  constructor({ fuseki, policy, engine, humanColor = SENTE, movetimeMs = 1000 }) {
+  constructor({ fuseki, policy, engine, humanColor = SENTE, movetimeMs = 1000, temperature = 1 }) {
     this.fuseki = fuseki;
     this.policy = policy;
     this.engine = engine;
     this.humanColor = humanColor;
     this.movetimeMs = movetimeMs;
+    // 布石方策のサンプリング温度。1より下げないこと（policy.js 冒頭）。
+    // 弱くする方向にだけ使い、強くする側は movetimeMs で作る。
+    this.temperature = temperature;
+    // 待った（undoTo）で局面を作り直した回数。AIが考えている最中に戻されたかを
+    // 見分けるためだけに使う。phase を見るだけでは足りない（undoTo の注記を参照）。
+    this.epoch = 0;
 
     this.phase = 'fuseki';           // 'fuseki' | 'normal' | 'over'
     this.fusekiMoves = [];           // USIの駒打ち列（例: "P*5e"）
@@ -182,8 +188,13 @@ export class Game {
   }
 
   async _aiFusekiMove() {
-    const picked = await this.policy.pick(this.fuseki);
-    if (this.phase !== 'fuseki') return null;   // 考えている間に終局していたら捨てる
+    const epoch = this.epoch;
+    const picked = await this.policy.pick(this.fuseki, { temperature: this.temperature });
+    // 考えている間に終局していたら捨てる。epoch も見るのは、待ったで局面を
+    // 作り直されても phase は 'fuseki' のままだから。Fuseki.drop() は
+    // legalDrops() が返した手そのものを渡されると照合を飛ばして fw_do_drop を
+    // 直に呼ぶので、古い局面のために選んだ手が例外も出さずに盤へ入る。
+    if (this.epoch !== epoch || this.phase !== 'fuseki') return null;
     this.fuseki.drop(picked.move);
     this._recordFusekiMove(picked.move);
     // 40手目なら _recordFusekiMove の中で通常フェーズへ移っている（_transitionToNormal）。
@@ -195,10 +206,13 @@ export class Game {
   }
 
   async _aiNormalMove() {
+    const epoch = this.epoch;
     const { usi, info } = await this.engine.bestMove({
       sfen: this.finalSfen, moves: this.normalMoves, movetimeMs: this.movetimeMs,
     });
-    if (this.phase !== 'normal') return null;
+    // 待ったで戻されていたら捨てる。ここを見ないと、古い局面の手が isLegal で
+    // 弾かれて「エンジンが非合法手を返した」負けに化ける。
+    if (this.epoch !== epoch || this.phase !== 'normal') return null;
     if (usi === 'resign') { this._end(this.humanColor, 'ai_resign'); return null; }
     if (usi === 'win') { this._end(this.aiColor, 'ai_nyugyoku_declaration'); return null; }
     const md = parseUsi(usi);
@@ -221,7 +235,7 @@ export class Game {
     const square = parseSquareName(key);
     this.kifu.push({
       ply: this.fusekiMoves.length + 1, color, usi: move.usi,
-      text: `${MARK[color]}${makeJapaneseSquare(square)}${kanjiOf(move.role)}打`,
+      text: `${MARK[color]}${fusekiDropText(move.usi, move.role)}打`,
     });
     this.fusekiMoves.push(move.usi);
     this.boardPieces.set(key, { role: move.role, color });
@@ -301,19 +315,101 @@ export class Game {
   resign() {
     if (this.phase !== 'over') this._end(this.aiColor, 'human_resign');
   }
+
+  /**
+   * 人間の持ち時間が切れた。時計はUI側（main.js）が持っているので、判定もあちらから呼ぶ。
+   * 布石将棋そのものに時間切れ負けのルールは無く、これは対局画面が乗せている取り決め。
+   */
+  timeout() {
+    if (this.phase !== 'over') this._end(this.aiColor, 'human_timeout');
+  }
+
+  /**
+   * 表示・共有用のSFEN。
+   *
+   * **布石フェーズのものは布石将棋の拡張**で、持ち駒に玉が入る。ふつうの将棋ソフトでは
+   * 読めない。41手目以降は標準のSFENなのでそのまま読める。
+   *
+   * fuseki.toSfen() は使わない。あちらはまだ打っていない駒を落として持ち駒を '-' にする
+   * （ply5 で `9/5g3/4p4/9/9/9/4P4/5G3/4K4 w - 6` が返り、15枚が消える）。
+   */
+  sfen() {
+    if (this.position) return makeSfen(this.position);
+    const turn = this.fusekiMoves.length % 2 === 0 ? 'b' : 'w';
+    return `${this.boardSfen()} ${handsSfen(this.hands())} ${turn} ${this.fusekiMoves.length + 1}`;
+  }
+
+  /**
+   * 待った。n手だけ残して、あとは無かったことにする。
+   *
+   * 差分で1手ずつ戻さないのは、布石フェーズのWASMにundoが無い（fuseki.js は
+   * fw_reset しか持たない）ため。加えて40/41の境目をまたいで戻すときは
+   * position を null に、phase を 'fuseki' に戻す必要があり、全再生ならこの
+   * 境目を特別扱いせずに済む。
+   *
+   * 再生は安い。布石40手は fw_do_drop を呼ぶだけでNNを通らず、通常フェーズも
+   * position.play の再適用だけで、エンジンには一度も問い合わせない。
+   * ただし40手目を通ると _transitionToNormal() が usinewgame を再送する。
+   */
+  undoTo(n) {
+    const fusekiMoves = this.fusekiMoves.slice(0, Math.min(n, 40));
+    const normalMoves = this.normalMoves.slice(0, Math.max(0, n - 40));
+    // 先に上げる。これを見てAIが自分の考えた手を捨てる。
+    this.epoch++;
+
+    this.fuseki.reset();
+    this.boardPieces.clear();
+    this.kifu.length = 0;
+    this.fusekiMoves.length = 0;
+    this.normalMoves.length = 0;
+    this.position = null;
+    this.finalSfen = null;
+    this.phase = 'fuseki';
+    this.result = null;
+    this.lastDests = [];
+    this.lastEval = null;
+    this._lastDestSquare = undefined;
+
+    for (const usi of fusekiMoves) this._recordFusekiMove(this.fuseki.drop(usi));
+    for (const usi of normalMoves) this.playNormalMove(usi);
+  }
+}
+
+/**
+ * 持ち駒のSFEN表記。標準の並び（飛角金銀桂香歩）のあとに玉を足す。
+ * 玉が持ち駒に入るのは布石将棋だけなので、この部分が拡張になる。
+ */
+function handsSfen(hands) {
+  const ORDER = ['rook', 'bishop', 'gold', 'silver', 'knight', 'lance', 'pawn', 'king'];
+  let out = '';
+  for (const color of [SENTE, GOTE]) {
+    for (const role of ORDER) {
+      const n = hands.get(color)?.get(role) ?? 0;
+      if (!n) continue;
+      const f = FORSYTH[role];
+      out += (n > 1 ? n : '') + (color === SENTE ? f.toUpperCase() : f);
+    }
+  }
+  return out || '-';
+}
+
+/** 布石の駒打ちの日本語表記（手番の印は付けない）。棋譜と候補手の表示で共有する。 */
+export function fusekiDropText(usi, role) {
+  return `${makeJapaneseSquare(parseSquareName(usiDropSquare(usi)))}${kanjiOf(role)}`;
 }
 
 /** "P*5e" の着手先。USIのマス表記は shogiops / shogiground のマス名と同じ綴り。 */
 export function usiDropSquare(usi) { return usi.slice(2); }
 
+const FORSYTH = {
+  pawn: 'p', lance: 'l', knight: 'n', silver: 's', gold: 'g',
+  bishop: 'b', rook: 'r', king: 'k',
+  tokin: '+p', promotedlance: '+l', promotedknight: '+n', promotedsilver: '+s',
+  horse: '+b', dragon: '+r',
+};
+
 /** 表示用の盤SFEN。Map<key, {role, color}> を並べるだけで、ルールの判断は無い。 */
 function boardMapToSfen(pieces) {
-  const FORSYTH = {
-    pawn: 'p', lance: 'l', knight: 'n', silver: 's', gold: 'g',
-    bishop: 'b', rook: 'r', king: 'k',
-    tokin: '+p', promotedlance: '+l', promotedknight: '+n', promotedsilver: '+s',
-    horse: '+b', dragon: '+r',
-  };
   const ranks = [];
   for (const rank of 'abcdefghi') {
     let row = '', empty = 0;

@@ -128,5 +128,47 @@ check('打っている途中でも値が取り出せる', () => {
   if (r.dropDests.size === 0) throw new Error('打てる手が出ていない');
 });
 
+console.log('--- 時間切れ（持ち時間はUI側、終わらせ方だけがGame側） ---');
+
+check('布石フェーズのまま時間切れでも値が取り出せる', () => {
+  // 布石フェーズで終局すると phase は 'over' なのに position は null のまま。
+  // 投了と同じ道で、時間切れはその入口が1つ増えたもの。
+  const g = newGame();
+  g.playFusekiDrop('P*5g');
+  g.timeout();
+  if (g.phase !== 'over') throw new Error(`phase: ${g.phase}`);
+  if (g.result.reason !== 'human_timeout') throw new Error(`reason: ${g.result.reason}`);
+  if (g.result.winner !== g.aiColor) throw new Error(`winner: ${g.result.winner}`);
+  const r = readEverything(g);
+  if (r.turnColor !== null) throw new Error('終局後に手番が残っている');
+  if (r.moveDests.size !== 0 || r.dropDests.size !== 0) throw new Error('終局後に指せる手が出ている');
+});
+
+check('終局した対局に時間切れを重ねても結果が書き換わらない', () => {
+  const g = newGame();
+  g.resign();
+  g.timeout();
+  if (g.result.reason !== 'human_resign') throw new Error(`reason: ${g.result.reason}`);
+});
+
+console.log('--- 局面の受け渡し（Game.sfen） ---');
+
+check('布石フェーズのSFENに、まだ打っていない駒が乗る', () => {
+  // fuseki.toSfen() は打っていない駒を落として持ち駒を '-' にする（ply5で15枚消えた）。
+  // Game.sfen() はそこを自分で組み立てる。
+  const g = newGame();
+  g.playFusekiDrop('P*5g');
+  const hands = g.sfen().split(' ')[1];
+  if (hands === '-') throw new Error(`持ち駒が空: ${g.sfen()}`);
+  if (!hands.includes('k') || !hands.includes('K')) throw new Error(`玉が持ち駒に無い: ${hands}`);
+});
+
+check('SFENの手番と手数が進む', () => {
+  const g = newGame();
+  if (g.sfen().split(' ').slice(2).join(' ') !== 'b 1') throw new Error(g.sfen());
+  g.playFusekiDrop('P*5g');
+  if (g.sfen().split(' ').slice(2).join(' ') !== 'w 2') throw new Error(g.sfen());
+});
+
 console.log(`\n不一致 ${failures} 件`);
 process.exit(failures ? 1 : 0);

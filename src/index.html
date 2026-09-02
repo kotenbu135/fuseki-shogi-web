@@ -16,12 +16,43 @@
 <body>
 <div class="app">
   <header class="app-header">
-    <h1>布石将棋</h1>
-    <p class="tagline">空の盤に交互に20枚ずつ打つ。41手目からは普通の将棋。</p>
+    <div class="app-title">
+      <h1>布石将棋</h1>
+      <p class="tagline">空の盤に交互に20枚ずつ打つ。41手目からは普通の将棋。</p>
+    </div>
+    <!-- 表示の設定。対局の設定（手番・持ち時間・強さ）とは分ける。あちらは対局前だけ、
+         こちらは対局中も触れる。 -->
+    <button type="button" class="gear" id="btn-settings" title="表示の設定"
+            aria-expanded="false" aria-controls="display-settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.14 12.94a7.07 7.07 0 000-1.88l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.6-.22l-2.39.96a7.03 7.03 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 00-.6.22L2.7 8.84a.5.5 0 00.12.64l2.03 1.58a7.07 7.07 0 000 1.88L2.82 14.5a.5.5 0 00-.12.64l1.92 3.32c.12.22.39.3.6.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.04.24.25.42.5.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.59-.24 1.12-.56 1.62-.94l2.39.96c.22.08.48 0 .6-.22l1.92-3.32a.5.5 0 00-.12-.64l-2.03-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg>
+      <span class="sr-only">表示の設定</span>
+    </button>
+    <div class="settings-pop" id="display-settings" hidden>
+      <label>盤の大きさ
+        <input type="range" id="opt-scale" min="70" max="115" step="5" value="100"
+               aria-label="盤の大きさ">
+      </label>
+      <label>音量
+        <input type="range" id="opt-volume" min="0" max="100" step="5" value="70"
+               aria-label="音量">
+      </label>
+      <label>配色
+        <select id="opt-theme">
+          <option value="auto" selected>自動（端末に合わせる）</option>
+          <option value="light">明るい</option>
+          <option value="dark">暗い</option>
+        </select>
+      </label>
+    </div>
   </header>
 
   <main class="layout">
     <section class="board-column">
+      <!-- 評価ゲージ。通常フェーズだけ出す。布石フェーズの「採用手の確率」は
+           方策の自信であって優劣ではないので、両側に振れる帯には載せない。 -->
+      <div class="eval-gauge" id="eval-gauge" hidden aria-hidden="true">
+        <div class="eval-gauge-fill" id="eval-gauge-fill"></div>
+      </div>
       <!-- 駒台のDOMは shogiground が .sg-wrap の直下に作る（board.js の hands.inlined）。
            ここに器を置くと二重になるので置かない。 -->
       <div id="board"></div>
@@ -46,6 +77,13 @@
         <div><dt>評価</dt><dd id="readout-eval">—</dd></div>
       </dl>
 
+      <!-- 誰がその数字を言っているか。通常フェーズはやねうら王の深さ・NPS・読み筋、
+           布石フェーズは方策の候補手（上位5件）。 -->
+      <div class="engine" id="engine" hidden>
+        <p class="engine-head" id="engine-head"></p>
+        <p class="engine-pv" id="engine-pv"></p>
+      </div>
+
       <div class="kifu-box">
         <h2>棋譜</h2>
         <ol class="kifu" id="kifu"></ol>
@@ -60,9 +98,40 @@
         <!-- 対局中の操作は棋譜のすぐ下。lishogiもここに置いている。 -->
         <div class="kifu-actions">
           <button type="button" id="btn-flip" title="盤を反転">盤を反転</button>
+          <button type="button" id="btn-undo" disabled title="自分の直前の一手を取り消す">待った</button>
           <button type="button" id="btn-resign" disabled title="投了する">投了</button>
         </div>
+
       </div>
+
+      <!-- 終局したら、次にできることを結果のそばに出す。対局開始は設定の一番下に
+           あって結果から遠い（lishogiは結果の直下に並べる）。
+           .kifu-box の中には置かない。あちらは flex:1 1 0 で縮む枠で、
+           高さが乗り切らずに下の席と重なる。 -->
+      <div class="result-actions" id="result-actions" hidden>
+        <button type="button" id="btn-again" class="primary">もう一局</button>
+        <button type="button" id="btn-replay">並べ直す</button>
+        <button type="button" id="btn-copy-kifu">棋譜をコピー</button>
+      </div>
+
+      <!-- 局面の受け渡し。布石フェーズには局面を書き込むAPIが無い（fuseki.js は
+           reset と drop だけ）ので、真は手順のほう。SFENは出力だけ。 -->
+      <details class="moves-io" id="moves-io">
+        <summary>局面の受け渡し</summary>
+        <label>手順（USI）
+          <textarea id="io-moves" rows="3" spellcheck="false"
+                    placeholder="P*5g P*5c G*4h … と空白区切りで貼る"></textarea>
+        </label>
+        <div class="moves-io-actions">
+          <button type="button" id="btn-io-load">この手順から始める</button>
+          <button type="button" id="btn-io-copy">手順をコピー</button>
+        </div>
+        <p class="io-note" id="io-note"></p>
+        <label>SFEN（出力のみ）
+          <input type="text" id="io-sfen" readonly spellcheck="false" value="">
+        </label>
+        <p class="io-note">布石フェーズのSFENは持ち駒に玉が入る布石将棋の拡張で、ふつうの将棋ソフトでは読めない。41手目以降は標準のSFEN。</p>
+      </details>
 
       <div class="seat" id="seat-bottom">
         <span class="seat-name" id="seat-bottom-name">先手</span>
@@ -74,22 +143,25 @@
           <select id="opt-color">
             <option value="sente" selected>先手（下）</option>
             <option value="gote">後手（上）</option>
+            <option value="random">ランダム</option>
           </select>
         </label>
-        <label>盤の大きさ
-          <input type="range" id="opt-scale" min="70" max="115" step="5" value="100"
-                 aria-label="盤の大きさ">
+        <label title="レベル1〜2は布石の打ち方が散り、3〜5の差は41手目以降の読みの深さに出る">AIの強さ
+          <select id="opt-level">
+            <option value="1">レベル1 やさしい</option>
+            <option value="2">レベル2</option>
+            <option value="3" selected>レベル3</option>
+            <option value="4">レベル4</option>
+            <option value="5">レベル5 手強い</option>
+          </select>
         </label>
-        <label>音量
-          <input type="range" id="opt-volume" min="0" max="100" step="5" value="70"
-                 aria-label="音量">
-        </label>
-        <label>持ち時間（1手）
-          <select id="opt-movetime">
-            <option value="500">0.5秒</option>
-            <option value="1000" selected>1秒</option>
-            <option value="3000">3秒</option>
-            <option value="10000">10秒</option>
+        <label class="wide" title="人間側だけの持ち時間。AIの持ち時間はレベル（1手あたりの思考時間）が決める">あなたの持ち時間
+          <select id="opt-time">
+            <option value="none" selected>無制限</option>
+            <option value="3m">3分切れ負け</option>
+            <option value="10s">10秒将棋</option>
+            <option value="10m+30s">10分＋30秒</option>
+            <option value="5m+5s">5分＋5秒加算</option>
           </select>
         </label>
         <div class="buttons">

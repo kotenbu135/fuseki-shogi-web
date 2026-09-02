@@ -106,6 +106,11 @@ if (game.phase === 'over') {
     const d = evaluated ? `depth=${evaluated.depth} score=${evaluated.scoreKind} ${evaluated.score}` : '';
     console.log(`  ${41 + i}手目 ${before} ${usi.padEnd(6)} ${d}`);
     check(`${41 + i}手目で手番が入れ替わった`, game.phase === 'over' || game.position.turn !== before);
+    // 読み筋とNPSは対局画面がそのまま出す（main.js の renderEngine）。
+    // normal.js の parseInfo が拾い損ねると、画面から静かに消えるだけで誰も気づかない。
+    check(`${41 + i}手目に読み筋とNPSが付いている`,
+      !evaluated || (Array.isArray(evaluated.pv) && evaluated.pv.length > 0 && evaluated.nps > 0),
+      evaluated ? `pv=${(evaluated.pv ?? []).slice(0, 3).join(' ')} nps=${evaluated.nps}` : '（評価なし）');
   }
   // 人間の着手の経路（AIのbestmoveではなく playNormalMove）も1手通す。
   if (game.phase === 'normal') {
@@ -143,6 +148,31 @@ if (game.phase === 'over') {
   // 進行後の局面がSFENとして往復できること（表示と真実がズレていない）
   const roundtrip = parseAndRemake(game);
   check('局面のSFENラウンドトリップ', roundtrip.ok, roundtrip.detail);
+}
+
+// ---- 待った（undoTo） ----
+// 切り詰めて最初から再生する実装なので、戻して同じ手を指し直せば元の局面に戻る。
+// 40/41の境目をまたいで戻る場合（position を null に、phase を 'fuseki' に戻す）も
+// 同じ経路を通る。
+{
+  const all = [...game.fusekiMoves, ...game.normalMoves];
+  if (all.length >= 2) {
+    const beforeSfen = game.boardSfen();
+    const beforePhase = game.phase;
+    const beforeKifu = game.kifu.map(e => e.text).join(' ');
+    const keep = all.length - 2;
+    const epoch = game.epoch;
+    game.undoTo(keep);
+    check('待ったで手数が減る', game.kifu.length === keep, `${game.kifu.length}手`);
+    check('待ったでepochが上がる', game.epoch === epoch + 1, `${game.epoch}`);
+    for (const usi of all.slice(keep)) {
+      if (game.phase === 'fuseki') game.playFusekiDrop(usi);
+      else game.playNormalMove(usi);
+    }
+    check('指し直すと同じ局面に戻る', game.boardSfen() === beforeSfen, game.boardSfen());
+    check('指し直すとフェーズも戻る', game.phase === beforePhase, game.phase);
+    check('指し直すと棋譜も同じ', game.kifu.map(e => e.text).join(' ') === beforeKifu);
+  }
 }
 
 engine.terminate();

@@ -25,8 +25,12 @@
   --serif: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", "MS Mincho", serif;
 }
 
+/* 暗い配色。値は下の :root[data-theme="dark"] と同じものが2箇所ある。
+   片方を変えたら両方直すこと（CSSにブロックを共有する書き方が無い）。
+   :not([data-theme="light"]) が要点で、これが無いと端末が暗いときに
+   歯車で「明るい」を選んでも効かない。 */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --paper: #17161a;
     --paper-raised: #201e24;
     --ink: #ece7dd;
@@ -37,6 +41,18 @@
     --board-edge: #2b2018;
     --accent: #e0705f;
   }
+}
+/* 歯車で「暗い」を選んだとき。端末の設定に関わらず効く。 */
+:root[data-theme="dark"] {
+    --paper: #17161a;
+    --paper-raised: #201e24;
+    --ink: #ece7dd;
+    --ink-soft: #9b9287;
+    --rule: #35323a;
+    /* 盤そのものの色は明暗で変えない。lishogiも盤テーマはテーマ非依存で、
+       ここを暗くすると駒の朱字と成駒の判別が落ちる。 */
+    --board-edge: #2b2018;
+    --accent: #e0705f;
 }
 
 * { box-sizing: border-box; }
@@ -56,7 +72,55 @@ body {
   padding: 1.5rem 1.25rem 3rem;
 }
 
-.app-header { margin-bottom: 1.5rem; }
+/* 読み上げにだけ残す文字。 */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+
+.app-header {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.app-title { flex: 1 1 auto; min-width: 0; }
+.gear {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.gear:hover { color: var(--ink); border-color: var(--ink-soft); }
+.gear svg { width: 1.15rem; height: 1.15rem; fill: currentColor; }
+.settings-pop {
+  position: absolute;
+  top: calc(100% + .4rem);
+  right: 0;
+  z-index: 5;
+  display: grid;
+  gap: .6rem;
+  width: 15rem;
+  padding: .8rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px -12px rgba(0, 0, 0, .5);
+}
+.settings-pop label {
+  display: flex; flex-direction: column; gap: .2rem;
+  font-size: .75rem; color: var(--ink-soft); min-width: 0;
+}
+.settings-pop select { min-width: 0; width: 100%; }
+
 .app-header h1 {
   font-family: var(--serif);
   font-size: 1.75rem;
@@ -83,9 +147,44 @@ body {
      flex-basis を 0 にするのが要点で、auto のままだと棋譜が中身の高さを
      主張してパネルが盤より背高になり、盤の下に空白ができる。 */
   .panel { min-height: 0; }
-  .kifu-box { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  /* min-height を 0 にすると、パネルの空きが足りないとき棋譜の枠が中身より縮み、
+     操作ボタンが下の要素に重なる（局面の受け渡しを開いたときに実際に重なった）。
+     min-content にすると、棋譜の一覧（flex:1 1 0）だけが縮み、枠は中身を切らない。 */
+  .kifu-box { flex: 1 1 0; display: flex; flex-direction: column; min-height: min-content; }
   .kifu { flex: 1 1 0; min-height: 0; max-height: none; }
 }
+
+/* 評価ゲージ。fill が持つのは先手の取り分で、--eval-p（0〜1）を main.js が入れる。
+   通常フェーズだけ出す。布石フェーズの「採用手の確率」は方策の自信であって
+   優劣ではないので、両側に振れる帯には載せない（main.js の renderGauge）。 */
+.eval-gauge {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  margin-bottom: .5rem;
+  background: var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.eval-gauge-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: calc(var(--eval-p, .5) * 100%);
+  height: 100%;
+  background: var(--ink);
+  transition: width .25s ease, height .25s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .eval-gauge-fill { transition: none; }
+}
+
+/* エンジンの言い分。読み筋（通常フェーズ）と候補手（布石フェーズ）。 */
+.engine { display: grid; gap: .1rem; font-size: .75rem; color: var(--ink-soft); }
+.engine p { margin: 0; }
+.engine-head { font-weight: 600; }
+.engine-pv { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.engine-pv:empty { display: none; }
 
 /* ---- 盤まわり ---- */
 
@@ -93,7 +192,12 @@ body {
 /* 広いときは座標を盤の外へ出すので、上に筋の数字ぶんの場所を空ける。
    段の漢数字は盤と駒台のあいだの gap(2vmin) に収まる。 */
 @media (min-width: 56rem) {
-  .board-column { padding-top: 1.3rem; }
+  /* 広いときはゲージを盤の左に立てる。行にしても盤の大きさの計算は変わらない
+     （.sg-wrap の幅は width:100% と下の max-width で決まる）。 */
+  .board-column { padding-top: 1.3rem; flex-direction: row; align-items: stretch; gap: .7rem; }
+  .board-column > .sg-wrap { flex: 1 1 auto; min-width: 0; }
+  .eval-gauge { flex: 0 0 8px; width: 8px; height: auto; margin: 0; }
+  .eval-gauge-fill { width: 100%; height: calc(var(--eval-p, .5) * 100%); }
   /* 盤は幅だけでなく画面の高さでも頭を押さえる。lishogiも同じことをしている
      （$col3-uniboard-main-max-height が 100vh から引いている）。
      これが無いと 1366x768 のような横長の画面で盤の下端が画面外に出て、
@@ -110,6 +214,34 @@ body {
      100%を超えさせるとページ全体に横スクロールが出る（430px幅で実際に出た）。 */
 @media (max-width: 55.999rem) {
   .board-column > .sg-wrap { width: min(var(--board-scale, 100%), 100%); margin: 0 auto; }
+
+  /* 盤を画面幅いっぱいに。.app の左右paddingをちょうど打ち消す。 */
+  .board-column { margin-inline: -1.25rem; }
+
+  /* 相手の席を盤の上へ。lishogiは相手＝上、自分＝下で固定。
+     縦積みだと .panel が .board-column の後ろに来るので、#seat-top が盤の下に落ちる。
+     DOMを付け替えず、.panel を透明にして .layout の直接の子として並べ替える。
+     .panel 自身の gap は display:contents で消えるので、.layout の gap がその役をする。
+
+     セレクタを .layout > .panel にしているのは詳細度のため。ファイルの後ろにある
+     `.panel { display: flex }` と同じ詳細度だと、後に書いたあちらが勝って
+     display:contents が効かない（実際に効かず、盤が席の下に回った）。 */
+  .layout > .panel { display: contents; }
+  .layout { gap: 1rem; }
+  #seat-top       { order: 1; }
+  .board-column   { order: 2; }
+  .status         { order: 3; }
+  .readout        { order: 4; }
+  .engine         { order: 5; }
+  .kifu-box       { order: 6; }
+  .result-actions { order: 7; }
+  .moves-io       { order: 8; }
+  #seat-bottom    { order: 9; }
+  .controls       { order: 10; }
+
+  /* 一度指し始めたら見出しを畳む。畳まないと1画面の1/4を説明文が食う。 */
+  .app.playing .app-header h1 { font-size: 1.15rem; }
+  .app.playing .tagline { display: none; }
 }
 
 /* 盤と駒台の配置。lishogi と同じで、狭いときは盤の上下、広いときは盤の左右に
@@ -496,6 +628,10 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   letter-spacing: .02em;
 }
 .seat.turn .clock { background: var(--accent); color: var(--paper-raised); }
+.clock { white-space: nowrap; }
+/* 残り30秒を切ったか、秒読みに入ったか。 */
+/* 手番のときは .seat.turn .clock の accent 背景のほうが強く、そちらが勝つ。 */
+.clock.low { color: var(--accent); font-weight: 700; }
 
 .status {
   padding: .75rem .9rem;
@@ -573,7 +709,10 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .kifu-nav button:disabled { opacity: .3; cursor: default; }
 
 .kifu-actions { display: flex; gap: .4rem; margin-top: .4rem; }
-.kifu-actions button {
+/* 終局後の行き先。結果のすぐそばに置く（対局開始は設定の一番下で遠い）。 */
+.result-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; }
+.kifu-actions button,
+.result-actions button {
   flex: 1;
   padding: .35rem .5rem;
   background: var(--paper-raised);
@@ -584,8 +723,13 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   font-size: .8125rem;
   cursor: pointer;
 }
-.kifu-actions button:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-soft); }
-.kifu-actions button:disabled { opacity: .4; cursor: not-allowed; }
+.kifu-actions button:hover:not(:disabled),
+.result-actions button:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-soft); }
+.kifu-actions button:disabled,
+.result-actions button:disabled { opacity: .4; cursor: not-allowed; }
+.result-actions button.primary {
+  background: var(--ink); color: var(--paper); border-color: var(--ink); font-weight: 600;
+}
 /* 投了の確認待ち。押すと戻せないので、見た目で1回止める。 */
 .kifu-actions button.armed {
   background: var(--accent);
@@ -594,12 +738,54 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   font-weight: 600;
 }
 
+/* 局面の受け渡し。畳んでおけば高さをほとんど取らない。 */
+.moves-io { font-size: .75rem; color: var(--ink-soft); }
+.moves-io summary { cursor: pointer; padding: .2rem 0; }
+.moves-io > label { display: flex; flex-direction: column; gap: .2rem; margin-top: .5rem; }
+.moves-io textarea,
+.moves-io input[type="text"] {
+  width: 100%;
+  min-width: 0;
+  padding: .35rem .45rem;
+  background: var(--paper-raised);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font: inherit;
+  font-size: .75rem;
+  resize: vertical;
+}
+.moves-io-actions { display: flex; gap: .4rem; margin-top: .4rem; }
+.moves-io-actions button {
+  flex: 1;
+  padding: .3rem .4rem;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font: inherit;
+  font-size: .75rem;
+  cursor: pointer;
+}
+.moves-io-actions button:hover { color: var(--ink); border-color: var(--ink-soft); }
+.io-note { margin: .35rem 0 0; line-height: 1.5; }
+.io-note:empty { display: none; }
+
 /* 設定は2列。1列に積むと縦に伸びて、棋譜に回せる高さを食う。 */
 .controls { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .6rem; }
 .controls label { display: flex; flex-direction: column; gap: .15rem; font-size: .75rem; color: var(--ink-soft); }
+/* select の min-content は選択肢の文字列の長さで決まる。ここを切らないと
+   19rem のパネルを押し広げ、盤を大きくしたときにページごと横スクロールする。 */
+.controls label, .controls select { min-width: 0; }
+.controls select { width: 100%; }
 .controls .buttons { grid-column: 1 / -1; }
+/* 選択肢の文言が長いものは1行占有させる。 */
+.controls .wide { grid-column: 1 / -1; }
 .controls select:disabled { opacity: .5; cursor: not-allowed; }
-.controls select {
+/* 歯車の中の select / range も同じ見た目にする。表示の設定をあちらへ移したときに
+   ここから外れて、スライダーだけブラウザ既定の青になった。 */
+.controls select,
+.settings-pop select {
   padding: .4rem .5rem;
   background: var(--paper-raised);
   color: var(--ink);
@@ -608,7 +794,8 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   font: inherit;
   font-size: .875rem;
 }
-.controls input[type="range"] {
+.controls input[type="range"],
+.settings-pop input[type="range"] {
   width: 100%;
   height: 1.1rem;
   margin: 0;
@@ -642,3 +829,9 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 }
 .app-footer p { margin: .2rem 0; }
 .app-footer a { color: inherit; }
+
+/* hidden 属性は作者スタイルの display に負ける（詳細度は同じで、後に書いた方が勝つ）。
+   display を持つ要素を hidden で隠しているところ（.engine / .result-actions）は、
+   ここで落とす。**このファイルの最後に置くこと。**
+   落とさないと、見えないまま場所を取り、クリックまで横取りする。 */
+[hidden] { display: none; }

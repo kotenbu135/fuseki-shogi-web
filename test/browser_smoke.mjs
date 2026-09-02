@@ -119,9 +119,10 @@ try {
   if (failures) { console.log('--- コンソール ---'); logs.forEach(l => console.log('  ' + l)); }
   if (ready !== false) throw new Error('エンジンが起動しないので以降の確認はできない');
 
-  // 1局通すときは持ち時間を最短にする。movetimeMs は Game のコンストラクタで固定
-  // されるので、対局開始を押す**前**に変える。
-  if (FULL) await evaluate(page, 'document.getElementById("opt-movetime").value = "500"');
+  // 1局通すときはレベル1（いちばん思考時間が短い）にする。movetimeMs は Game の
+  // コンストラクタで固定されるので、対局開始を押す**前**に変える。
+  // レベル1の思考時間を延ばすとこのテストがそのぶん遅くなる（src/main.js の LEVELS）。
+  if (FULL) await evaluate(page, 'document.getElementById("opt-level").value = "1"');
   // 実マウスで押す。element.click() は利用者の操作と見なされないので、
   // ブラウザの自動再生規制で AudioContext が suspended のままになり、
   // 「音が鳴らない」状態をテストが素通りしてしまう。
@@ -146,9 +147,9 @@ try {
     typeof audio === 'object' && audio.ctx && audio.state === 'running',
     typeof audio === 'string' ? audio : `state=${audio.state}`);
   // 触れるのに効かない設定は「壊れている」と区別がつかない。対局中は閉じる。
-  check('対局中は手番と持ち時間を変えられない', await evaluate(page, `(() =>
+  check('対局中は手番とAIの強さを変えられない', await evaluate(page, `(() =>
     document.getElementById('opt-color').disabled &&
-    document.getElementById('opt-movetime').disabled)()`) === true);
+    document.getElementById('opt-level').disabled)()`) === true);
   // 投了は取り消せないので1クリックでは終わらない。
   const resign = await evaluate(page, `(async () => {
     const b = document.getElementById('btn-resign');
@@ -248,6 +249,32 @@ try {
   check('盤の大きさを変えても横スクロールが出ない',
     scale.small < scale.big && !scale.smallOver && !scale.bigOver,
     `70%=${scale.small}px / 115%=${scale.big}px`);
+
+  // 狭い画面。盤は .board-column の負のmarginで画面幅いっぱいにしているので、
+  // 盤の大きさを上げたときに横スクロールが出ないことを見る（430px幅で実際に出たことがある）。
+  // 席の並びもここで見る。lishogiと同じで相手＝盤の上、自分＝盤の下。
+  // 縦積みだと .panel が後ろに来るため、放っておくと相手の席が盤の下へ落ちる。
+  await page.send('Emulation.setDeviceMetricsOverride',
+    { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await new Promise(r => setTimeout(r, 300));
+  const narrow = await evaluate(page, `(async () => {
+    const set = v => { const s = document.getElementById('opt-scale');
+      s.value = String(v); s.dispatchEvent(new Event('input')); };
+    const wait = () => new Promise(r => setTimeout(r, 250));
+    const de = document.documentElement;
+    const top = e => document.querySelector(e).getBoundingClientRect().top;
+    set(115); await wait();
+    const bigOver = de.scrollWidth > de.clientWidth;
+    const colW = Math.round(document.querySelector('.board-column').getBoundingClientRect().width);
+    const order = top('#seat-top') < top('.board-column') && top('.board-column') < top('#seat-bottom');
+    set(100); await wait();
+    return { bigOver, order, full: colW === de.clientWidth, colW, clientW: de.clientWidth };
+  })()`);
+  await page.send('Emulation.clearDeviceMetricsOverride');
+  await new Promise(r => setTimeout(r, 250));
+  check('狭い画面で盤を広げても横スクロールが出ない', !narrow.bigOver);
+  check('狭い画面では相手の席が盤の上に来る', narrow.order);
+  check('狭い画面では盤が画面幅いっぱい', narrow.full, `${narrow.colW}px / 画面 ${narrow.clientW}px`);
 
   check('対局前から盤が出ている', await evaluate(page, `(() => {
     const sq = document.querySelectorAll('sg-squares sq').length;
