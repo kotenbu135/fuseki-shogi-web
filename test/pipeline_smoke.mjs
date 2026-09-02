@@ -20,7 +20,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
 const NORMAL_PLIES = Number(process.argv[2] || 6);
 const MOVETIME = Number(process.argv[3] || 1000);
-const MODEL = process.argv[4] || path.join(ROOT, 'models/fuseki_degct_b3_iter46.onnx');
+const MODEL = process.argv[4] || path.join(ROOT, 'models/fuseki_degct_b3_iter64.onnx');
 
 let failures = 0;
 const check = (label, cond, detail = '') => {
@@ -29,7 +29,7 @@ const check = (label, cond, detail = '') => {
 };
 
 if (!fs.existsSync(MODEL)) {
-  console.error(`models/fuseki_degct_b3_iter46.onnx が無い。開発用リポジトリからコピーすること（models/README.md）。`);
+  console.error(`models/fuseki_degct_b3_iter64.onnx が無い。開発用リポジトリからコピーすること（models/README.md）。`);
   process.exit(1);
 }
 

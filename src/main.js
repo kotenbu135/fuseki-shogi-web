@@ -18,7 +18,7 @@ const ASSETS = {
   // esbuildを通さずに素で読み込んだときのために既定値を持たせる。ここだけは
   // build.mjs の PUBLIC_MODEL と二重に持つことになるので、片方を変えたら両方直す。
   model: new URL(`./models/${typeof __MODEL_FILE__ === 'undefined'
-    ? 'fuseki_degct_b3_iter46.onnx' : __MODEL_FILE__}`, import.meta.url).href,
+    ? 'fuseki_degct_b3_iter64.onnx' : __MODEL_FILE__}`, import.meta.url).href,
   yaneuraou: new URL('./vendor/yaneuraou/yaneuraou.k-p.js', import.meta.url).href,
 };
 
