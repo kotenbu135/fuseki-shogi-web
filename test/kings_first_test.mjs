@@ -48,7 +48,7 @@ function makeTable() {
       pairs[`${fb}${rb},${fw}${rw}`] = { v: 0.5 };
   pairs['5i,5a'] = { v: 0.7 };   // 先手が良い
   pairs['5h,5b'] = { v: 0.3 };   // 後手が良い
-  return new KingTable({ format: 'king_pair_table/1', model: 'iter90.npz', band: ['9i,1a', '1i,9a'], pairs });
+  return new KingTable({ format: 'king_pair_table/1', model: 'iter122.npz', band: ['9i,1a', '1i,9a'], pairs });
 }
 const table = makeTable();
 const newGame = (humanRole, extra = {}) =>
@@ -70,7 +70,7 @@ console.log('--- 価値表 ---');
 
 check('世代がずれた表は落とす', () => {
   throws(() => new KingTable(table.data, { modelFile: 'fuseki_degct_b3_iter38.onnx' }), '世代違い');
-  new KingTable(table.data, { modelFile: 'fuseki_degct_b3_iter90.onnx' });
+  new KingTable(table.data, { modelFile: 'fuseki_degct_b3_iter122.onnx' });
 });
 
 check('形式の違う表は落とす', () => {
