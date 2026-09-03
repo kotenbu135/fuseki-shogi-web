@@ -4,16 +4,38 @@
 
 | ファイル | 役割 |
 | --- | --- |
-| `main.js` | エントリ。3つのエンジンを起こし、アセットの場所を決め、Gameを回す |
+| `main.js` | エントリ。3つのエンジンを起こし、アセットの場所を決め、Gameを回す。ホーム／対局画面の切り替え（ハッシュ）もここ |
+| `i18n.js` | 文言の辞書（日本語・英語）。`<html lang>` で選ぶ。静的HTMLの `{{key}}` は build.mjs がこれで埋める |
 | `game.js` | 対局の状態機械。**局面の真実はここだけが持つ**。41手目の裁定もここ |
 | `fuseki.js` | `wasm/` のWASMラッパ。布石フェーズの合法手・利き・特徴量 |
 | `policy.js` | 布石方策。onnxruntime-web で1手あたりNN前向き1回 |
-| `kings.js` | 両玉先置きモードの置く役・選ぶ役。両玉のマスの組の価値表（`models/king_pairs_*.json`）を引くだけ |
+| `kings.js` | 玉分け将棋の置く役・選ぶ役。両玉のマスの組の価値表（`models/king_pairs_*.json`）を引くだけ |
 | `normal.js` | やねうら王WASMとのUSIの往復 |
 | `board.js` | [shogiground](https://github.com/WandererXII/shogiground) の生成とGameからの同期 |
 | `sound.js` | 対局音。音源は持たずWebAudioで合成する |
 | `pieces/` | 駒の画像30枚（kanji_light / CC BY 4.0。[THIRD_PARTY.md](../THIRD_PARTY.md)） |
-| `index.html` / `style.css` | 画面。見た目は lishogi に寄せてある（下記） |
+| `index.html` / `style.css` | 画面（テンプレート。`{{key}}` を build.mjs が2言語に展開する）。見た目は lishogi に寄せてある（下記） |
+| `page.html` / `pages/<lang>/` | ルールとコラムのページ。殻と中身 |
+
+## 画面の作り
+
+**ホームと対局画面は同じページの2つの `<main>`**で、URL のハッシュ（`#/` と `#play`）で
+切り替える。対局中にロゴやメニューの「対局」を押すと確認を出し、やめれば対局は消える
+（局面は保存しない）。
+
+**右のパネルは固定スロットの grid**（広い画面）。席・フェーズ帯・状態・操作・棋譜・エンジン・席の
+7行で、`minmax(0,1fr)` の棋譜の行だけが余りを取り、内側でスクロールする。操作の枠は
+`#panel[data-state]`（play / choose / over）で中身を入れ替え、枠は消さない。
+`hidden` の出し入れで高さが動く作りにしないこと。狭い画面では `display: contents` で
+`.layout` の直接の子に並べ替える（席・盤・帯・状態・操作・棋譜・席の順）。
+
+**先後の選択は盤の玉を押す**。shogiground は触れない駒の mousedown を握るので、
+`#board` の `pointerup` の座標からマスを引き当てる（`keyAtPoint`）。押した玉は仮
+（`pendingSide`）で、盤がその玉が手前に来るよう回り、「◯◯を持って始める」で確定する。
+両玉の札と輪は盤の中に置かず（shogiground の持ち物）、`.board-column` に重ねて矩形を測って書く。
+
+**言語は `<html lang>` で決まる**（`i18n.js` の `LANG`）。実行時の文言は `t(key, params)`、
+棋譜の表記は `Game` の `notation` オプション。実行中に言語を切り替える口は無い。
 
 ## 守っていること
 

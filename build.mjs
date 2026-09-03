@@ -8,12 +8,18 @@
 //   - wasm/dist/fuseki.mjs      : import.meta.url 相対で fuseki.wasm を読む → 動的importで読む
 //   - @mizarjp/yaneuraou.k-p    : document.currentScript.src 相対 → classic scriptで読む
 // onnxruntime-web も .wasm は外に置くので、wasmPaths を明示して vendor/ort/ を指す。
+//
+// 言語は URL のパスで持つ。/ が日本語、/en/ が英語。HTML は src/ のテンプレート1つから
+// {{key}} を src/i18n.js の辞書で置き換えて2つ出す（app.js は共通で、<html lang> を見る）。
+// 文章のページ（ルール・コラム）は言語ごとに src/pages/<lang>/ に書き、src/page.html の
+// 殻に入れて dist/<path>/index.html と dist/en/<path>/index.html に出す。
 import esbuild from 'esbuild';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { dictionary } from './src/i18n.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const watch = process.argv.includes('--watch');
@@ -32,6 +38,11 @@ const copy = (from, toDir, name = path.basename(from)) => {
   fs.mkdirSync(toDir, { recursive: true });
   fs.copyFileSync(from, path.join(toDir, name));
   return true;
+};
+const write = (rel, text) => {
+  const f = path.join(OUT, rel);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, text);
 };
 
 fs.rmSync(OUT, { recursive: true, force: true });
@@ -90,12 +101,12 @@ const hasModel = copy(MODEL_SRC, path.join(OUT, 'models'));
 if (!hasModel) console.warn(`警告: ${MODEL_SRC} が無いので含めていない。布石フェーズは指せない`);
 else if (custom) console.warn(`--model: ${path.basename(OUT)}/models/${MODEL} を含めた。この出力は配布しないこと`);
 
-// 両玉先置きモードの価値表（src/kings.js）。公開重みのロールアウトをやねうら王で採点した
+// 玉分け将棋の価値表（src/kings.js）。公開重みのロールアウトをやねうら王で採点した
 // もので、GCT由来の値は含まない（models/README.md）。重みと世代が対になっており、
 // --model で別の重みを当てたときは src/kings.js の照合が落として、そのモードだけ閉じる。
 const KING_TABLE = 'king_pairs_iter64.json';
 const hasTable = copy(path.join(HERE, 'models', KING_TABLE), path.join(OUT, 'models'));
-if (!hasTable) console.warn(`警告: models/${KING_TABLE} が無いので含めていない。両玉先置きモードは使えない`);
+if (!hasTable) console.warn(`警告: models/${KING_TABLE} が無いので含めていない。玉分け将棋は使えない`);
 
 // ビルドの素性。GPL v3 の「対応するソースの提供」は、配ったバイナリと対応するソースを
 // 指せて初めて意味を持つ。wasm/dist/ をコミットしている以上、成果物とソースが食い違って
@@ -117,39 +128,102 @@ const info = {
 };
 fs.writeFileSync(path.join(OUT, 'build-info.json'), JSON.stringify(info, null, 2) + '\n');
 
+// ---- HTML（2言語） ----
+
+const DICT = dictionary();
+const LANGS = ['ja', 'en'];
+const tr = (key, lang) => {
+  const e = DICT[key];
+  return e ? (e[lang] ?? e.ja) : null;
+};
+/** テンプレートの {{key}} を埋める。extra が辞書より優先。無いキーは残す（気づけるように）。 */
+const fill = (html, lang, extra = {}) =>
+  html.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in extra ? extra[k] : (tr(k, lang) ?? m)));
+/** 言語ごとの URL の変数。 */
+const langVars = lang => ({
+  lang,
+  self_href: lang === 'en' ? '/en/' : '/',
+  alt_href: lang === 'en' ? '/' : '/en/',
+  alt_lang: lang === 'en' ? 'ja' : 'en',
+  king_table: KING_TABLE,
+});
+const BUILD_INFO = `dlshogi <code>${info.dlshogi_commit.slice(0, 12)}</code> / ` +
+  `web <code>${info.web_commit.slice(0, 12)}</code> / ` +
+  `fuseki.wasm <code>${info.fuseki_wasm_sha256}</code>`;
+const src = f => fs.readFileSync(path.join(HERE, 'src', f), 'utf8');
+const stamp = html => html.replace(/<!--BUILD_INFO-->/g, BUILD_INFO);
+const leftovers = (html, name) => {
+  const m = [...html.matchAll(/\{\{(\w+)\}\}/g)].map(x => x[1]);
+  if (m.length) console.warn(`警告: ${name} に埋まらなかったキー: ${[...new Set(m)].join(', ')}`);
+};
+
 // 重みが無いビルドは布石フェーズを指せない。その状態で対局画面をindexに置くと
 // 読み込みエラーが最初に見えるので、準備中ページ（疎通診断つき）をindexにする。
 // 重みが入った時点で index は自動的に対局画面へ戻る。
-const stamp = f => fs.readFileSync(path.join(HERE, 'src', f), 'utf8').replace(/<!--BUILD_INFO-->/g,
-  `dlshogi <code>${info.dlshogi_commit.slice(0, 12)}</code> / ` +
-  `web <code>${info.web_commit.slice(0, 12)}</code> / ` +
-  `fuseki.wasm <code>${info.fuseki_wasm_sha256}</code>`);
-const indexSrc = hasModel ? 'index.html' : 'soon.html';
-fs.writeFileSync(path.join(OUT, 'index.html'), stamp(indexSrc));
-// play.html は重みを載せていなかった頃に対局画面を置いていたURL。index が対局画面へ
-// 戻った後も、出回ったリンクが404にならないよう同じ内容で残す。
-fs.writeFileSync(path.join(OUT, 'play.html'), stamp('index.html'));
+const indexTpl = src('index.html');
+for (const lang of LANGS) {
+  const html = stamp(fill(indexTpl, lang, langVars(lang)));
+  leftovers(html, `index.html (${lang})`);
+  const dir = lang === 'en' ? 'en/' : '';
+  if (hasModel || lang === 'en') write(`${dir}index.html`, html);
+  else write('index.html', stamp(src('soon.html')));
+  // play.html は重みを載せていなかった頃に対局画面を置いていたURL。index が対局画面へ
+  // 戻った後も、出回ったリンクが404にならないよう同じ内容で残す。
+  if (lang === 'ja') write('play.html', html);
+}
 
-// 404。Cloudflare Pages は出力直下の 404.html を、見つからないパスに 404 で返す。
-// 置かないと未知のURLが軒並み index.html を 200 で返し、検索エンジンから見ると
-// 準備中ページが無数のURLで実在することになる。
-fs.writeFileSync(path.join(OUT, '404.html'), stamp('404.html'));
+// 文章のページ。src/pages/<lang>/<name>.html の中身を src/page.html の殻に入れる。
+const pageTpl = src('page.html');
+const PAGES = [
+  { name: 'rules', title: 'page_title_rules', desc: 'page_desc_rules' },
+  { name: 'story', title: 'page_title_story', desc: 'page_desc_story' },
+];
+for (const lang of LANGS) {
+  const dir = lang === 'en' ? 'en/' : '';
+  for (const p of PAGES) {
+    const body = src(`pages/${lang}/${p.name}.html`);
+    const html = stamp(fill(pageTpl, lang, {
+      ...langVars(lang),
+      page_path: `${p.name}/`,
+      page_title: tr(p.title, lang),
+      page_desc: tr(p.desc, lang),
+      head_extra: '',
+      content: fill(body, lang, langVars(lang)),
+      nav_current: p.name,
+    }));
+    leftovers(html, `${p.name} (${lang})`);
+    write(`${dir}${p.name}/index.html`, html);
+  }
+  // 404。Cloudflare Pages は要求されたパスに最も近い 404.html を、404 で返す。
+  // 置かないと未知のURLが軒並み index.html を 200 で返し、検索エンジンから見ると
+  // ページが無数のURLで実在することになる。/en/ 配下は英語の 404 を返す。
+  const nf = stamp(fill(pageTpl, lang, {
+    ...langVars(lang),
+    page_path: '',
+    page_title: tr('notfound_title', lang),
+    page_desc: tr('notfound_lead', lang),
+    head_extra: '<meta name="robots" content="noindex">',
+    content: `<h1>${tr('notfound_title', lang)}</h1><p class="lead">${tr('notfound_lead', lang)}</p>`
+      + `<p><a href="${langVars(lang).self_href}">${tr('notfound_home', lang)}</a></p>`,
+    nav_current: '',
+  }));
+  write(`${dir}404.html`, nf);
+}
 
 // 起動時に「約15MB」と出しているのは onnxruntime-web の .wasm と重みの合計。
 // 片方だけ差し替えると表示だけ古くなるので、ここで突き合わせる。
 {
   const mb = f => (fs.existsSync(f) ? fs.statSync(f).size : 0) / 1048576;
-  const shown = (fs.readFileSync(path.join(HERE, 'src/main.js'), 'utf8')
-    .match(/setStatus\('布石方策を読み込んでいる…', '約(\d+)MB'\)/) ?? [])[1];
+  const shown = (src('main.js').match(/const LOAD_MB = (\d+);/) ?? [])[1];
   // 重みは --model で差し替わるので、置いた実物（MODEL）を見る。
   const actual = mb(path.join(OUT, 'vendor/ort/ort-wasm-simd-threaded.wasm'))
     + mb(path.join(OUT, 'models', MODEL));
   if (shown && Math.abs(Number(shown) - actual) > 3)
     console.warn(`起動時の表示「約${shown}MB」が実物（${actual.toFixed(1)}MB）とずれている。`
-      + ' src/main.js の setStatus を直すこと。');
+      + ' src/main.js の LOAD_MB を直すこと。');
 }
 
-console.log(`index = src/${indexSrc}  (dlshogi ${info.dlshogi_commit.slice(0, 12)})`);
+console.log(`index = ${hasModel ? 'src/index.html (ja, en)' : 'src/soon.html'}  (dlshogi ${info.dlshogi_commit.slice(0, 12)})`);
 
 const options = {
   entryPoints: [path.join(HERE, 'src/main.js')],

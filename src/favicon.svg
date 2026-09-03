@@ -1,10 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- 布石将棋のファビコン。駒の五角形に「布」。
-       駒セット(CC BY 4.0)の画像は使わず、この輪郭と文字はこのリポジトリの著作物。
-       16pxでも読めるよう、輪郭は細く、文字は駒いっぱいに取ってある。 -->
-  <rect width="64" height="64" rx="8" fill="#f9b34e"/>
-  <path d="M32 4 51 12.5 57 61H7L13 12.5z" fill="#f7ecc9" stroke="#3a2a12" stroke-width="2"
-        stroke-linejoin="round"/>
-  <text x="32" y="50" text-anchor="middle" font-size="42" font-weight="700" fill="#1c1409"
-        font-family="'Hiragino Mincho ProN','Yu Mincho','Noto Serif JP','MS Mincho',serif">布</text>
+  <!-- 布石将棋のロゴ。3×3の升に最初の一つの打点。空の盤に置くところから始まる、
+       というこのゲームの一文をそのまま図にしてある。ページ上のロゴ（index.html）と同じ形。
+       駒セット(CC BY 4.0)の画像は使わず、この図形はこのリポジトリの著作物。 -->
+  <rect width="64" height="64" rx="10" fill="#f9b34e"/>
+  <rect x="11" y="11" width="42" height="42" rx="2" fill="none" stroke="#3a2a12" stroke-width="3"/>
+  <path d="M25 11v42M39 11v42M11 25h42M11 39h42" stroke="#3a2a12" stroke-width="1.6" opacity=".5"/>
+  <circle cx="32" cy="46" r="5.5" fill="#1c1409"/>
 </svg>

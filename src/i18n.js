@@ -1,0 +1,307 @@
+// 画面の文言。日本語（/）と英語（/en/）。
+//
+// 言語は URL のパスで決まり、build.mjs が <html lang> を書き分けた index.html を
+// 2つ出す。ここは lang を見て辞書を選ぶだけで、実行中に切り替える口は無い
+// （切り替えは相手言語の同じページへのリンク）。検索エンジンと共有リンクに
+// 言語ごとの URL が要るので、JS の状態で言語を持たない。
+//
+// 静的な HTML の文言は build.mjs が {{key}} をこの辞書で置き換える。
+// 実行時の文言（状態文・棋譜・結果）は t() で引く。
+
+const DICT = {
+  // ---- サイト共通 ----
+  site_title: { ja: '布石将棋', en: 'Fuseki Shogi' },
+  meta_description: {
+    ja: '空の盤に20枚ずつ打ってから指す変則将棋「布石将棋」を、ブラウザだけで対局する。',
+    en: 'Play Fuseki Shogi in your browser: a shogi variant where both sides place 20 pieces on an empty board before the game begins.',
+  },
+  nav_play: { ja: '対局', en: 'Play' },
+  nav_rules: { ja: 'ルール', en: 'Rules' },
+  nav_story: { ja: '玉分け将棋について', en: 'About King Split' },
+  nav_kifu: { ja: '棋譜', en: 'Game record' },
+  nav_lang: { ja: 'EN', en: '日本語' },
+  nav_lang_title: { ja: 'English', en: '日本語版' },
+  display_settings: { ja: '表示の設定', en: 'Display settings' },
+  opt_scale: { ja: '盤の大きさ', en: 'Board size' },
+  opt_volume: { ja: '音量', en: 'Volume' },
+  opt_theme: { ja: '配色', en: 'Theme' },
+  theme_auto: { ja: '自動（端末に合わせる）', en: 'Auto (follow device)' },
+  theme_light: { ja: '明るい', en: 'Light' },
+  theme_dark: { ja: '暗い', en: 'Dark' },
+  opt_show_eval: { ja: '対局中もAIの評価を見せる', en: 'Show AI evaluation during the game' },
+  keys_hint: { ja: 'キー: ← → で棋譜をたどる、Home / End で最初・最新', en: 'Keys: ← → step through the record, Home / End for first / latest' },
+
+  // ---- ホーム ----
+  home_tagline: {
+    ja: '空の盤に交互に20枚ずつ打つ。41手目からは普通の将棋。',
+    en: 'Both sides place 20 pieces on an empty board, one at a time. From move 41 it is ordinary shogi.',
+  },
+  home_pick: { ja: 'ルールを選んで対局する', en: 'Pick a rule set and play' },
+  mode_standard: { ja: '布石将棋', en: 'Fuseki Shogi' },
+  mode_standard_desc: {
+    ja: '空の盤に交互に20枚ずつ打ってから、41手目から普通の将棋。',
+    en: 'Place 20 pieces each on an empty board, then play ordinary shogi from move 41.',
+  },
+  mode_standard_steps: { ja: '布石 1–40手 → 将棋 41手〜', en: 'Placement (moves 1–40) → Shogi (move 41+)' },
+  mode_kings: { ja: '玉分け将棋', en: 'King Split Shogi' },
+  mode_kings_desc: {
+    ja: '一方が両方の玉を置き、もう一方が先後を選ぶ。先手の利を対局者が自分で均す。',
+    en: 'One player places both kings, the other picks a side. The players balance the first-move advantage themselves.',
+  },
+  mode_kings_steps: { ja: '玉を置く → 先後を選ぶ → 布石 → 将棋', en: 'Place kings → Choose side → Placement → Shogi' },
+  home_intro_head: { ja: 'はじめての方へ', en: 'New here?' },
+  home_intro: {
+    ja: 'ふつうの将棋との違いは三つ。空の盤から始める、20枚を自陣四段目までに打つ、41手目から動かす。',
+    en: 'Three differences from ordinary shogi: the board starts empty, each side places 20 pieces within its first four ranks, and pieces start moving on move 41.',
+  },
+  home_rules_link: { ja: 'ルールの詳細', en: 'Full rules' },
+  home_story_link: { ja: '玉分け将棋ができるまで', en: 'How King Split came to be' },
+  opt_color: { ja: 'あなたの手番', en: 'Your side' },
+  color_sente: { ja: '先手 ☗', en: 'Sente ☗ (first)' },
+  color_gote: { ja: '後手 ☖', en: 'Gote ☖ (second)' },
+  color_random: { ja: '振り駒', en: 'Furigoma (random)' },
+  opt_role: { ja: 'あなたの役', en: 'Your role' },
+  role_placer: { ja: '玉を置く役', en: 'Placer (place both kings)' },
+  role_chooser: { ja: '選ぶ役', en: 'Chooser (pick a side)' },
+  role_random: { ja: '振り駒', en: 'Furigoma (random)' },
+  opt_level: { ja: 'AIの強さ', en: 'AI strength' },
+  level_1: { ja: 'レベル1 やさしい', en: 'Level 1 · easy' },
+  level_2: { ja: 'レベル2', en: 'Level 2' },
+  level_3: { ja: 'レベル3', en: 'Level 3' },
+  level_4: { ja: 'レベル4', en: 'Level 4' },
+  level_5: { ja: 'レベル5 手強い', en: 'Level 5 · tough' },
+  opt_level_title: {
+    ja: 'レベル1〜2は布石の打ち方が散り、3〜5の差は41手目以降の読みの深さに出る',
+    en: 'Levels 1–2 scatter the placement; levels 3–5 differ in search depth from move 41',
+  },
+  opt_time: { ja: 'あなたの持ち時間', en: 'Your time control' },
+  opt_time_title: {
+    ja: '人間側だけの持ち時間。AIの持ち時間はレベル（1手あたりの思考時間）が決める',
+    en: 'Applies to you only. The AI’s time per move is set by its level',
+  },
+  time_none: { ja: '無制限', en: 'Unlimited' },
+  time_3m: { ja: '3分切れ負け', en: '3 min sudden death' },
+  time_10s: { ja: '10秒将棋', en: '10 s byoyomi' },
+  time_10m30s: { ja: '10分＋30秒', en: '10 min + 30 s byoyomi' },
+  time_5m5s: { ja: '5分＋5秒加算', en: '5 min + 5 s increment' },
+  btn_start: { ja: '対局開始', en: 'Start game' },
+  btn_start_kings: { ja: '玉分け将棋で対局開始', en: 'Start King Split game' },
+  btn_start_standard: { ja: '布石将棋で対局開始', en: 'Start Fuseki Shogi game' },
+  loading_rules: { ja: '布石フェーズのルールを読み込んでいる…', en: 'Loading placement rules…' },
+  loading_policy: { ja: '布石エンジンを読み込んでいる…', en: 'Loading placement engine…' },
+  loading_policy_sub: { ja: '約{mb}MB', en: 'about {mb} MB' },
+  loading_engine: { ja: '通常フェーズのエンジンを起こしている…', en: 'Starting the shogi engine…' },
+  loading_engine_sub: { ja: '{n}スレッド', en: '{n} threads' },
+  ready: { ja: '準備できた', en: 'Ready' },
+  ready_single_thread: {
+    ja: 'SharedArrayBufferが無いため通常フェーズは1スレッドで動く',
+    en: 'No SharedArrayBuffer, so the shogi engine runs on one thread',
+  },
+  boot_failed: { ja: '起動に失敗した', en: 'Failed to start' },
+  kings_unavailable: { ja: '玉分け将棋は使えない（価値表が読めない）', en: 'King Split is unavailable (value table failed to load)' },
+
+  // ---- 対局画面 ----
+  seat_sente: { ja: '先手 ☗', en: 'Sente ☗' },
+  seat_gote: { ja: '後手 ☖', en: 'Gote ☖' },
+  seat_you: { ja: 'あなた', en: 'You' },
+  seat_ai: { ja: 'AI レベル{n}', en: 'AI level {n}' },
+  seat_you_pending: { ja: 'あなた（仮）', en: 'You (preview)' },
+  clock_unlimited: { ja: '無制限', en: 'No limit' },
+  clock_byoyomi: { ja: '秒読み {s}', en: 'byoyomi {s}' },
+
+  step_kings: { ja: '玉を置く', en: 'Place kings' },
+  step_kings_sub: { ja: '1–2手', en: 'moves 1–2' },
+  step_choose: { ja: '先後を選ぶ', en: 'Choose side' },
+  step_fuseki: { ja: '布石', en: 'Placement' },
+  step_fuseki_sub_std: { ja: '1–40手', en: 'moves 1–40' },
+  step_fuseki_sub_kings: { ja: '3–40手', en: 'moves 3–40' },
+  step_normal: { ja: '将棋', en: 'Shogi' },
+  step_normal_sub: { ja: '41手〜', en: 'move 41+' },
+  step_you: { ja: 'あなた', en: 'you' },
+  step_ai: { ja: 'AI', en: 'AI' },
+  step_left: { ja: '残り{n}枚', en: '{n} left' },
+  step_ply: { ja: '{n}手目', en: 'move {n}' },
+  step_over: { ja: '{n}手で終局', en: 'ended at move {n}' },
+  step_chosen: { ja: '{who} → {side}', en: '{who} → {side}' },
+  step_turn_you: { ja: 'あなたの番', en: 'your turn' },
+  step_turn_ai: { ja: 'AIの番', en: 'AI’s turn' },
+  step_title_kings: {
+    ja: '置く役が先手玉を先手陣に、後手玉を後手陣に置く',
+    en: 'The placer puts the Sente king in Sente’s camp and the Gote king in Gote’s camp',
+  },
+  step_title_choose: {
+    ja: '選ぶ役が、先手を持つか後手を持つかを決める',
+    en: 'The chooser decides whether to play Sente or Gote',
+  },
+  step_title_fuseki: {
+    ja: '自陣四段目までに、交互に駒を打つ。動かせない',
+    en: 'Players alternate placing pieces within their first four ranks. Nothing moves yet',
+  },
+  step_title_normal: { ja: '41手目からは普通の将棋', en: 'From move 41 it is ordinary shogi' },
+
+  status_placer_first: { ja: 'あなたが玉を置く役。先手玉を先手陣に置く。', en: 'You are the placer. Put the Sente king in Sente’s camp.' },
+  status_placer_second: { ja: '次に後手玉を後手陣に置く。', en: 'Now put the Gote king in Gote’s camp.' },
+  status_placer_sub: { ja: '置き終えると、相手が先後を選ぶ。', en: 'When both kings are placed, the AI picks a side.' },
+  status_choose: { ja: 'どちらの玉で指すか選ぶ。持ちたい玉を押す。', en: 'Pick the king you want to play. Tap it on the board.' },
+  status_choose_sub: {
+    ja: '先手 ☗ は3手目から先に置き、41手目を指す。後手 ☖ は布石の最後の一枚を置く。',
+    en: 'Sente ☗ places first from move 3 and plays move 41. Gote ☖ places the last piece of the placement.',
+  },
+  status_pending: { ja: 'この玉を持つ → あなたは{side}', en: 'Take this king → you play {side}' },
+  status_pending_sub: {
+    ja: '下のボタンで確定。もう一方の玉を押すと入れ替わる。',
+    en: 'Confirm with the button below. Tap the other king to switch.',
+  },
+  status_normal_first: { ja: '41手目。ここから普通の将棋。', en: 'Move 41. Ordinary shogi from here.' },
+  status_normal_first_sub: { ja: '打つのは取った駒だけ。盤の駒を動かす。', en: 'Move pieces on the board; only captured pieces can be dropped.' },
+  status_your_turn_fuseki: { ja: 'あなたの番。駒台から駒を打つ。', en: 'Your turn. Drop a piece from your hand.' },
+  status_your_turn: { ja: 'あなたの番。', en: 'Your turn.' },
+  status_chosen_note: { ja: '{who}が{side}を持った。あなたは{yours}。', en: '{who} took {side}. You play {yours}.' },
+  status_ai_kings: { ja: 'AIが両玉を置いている…', en: 'AI is placing the kings…' },
+  status_ai_choose: { ja: 'AIが先後を選んでいる…', en: 'AI is choosing a side…' },
+  status_ai_thinking: { ja: 'AIが考えている…', en: 'AI is thinking…' },
+  engine_table: { ja: '両玉の価値表', en: 'king-pair value table' },
+  engine_policy: { ja: '布石エンジン', en: 'placement engine' },
+  engine_yaneuraou: { ja: 'やねうら王', en: 'YaneuraOu' },
+  status_reviewing: { ja: '{n}手目までを表示中', en: 'Showing the position after move {n}' },
+  status_reviewing_sub: { ja: '盤には触れない。最新へ戻すと指せる（→ / End）。', en: 'The board is locked. Go back to the latest position to play (→ / End).' },
+  status_illegal: { ja: 'その手は指せない', en: 'That move is not legal' },
+  status_cannot_choose: { ja: '選べない', en: 'Cannot choose' },
+  status_engine_error: { ja: 'エンジンでエラーが起きた', en: 'Engine error' },
+
+  btn_undo: { ja: '待った', en: 'Takeback' },
+  btn_undo_title: { ja: '自分の直前の一手を取り消す（先後を選ぶ前にも戻れる）', en: 'Take back your last move (you can also go back to before the side was chosen)' },
+  btn_resign: { ja: '投了', en: 'Resign' },
+  btn_resign_confirm: { ja: '本当に投了？', en: 'Really resign?' },
+  btn_flip: { ja: '盤を反転', en: 'Flip board' },
+  btn_choose_sente: { ja: '☗ 先手を持つ', en: '☗ Play Sente' },
+  btn_choose_gote: { ja: '☖ 後手を持つ', en: '☖ Play Gote' },
+  btn_confirm_side: { ja: '{side}を持って始める', en: 'Play {side}' },
+  btn_confirm_side_idle: { ja: '玉を選ぶと確定できる', en: 'Pick a king to confirm' },
+  btn_again: { ja: 'もう一局', en: 'Play again' },
+  btn_replay: { ja: '並べ直す', en: 'Replay' },
+  btn_copy_kifu: { ja: '棋譜をコピー', en: 'Copy record' },
+  btn_home: { ja: 'ホームへ', en: 'Home' },
+  copied: { ja: 'コピーした', en: 'Copied' },
+  copy_failed: { ja: 'コピーできなかった', en: 'Copy failed' },
+  kifu_heading: { ja: '棋譜', en: 'Record' },
+  nav_first: { ja: '最初の局面へ（Home）', en: 'First position (Home)' },
+  nav_prev: { ja: '1手戻る（←）', en: 'One move back (←)' },
+  nav_next: { ja: '1手進む（→）', en: 'One move forward (→)' },
+  nav_last: { ja: '最新の局面へ（End）', en: 'Latest position (End)' },
+  kifu_from41: { ja: 'ここから将棋', en: 'shogi from here' },
+
+  eval_label: { ja: '評価', en: 'Eval' },
+  eval_table: { ja: '表の先手勝率 {p}%', en: 'table: Sente {p}%' },
+  eval_policy_prob: { ja: '採用手の確率 {p}%', en: 'move probability {p}%' },
+  eval_policy_win: { ja: '勝率 {p}%（手番側）', en: 'win rate {p}% (side to move)' },
+  eval_mate: { ja: '{n}手詰', en: 'mate in {n}' },
+  eval_cp: { ja: '{cp}（深さ{d}）', en: '{cp} (depth {d})' },
+  engine_depth: { ja: '深さ{d}', en: 'depth {d}' },
+  engine_pv: { ja: '読み筋 {pv}', en: 'PV {pv}' },
+
+  result_ai_wins: { ja: 'AIの勝ち', en: 'AI wins' },
+  result_draw: { ja: '引き分け', en: 'Draw' },
+  result_color_wins: { ja: '{side}の勝ち', en: '{side} wins' },
+  result_you: { ja: '（あなた）', en: ' (you)' },
+  reason_fuseki_king_capture: { ja: '41手目に玉を取れる形で布石が終わった', en: 'placement ended with a king capturable on move 41' },
+  reason_checkmate: { ja: '詰み', en: 'checkmate' },
+  reason_stalemate: { ja: '指す手が無い', en: 'no legal moves' },
+  reason_draw: { ja: '引き分け', en: 'draw' },
+  reason_human_resign: { ja: '投了', en: 'resignation' },
+  reason_human_timeout: { ja: '持ち時間が切れた', en: 'time forfeit' },
+  reason_ai_resign: { ja: 'AIの投了', en: 'AI resigned' },
+  reason_ai_nyugyoku_declaration: { ja: 'AIの入玉宣言', en: 'AI declared an entering king' },
+  reason_engine_illegal_move: { ja: 'エンジンが非合法手を返した', en: 'engine returned an illegal move' },
+  summary_kings: {
+    ja: '置く役 {placer} · 両玉 {kb}/{kw} · {chooser}が{side}を持った · 表の先手勝率 {p}%',
+    en: 'Placer {placer} · kings {kb}/{kw} · {chooser} took {side} · table: Sente {p}%',
+  },
+  side_sente: { ja: '先手 ☗', en: 'Sente ☗' },
+  side_gote: { ja: '後手 ☖', en: 'Gote ☖' },
+  you: { ja: 'あなた', en: 'you' },
+  You: { ja: 'あなた', en: 'You' },
+  ai: { ja: 'AI', en: 'the AI' },
+  AI: { ja: 'AI', en: 'The AI' },
+
+  toast_side_decided: { ja: '先後が決まった。あなたは{side}。', en: 'Side decided. You play {side}.' },
+  toast_normal: { ja: '41手目。ここから普通の将棋。', en: 'Move 41. Ordinary shogi from here.' },
+
+  // ---- 棋譜の受け渡し ----
+  io_title: { ja: '棋譜の受け渡し', en: 'Game record' },
+  io_close: { ja: '閉じる', en: 'Close' },
+  io_moves: { ja: '手順（USI）', en: 'Moves (USI)' },
+  io_moves_placeholder: { ja: 'P*5g P*5c G*4h … と空白区切りで貼る', en: 'Paste moves separated by spaces: P*5g P*5c G*4h …' },
+  io_load: { ja: 'この手順から始める', en: 'Start from these moves' },
+  io_copy: { ja: '手順をコピー', en: 'Copy moves' },
+  io_sfen: { ja: 'SFEN（出力のみ）', en: 'SFEN (output only)' },
+  io_sfen_note: {
+    ja: '布石フェーズのSFENは持ち駒に玉が入る布石将棋の拡張で、ふつうの将棋ソフトでは読めない。41手目以降は標準のSFEN。',
+    en: 'During placement the SFEN is a Fuseki Shogi extension with kings in hand and ordinary shogi software cannot read it. From move 41 it is standard SFEN.',
+  },
+  io_empty: { ja: '手順が空です。', en: 'No moves given.' },
+  io_not_ready: { ja: 'まだエンジンが起動していません。', en: 'The engines are not ready yet.' },
+  io_busy: { ja: 'AIが考えているあいだは読み込めません。', en: 'Cannot load while the AI is thinking.' },
+  io_no_table: { ja: '玉分け将棋の手順ですが、価値表が読み込まれていません。', en: 'These are King Split moves, but the value table is not loaded.' },
+  io_stopped: { ja: '{n}手目「{m}」で止まりました: {e}', en: 'Stopped at move {n} “{m}”: {e}' },
+  io_loaded: { ja: '{n}手を読み込みました。', en: 'Loaded {n} moves.' },
+  io_over: { ja: 'この手順は途中で終局している', en: 'this sequence ends the game before the last move' },
+
+  // ---- ホームへ戻る ----
+  leave_title: { ja: '対局をやめてホームへ戻る？', en: 'Leave this game and go home?' },
+  leave_body: { ja: '進行中の対局は消える。棋譜を残したければ先にコピーする。', en: 'The game in progress will be discarded. Copy the record first if you want to keep it.' },
+  leave_copy: { ja: '棋譜をコピー', en: 'Copy record' },
+  leave_ok: { ja: 'やめてホームへ', en: 'Leave' },
+  leave_cancel: { ja: '対局に戻る', en: 'Back to the game' },
+
+  // ---- 棋譜の書き出し ----
+  kifu_rule_standard: { ja: '布石将棋', en: 'Fuseki Shogi' },
+  kifu_rule_kings: { ja: '玉分け将棋', en: 'King Split Shogi' },
+  kifu_level: { ja: 'AIレベル{n}', en: 'AI level {n}' },
+  kifu_seats_undecided: { ja: '先後は未定', en: 'sides undecided' },
+  kifu_seats_you_sente: { ja: '先手 あなた・後手 AI', en: 'Sente you · Gote AI' },
+  kifu_seats_you_gote: { ja: '先手 AI・後手 あなた', en: 'Sente AI · Gote you' },
+  kifu_roles_you_placer: { ja: '置く役 あなた・選ぶ役 AI', en: 'placer you · chooser AI' },
+  kifu_roles_you_chooser: { ja: '置く役 AI・選ぶ役 あなた', en: 'placer AI · chooser you' },
+  kifu_sfen41: { ja: '41手目局面 sfen {sfen}', en: 'position at move 41: sfen {sfen}' },
+  kifu_result: { ja: '結果: {who}（{why}）', en: 'Result: {who} ({why})' },
+
+  // ---- フッター ----
+  footer_engines: {
+    ja: '布石フェーズは布石エンジン、41手目以降は <a href="https://github.com/mizar/YaneuraOu.wasm">やねうら王</a> のWASMビルドが指す。盤は <a href="https://github.com/WandererXII/shogiground">shogiground</a>、通常将棋のルールは <a href="https://github.com/WandererXII/shogiops">shogiops</a>。',
+    en: 'The placement phase is played by the placement engine; from move 41 by the WASM build of <a href="https://github.com/mizar/YaneuraOu.wasm">YaneuraOu</a>. Board by <a href="https://github.com/WandererXII/shogiground">shogiground</a>, shogi rules by <a href="https://github.com/WandererXII/shogiops">shogiops</a>.',
+  },
+  footer_license: {
+    ja: 'GPL-3.0。ソースは <a href="https://github.com/kotenbu135/fuseki-shogi-web">fuseki-shogi-web</a>。',
+    en: 'GPL-3.0. Source: <a href="https://github.com/kotenbu135/fuseki-shogi-web">fuseki-shogi-web</a>.',
+  },
+  footer_build: { ja: 'ビルド', en: 'Build' },
+  page_title_rules: { ja: 'ルール', en: 'Rules' },
+  page_title_story: { ja: '玉分け将棋ができるまで', en: 'How King Split came to be' },
+  page_desc_rules: {
+    ja: '布石将棋と玉分け将棋のルール。置ける範囲、二歩回避の禁じ手、41手目の裁定、玉分けの手順。',
+    en: 'Rules of Fuseki Shogi and King Split Shogi: placement zone, the nifu-avoidance restriction, the move-41 adjudication, and the king-split procedure.',
+  },
+  page_desc_story: {
+    ja: '先手が勝ちすぎる布石将棋を、対局者自身が釣り合わせる仕組みに辿り着くまで。',
+    en: 'How a variant where Sente won too often led to a rule that lets the players balance it themselves.',
+  },
+  notfound_title: { ja: 'ページが見つかりません', en: 'Page not found' },
+  notfound_lead: { ja: 'そのURLに置いてあるものはありません。', en: 'There is nothing at this address.' },
+  notfound_home: { ja: 'トップへ戻る', en: 'Back to the top page' },
+};
+
+/** 実行中の言語。build.mjs が <html lang> に書く。 */
+export const LANG = (typeof document !== 'undefined'
+  && document.documentElement.lang.toLowerCase().startsWith('en')) ? 'en' : 'ja';
+
+/** 文言を引く。{name} を params で埋める。無いキーはそのまま返す（落とさない）。 */
+export function t(key, params, lang = LANG) {
+  const entry = DICT[key];
+  let s = entry ? (entry[lang] ?? entry.ja) : key;
+  if (params) for (const [k, v] of Object.entries(params)) s = s.split(`{${k}}`).join(String(v));
+  return s;
+}
+
+/** 辞書そのもの。build.mjs が静的HTMLの {{key}} を置き換えるのに使う。 */
+export function dictionary() { return DICT; }

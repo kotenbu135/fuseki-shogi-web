@@ -1,0 +1,127 @@
+<h1>How King Split came to be</h1>
+<p class="lead">I trained an AI for Fuseki Shogi and Sente won far too often. This is how I stopped chasing a magic number in the rules and let the players balance the game themselves.</p>
+
+<h2>1. The problem</h2>
+<p>Fuseki Shogi is a variant in which both sides place 20 pieces on an empty board, one at a time, before anything moves. Instead of a single starting position there are about 10<sup>37</sup> of them. I wanted a shogi that does not feel researched to death, so I built an AI you can play in the browser: a network that places the pieces, trained by self-play, and YaneuraOu for everything from move 41 on.</p>
+<p>As the network improved, one thing became impossible to ignore. <b>Sente won too much.</b> Across all promotion gates of the training run (games between equally strong policies, 10,767 in total) Sente scored 62.1%, and more training did not bring it down.</p>
+
+<h2>2. First-move advantage in ordinary shogi</h2>
+<p>This is not special to Fuseki Shogi. In professional human games Sente wins 52–53%, but the stronger the engines, the more Sente wins.</p>
+<div class="scroll"><table>
+  <tr><th>Games</th><th class="n">Sente wins</th><th>Notes</th></tr>
+  <tr><td>Professional human games</td><td class="n">52–53%</td><td></td></tr>
+  <tr><td>World Computer Shogi Championship 2023, final</td><td class="n">67.9%</td><td></td></tr>
+  <tr><td>World Computer Shogi Championship 2026, final</td><td class="n">91.3%</td><td>excluding repetitions and impasse</td></tr>
+  <tr><td>Denryu-sen TSEC7, top four</td><td class="n">94%</td><td>even with Sente on 0 minutes vs. Gote on 10</td></tr>
+</table></div>
+<p>Within the same tournament the number rises from the qualifiers to the final. The advantage is <b>a function of strength</b>, and a time handicap did not close it.</p>
+
+<h2>3. Things I tried in the rules</h2>
+<p>My first instinct was to fix it in the text of the rules: restrict the first move to an edge pawn, forbid placements where pieces attack each other, reduce the number of ranks. Of everything I measured, the only change that helped was “place within three ranks, pawns on the third rank” — a geometry close to ordinary shogi — and even that still gave Sente 53.8% with random placement.</p>
+<p>Then it clicked. Removing contact or changing the ranks does not touch the core of the advantage. What moves is <b>the value of a tempo</b>, and that depends on the strength of whoever is playing, not on the geometry. A rule that looks like 50% at one strength will be off at another.</p>
+
+<h2>4. A fixed rule cannot follow strength</h2>
+<p>Chess also favours White, but at the top the draw rate rises and absorbs the advantage. Shogi has pieces in hand and almost no draws. So even if I found a rule that measured 50% in my environment (YaneuraOu with an older evaluation), it would not hold for the newest engines. I stopped looking for a number.</p>
+
+<h2>5. Cut and choose</h2>
+<p>Only one mechanism is known to stay balanced regardless of strength: <b>one player cuts, the other chooses</b>. It is how two people share a cake, and it is standard in Hex and in Gomoku. Gomoku’s Swap2 opening — the first player puts down two black stones and one white, the second player picks a colour — brought the first player’s 67% down to about 52%.</p>
+<p>It breaks, though, when the cutter is also the one who eats. If a player may choose a camp after the placement phase, they simply build their own camp badly and take the opponent’s. That is why I had rejected the pie rule earlier.</p>
+<p>Fuseki Shogi, however, has a boundary between placing and moving, and that allows cutting, choosing and building to be separated.</p>
+<div class="roles">
+  <div><b>Cut</b>At the very start, one player places both kings, not knowing which side they will get.</div>
+  <div><b>Choose</b>The other player looks at the two kings and takes Sente or Gote. Nothing has been built yet.</div>
+  <div><b>Build</b>The remaining 19 pieces each are placed alternately, Sente first. This part is unchanged.</div>
+</div>
+<p>The cutter is neutral because they do not know their side; the chooser cannot sandbag because they have not built anything. Whatever advantage Sente still has is cancelled every game by the cutter putting the Sente king on a slightly worse square.</p>
+
+<h2>6. Why the kings</h2>
+<p>Is cutting with the kings alone enough? Do king squares carry enough value to cancel the first-move advantage? That can be measured. For every pair of squares (36 for the Sente king × 36 for the Gote king) I let the placement network finish the placement from that position and had YaneuraOu score the move-41 position — 256 rollouts per pair, about 40 minutes in total.</p>
+<div class="stat" id="stat">
+  <div><b>91 pt</b><span>range between the best and the worst pair</span></div>
+  <div><b>104 pairs</b><span>in the balanced band (50% ± error)</span></div>
+  <div><b>7.5%</b><span>Sente’s score with the worst pair, 5f·1a (real games)</span></div>
+  <div><b>99.0%</b><span>Sente’s score with the best pair, 1i·5d (real games)</span></div>
+</div>
+<p>The range is 91 percentage points — far more than the first-move advantage in this environment (about 12 points). Checked against real games (6 pairs × 400 games) the table was off by 2.5 points on average.</p>
+<figure>
+  <div class="heat" id="heat"></div>
+  <figcaption>Value of each king square in winning-rate points from Sente’s point of view. Left: the Sente king; right: the Gote king. Positive favours Sente, negative favours Gote. For both kings the front rank is the worst and the back-rank corners are the best. Drawn from the published table <code>{{king_table}}</code>.</figcaption>
+</figure>
+<p>A king on the front rank (closest to the opponent) loses a lot; a back-rank corner is best. This table is exactly what the AI’s placer and chooser consult.</p>
+
+<h2>7. Does it actually balance?</h2>
+<p>800 games between AIs that both use the table.</p>
+<div class="scroll"><table>
+  <tr><th>Placer / chooser</th><th class="n">Sente wins</th><th class="n">Placer wins</th></tr>
+  <tr><td>table / table</td><td class="n">50.9%</td><td class="n">47.4%</td></tr>
+  <tr><td>random / table</td><td class="n">60.9%</td><td class="n">24.4%</td></tr>
+  <tr><td>table / random</td><td class="n">50.9%</td><td class="n">48.0%</td></tr>
+</table></div>
+<p>With the table on both sides Sente lands near 50% and the chooser’s edge is 2–3 points. A placer who does not think about the kings loses three games in four. The design goal — the only way for the placer not to lose out is to balance the kings — shows up directly in the numbers.</p>
+
+<h2>8. The name</h2>
+<p>One player splits by placing both kings, the other chooses. The kings replace the coin toss. Hence <b>King Split</b> — in Japanese <em>tamawake</em> (玉分け), “dividing the kings”.</p>
+
+<h2>9. What comes next</h2>
+<ul>
+  <li>The newest engines have a much larger first-move advantage. If the kings alone stop being enough, the cut widens to “king and rook”.</li>
+  <li>A third option in the style of Gomoku’s Swap2: instead of choosing, add one piece to each camp and hand the choice back. Then a cutter cannot impose a placement only they have studied.</li>
+  <li>Retraining the placement network under King Split and watching how the balanced band moves. The table and the network are updated as a pair.</li>
+</ul>
+
+<h2>Sources</h2>
+<ul>
+  <li><a href="https://yaneuraou.yaneu.com/2026/07/23/shogi-ai-black-win-rate-94-percent/">Shogi AI tournaments reach a 94% first-player win rate</a> (YaneuraOu blog, Japanese)</li>
+  <li><a href="https://yaneuraou.yaneu.com/2023/12/22/first-player-advantage-in-shogi-ai/">How large is the first-player advantage among shogi AIs?</a> (YaneuraOu blog, Japanese)</li>
+  <li><a href="https://ykakinoki.hateblo.jp/entry/2026/05/09/032700">Win rates and openings at the 36th World Computer Shogi Championship</a> (Japanese)</li>
+  <li><a href="https://en.wikipedia.org/wiki/Pie_rule">Pie rule</a>, <a href="https://en.wikipedia.org/wiki/Swap_opening_rule">Swap opening rule</a> (Wikipedia)</li>
+  <li><a href="https://en.wikipedia.org/wiki/First-move_advantage_in_chess">First-move advantage in chess</a> (Wikipedia)</li>
+</ul>
+
+<script type="module">
+// Heat map of the king-pair value table, read straight from the published table in models/.
+// Rebuild the table and this page follows.
+const el = document.getElementById('heat');
+try {
+  const d = await (await fetch('/models/{{king_table}}')).json();
+  const boards = [
+    { title: 'Sente king (Sente’s camp, back rank at the bottom)', vals: d.black_king_value_pt, ranks: ['f', 'g', 'h', 'i'] },
+    { title: 'Gote king (Gote’s camp, back rank at the top)', vals: d.white_king_value_pt, ranks: ['a', 'b', 'c', 'd'] },
+  ];
+  const lim = 50;
+  const color = v => {
+    const x = Math.max(-1, Math.min(1, v / lim));
+    const mix = (a, b, t) => a.map((c, i) => Math.round(c + (b[i] - c) * t));
+    const paper = [244, 242, 234], blue = [78, 121, 196], red = [217, 84, 45];
+    const c = x < 0 ? mix(paper, blue, -x) : mix(paper, red, x);
+    return `rgb(${c.join(',')})`;
+  };
+  for (const b of boards) {
+    const box = document.createElement('div');
+    box.className = 'heat-board';
+    const title = document.createElement('div');
+    title.className = 'heat-title';
+    title.textContent = b.title;
+    const grid = document.createElement('div');
+    grid.className = 'heat-grid';
+    for (const r of b.ranks) for (let f = 9; f >= 1; f--) {
+      const v = b.vals[`${f}${r}`];
+      const cell = document.createElement('div');
+      cell.className = 'heat-cell';
+      cell.style.background = color(v);
+      cell.style.color = Math.abs(v) > 30 ? '#fff' : '#1d1b16';
+      cell.textContent = v > 0 ? `+${Math.round(v)}` : String(Math.round(v));
+      cell.title = `${f}${r}: ${v.toFixed(1)} pt`;
+      grid.appendChild(cell);
+    }
+    box.append(title, grid);
+    el.appendChild(box);
+  }
+  const scale = document.createElement('div');
+  scale.className = 'heat-scale';
+  scale.innerHTML = `<span>favours Gote −${lim}</span><i></i><span>+${lim} favours Sente</span>`;
+  el.after(scale);
+} catch (e) {
+  el.textContent = 'Could not load the table: ' + e.message;
+}
+</script>

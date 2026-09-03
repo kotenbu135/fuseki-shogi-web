@@ -12,6 +12,7 @@
   --board-edge: #6f5027;
   --line: #000;
   --accent: #b23a2c;
+  --ok: #2f7d4f;
   /* 盤上の印は lishogi の値をそのまま使う（ui/common/css/theme/_dark.scss）。
      選択マスと着手可能マスの点を同じ色にしてあるのが要点で、色を分けると散らかる。 */
   --selected: rgba(20, 85, 30, .5);
@@ -23,6 +24,11 @@
   --board-scale-f: 1;
   --sans: system-ui, "Hiragino Sans", "Noto Sans JP", Meiryo, sans-serif;
   --serif: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", "MS Mincho", serif;
+}
+/* 英語版は本文の書体を英語向けに。行間も日本語より詰める。 */
+:root:lang(en) {
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --serif: Georgia, "Times New Roman", "Noto Serif", serif;
 }
 
 /* 暗い配色。値は下の :root[data-theme="dark"] と同じものが2箇所ある。
@@ -40,6 +46,7 @@
        ここを暗くすると駒の朱字と成駒の判別が落ちる。 */
     --board-edge: #2b2018;
     --accent: #e0705f;
+    --ok: #7cc79a;
   }
 }
 /* 歯車で「暗い」を選んだとき。端末の設定に関わらず効く。 */
@@ -53,6 +60,7 @@
        ここを暗くすると駒の朱字と成駒の判別が落ちる。 */
     --board-edge: #2b2018;
     --accent: #e0705f;
+    --ok: #7cc79a;
 }
 
 * { box-sizing: border-box; }
@@ -65,11 +73,12 @@ body {
   line-height: 1.6;
   -webkit-text-size-adjust: 100%;
 }
+:lang(en) body { line-height: 1.5; }
 
 .app {
   max-width: calc(80rem * var(--board-scale-f, 1));
   margin: 0 auto;
-  padding: 1.5rem 1.25rem 3rem;
+  padding: .6rem 1.25rem 3rem;
 }
 
 /* 読み上げにだけ残す文字。 */
@@ -78,20 +87,68 @@ body {
   overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
 
-.app-header {
+/* ---- 上のバー ---- */
+
+.topbar {
   position: relative;
   display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+  align-items: center;
+  gap: .6rem 1rem;
+  flex-wrap: wrap;
+  padding: .35rem 0 .55rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--rule);
 }
-.app-title { flex: 1 1 auto; min-width: 0; }
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  color: var(--ink);
+  text-decoration: none;
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+.logo svg { width: 1.5rem; height: 1.5rem; color: var(--ink); }
+.logo-dot { fill: var(--accent); }
+.logo:hover .logo-dot { fill: var(--board); }
+.menu {
+  display: flex;
+  align-items: center;
+  gap: .2rem .9rem;
+  margin-left: auto;
+  font-size: .85rem;
+}
+.menu a, .menu button:not(.gear) {
+  color: var(--ink-soft);
+  text-decoration: none;
+  background: none;
+  border: 0;
+  padding: .15rem 0;
+  font: inherit;
+  font-size: .85rem;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+.menu a:hover, .menu button:not(.gear):hover { color: var(--ink); }
+.menu a.current { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+.menu .lang {
+  padding: .05rem .45rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
 .gear {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2rem;
+  height: 2rem;
   padding: 0;
   background: var(--paper-raised);
   color: var(--ink-soft);
@@ -100,7 +157,7 @@ body {
   cursor: pointer;
 }
 .gear:hover { color: var(--ink); border-color: var(--ink-soft); }
-.gear svg { width: 1.15rem; height: 1.15rem; fill: currentColor; }
+.gear svg { width: 1.1rem; height: 1.1rem; fill: currentColor; }
 .settings-pop {
   position: absolute;
   top: calc(100% + .4rem);
@@ -108,7 +165,7 @@ body {
   z-index: 5;
   display: grid;
   gap: .6rem;
-  width: 15rem;
+  width: 16rem;
   padding: .8rem;
   background: var(--paper-raised);
   border: 1px solid var(--rule);
@@ -124,53 +181,132 @@ body {
   flex-direction: row; align-items: center; gap: .45rem; cursor: pointer;
 }
 .settings-pop label.check input { margin: 0; accent-color: var(--accent); }
-.pop-link {
-  padding: .35rem .5rem;
-  background: none;
+.pop-note { margin: 0; font-size: .7rem; color: var(--ink-soft); line-height: 1.5; }
+@media (max-width: 40rem) {
+  /* 狭いときは「玉分け将棋について」を畳む。ルールのページとホームから辿れる。 */
+  .menu .menu-story { display: none; }
+}
+
+/* ---- ホーム ---- */
+
+.home { max-width: 44rem; margin: 0 auto; padding: .5rem 0 1rem; }
+.home h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 2rem;
+  letter-spacing: .04em;
+  line-height: 1.3;
+}
+.tagline { margin: .25rem 0 1.4rem; color: var(--ink-soft); font-size: .95rem; }
+.setup { display: grid; gap: 1rem; }
+.modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .8rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.modes legend {
+  grid-column: 1 / -1;
+  padding: 0;
+  margin-bottom: .2rem;
+  font-size: .75rem;
+  font-weight: 600;
+  letter-spacing: .1em;
   color: var(--ink-soft);
+}
+@media (max-width: 34rem) { .modes { grid-template-columns: 1fr; } }
+.mode-card {
+  position: relative;
+  display: grid;
+  gap: .3rem;
+  align-content: start;
+  padding: .9rem 1rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  cursor: pointer;
+  min-width: 0;
+}
+.mode-card:hover { border-color: var(--ink-soft); }
+.mode-card:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.mode-card:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mode-card input { position: absolute; width: 1px; height: 1px; margin: -1px; opacity: 0; }
+.mode-name { font-family: var(--serif); font-size: 1.2rem; font-weight: 700; }
+.mode-desc { font-size: .84rem; color: var(--ink-soft); line-height: 1.5; }
+.mode-steps { display: flex; gap: 3px; margin-top: .2rem; }
+.mode-steps i { flex: 1 1 0; height: 5px; border-radius: 2px; background: var(--rule); }
+.mode-steps i.on { background: var(--ink-soft); }
+.mode-steps i.short { flex: .5 1 0; }
+.mode-flow { font-size: .74rem; color: var(--ink-soft); }
+.setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem .8rem; }
+@media (max-width: 34rem) { .setup-grid { grid-template-columns: 1fr; } }
+.setup-grid label {
+  display: flex; flex-direction: column; gap: .15rem;
+  font-size: .75rem; color: var(--ink-soft); min-width: 0;
+}
+.setup-grid label[hidden] { display: none; }
+.setup-grid select { width: 100%; min-width: 0; }
+.setup select, .settings-pop select {
+  padding: .45rem .5rem;
+  background: var(--paper-raised);
+  color: var(--ink);
   border: 1px solid var(--rule);
   border-radius: 4px;
   font: inherit;
-  font-size: .75rem;
-  text-align: left;
+  font-size: .9rem;
+}
+.setup select:disabled { opacity: .5; cursor: not-allowed; }
+.settings-pop input[type="range"] {
+  width: 100%;
+  height: 1.1rem;
+  margin: 0;
+  accent-color: var(--accent);
   cursor: pointer;
 }
-.pop-link:hover { color: var(--ink); border-color: var(--ink-soft); }
-
-.app-header h1 {
-  font-family: var(--serif);
-  font-size: 1.75rem;
+.boot { margin: 0; min-height: 1.4em; font-size: .8rem; color: var(--ink-soft); }
+.boot.error { color: var(--accent); }
+.boot:empty { display: none; }
+.buttons { display: flex; flex-wrap: wrap; gap: .5rem; }
+.buttons button {
+  flex: 1 1 auto;
+  padding: .7rem 1rem;
+  background: var(--paper-raised);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 1rem;
   font-weight: 600;
-  letter-spacing: .18em;
-  margin: 0;
+  cursor: pointer;
 }
-.tagline { margin: .25rem 0 0; color: var(--ink-soft); font-size: .875rem; }
+.buttons button:hover:not(:disabled) { border-color: var(--ink-soft); }
+.buttons button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.buttons button:disabled { opacity: .45; cursor: not-allowed; }
+.intro { margin-top: 2rem; font-size: .9rem; color: var(--ink-soft); }
+.intro h2 { margin: 0 0 .3rem; font-size: .75rem; font-weight: 600; letter-spacing: .1em; }
+.intro p { margin: .3rem 0; }
+.intro a { color: inherit; }
+
+/* ---- 対局画面 ---- */
 
 .layout {
   display: grid;
-  gap: 1.5rem;
+  gap: 1.25rem;
   grid-template-columns: minmax(0, 1fr);
-  align-items: start;
 }
 @media (min-width: 56rem) {
   .layout {
     grid-template-columns: minmax(0, 1fr) 19rem;
-    /* パネルを盤の高さまで引き伸ばす。start のままだと中身の高さで決まり、
-       盤より背が高くなって左下に大きな空白ができる。 */
+    /* パネルは盤の列の高さに合わせて伸びる。中身で高さを決めない（棋譜だけが縮む）。
+       パネルの中の並べ方は「右のパネル」の節の末尾（詳細度を上げて後ろに置いてある）。 */
     align-items: stretch;
   }
-  /* 余りは棋譜が吸う。lishogiも棋譜が残りの高さを埋める。
-     flex-basis を 0 にするのが要点で、auto のままだと棋譜が中身の高さを
-     主張してパネルが盤より背高になり、盤の下に空白ができる。 */
-  .panel { min-height: 0; }
-  /* min-height を 0 にすると、パネルの空きが足りないとき棋譜の枠が中身より縮み、
-     操作ボタンが下の要素に重なる（局面の受け渡しを開いたときに実際に重なった）。
-     min-content にすると、棋譜の一覧（flex:1 1 0）だけが縮み、枠は中身を切らない。 */
-  .kifu-box { flex: 1 1 0; display: flex; flex-direction: column; min-height: min-content; }
-  .kifu { flex: 1 1 0; min-height: 0; max-height: none; }
 }
 
-/* 評価ゲージ。fill が持つのは先手の取り分で、--eval-p（0〜1）を main.js が入れる。
+/* 評価ゲージ。lishogiの縦の帯を、盤の左に立てる。
    通常フェーズだけ出す。布石フェーズの「採用手の確率」は方策の自信であって
    優劣ではないので、両側に振れる帯には載せない（main.js の renderGauge）。 */
 .eval-gauge {
@@ -201,7 +337,7 @@ body {
    広いときは盤の左の8px、狭いときは盤の上の6px。どちらの跳ねも これで止まる。 */
 .eval-gauge[hidden] { display: block !important; visibility: hidden; }
 
-/* エンジンの言い分。読み筋（通常フェーズ）と候補手（布石フェーズ）。 */
+/* エンジンの言い分。読み筋（通常フェーズ）と評価。 */
 .engine { display: grid; gap: .1rem; font-size: .75rem; color: var(--ink-soft); }
 .engine p { margin: 0; }
 .engine-head { font-weight: 600; }
@@ -210,7 +346,7 @@ body {
 
 /* ---- 盤まわり ---- */
 
-.board-column { display: flex; flex-direction: column; }
+.board-column { position: relative; display: flex; flex-direction: column; }
 /* 広いときは座標を盤の外へ出すので、上に筋の数字ぶんの場所を空ける。
    段の漢数字は盤と駒台のあいだの gap(2vmin) に収まる。 */
 @media (min-width: 56rem) {
@@ -218,8 +354,7 @@ body {
      （.sg-wrap の幅は width:100% と下の max-width で決まる）。 */
   /* align-self: start が要る。.layout は align-items: stretch で、盤の列も行の高さまで
      引き伸ばされる。この列は row の flex なので、伸びた高さがそのまま .sg-wrap の
-     高さになり、盤が正方形を保とうとして横にも太る。終局してパネルに設定と
-     「もう一局」が戻ると、パネルが盤より背高になってこれが見えた。 */
+     高さになり、盤が正方形を保とうとして横にも太る。 */
   .board-column { padding-top: 1.3rem; flex-direction: row; align-items: stretch; gap: .7rem;
                   align-self: start; }
   .board-column > .sg-wrap { flex: 1 1 auto; min-width: 0; }
@@ -230,11 +365,10 @@ body {
      これが無いと 1366x768 のような横長の画面で盤の下端が画面外に出て、
      指すたびにスクロールすることになる（ページ高1036px / 画面768pxだった）。
      .sg-wrap の高さは盤の高さと同じで、幅の 9/11（左右の駒台ぶん）。
-     8.5rem は見出しと上下の余白の実測。 */
-  .board-column > .sg-wrap { max-width: calc((100vh - 8.5rem) * 11 / 9); }
+     8rem は上のバーと上下の余白の実測。 */
+  .board-column > .sg-wrap { max-width: calc((100vh - 8rem) * 11 / 9); }
 }
-/* 盤の大きさ。画面の広さで決まる幅に倍率を掛ける。lishogiにも同じ調整がある。 */
-/* 盤の大きさは画面の広さで効かせ方を変える。
+/* 盤の大きさ。画面の広さで決まる幅に倍率を掛ける。lishogiにも同じ調整がある。
    広いとき: .app の横幅ごと伸縮させる（盤と右のパネルが一緒に動く）。
      .sg-wrap の幅を直接いじると、列より広くしたぶんがはみ出す。
    狭いとき: 盤は既に横幅いっぱいなので、縮める方向にだけ効かせる。
@@ -250,24 +384,17 @@ body {
      DOMを付け替えず、.panel を透明にして .layout の直接の子として並べ替える。
      .panel 自身の gap は display:contents で消えるので、.layout の gap がその役をする。
 
-     セレクタを .layout > .panel にしているのは詳細度のため。ファイルの後ろにある
-     `.panel { display: flex }` と同じ詳細度だと、後に書いたあちらが勝って
-     display:contents が効かない（実際に効かず、盤が席の下に回った）。 */
+     セレクタを .layout > .panel にしているのは詳細度のため。 */
   .layout > .panel { display: contents; }
-  .layout { gap: 1rem; }
+  .layout { gap: .8rem; }
   #seat-top       { order: 1; }
   .board-column   { order: 2; }
-  .status         { order: 3; }
-  .readout        { order: 4; }
-  .engine         { order: 5; }
+  .stepper        { order: 3; }
+  .status         { order: 4; }
+  .actions        { order: 5; }
   .kifu-box       { order: 6; }
-  .result-actions { order: 7; }
+  .engine         { order: 7; }
   #seat-bottom    { order: 8; }
-  .controls       { order: 9; }
-
-  /* 一度指し始めたら見出しを畳む。畳まないと1画面の1/4を説明文が食う。 */
-  .app.playing .app-header h1 { font-size: 1.15rem; }
-  .app.playing .tagline { display: none; }
 }
 
 /* 盤と駒台の配置。lishogi と同じで、狭いときは盤の上下、広いときは盤の左右に
@@ -324,6 +451,8 @@ sg-board {
   box-shadow: 0 1px 0 #0002, 0 8px 24px #0000001f;
   font-size: clamp(9px, 2.2vw, 15px);   /* 盤内の文字はここを基準に決まる */
 }
+/* 41手目からは盤の縁の色を変える。文を読まなくても、ルールが変わったことが見える。 */
+.sg-wrap.phase-normal sg-board { border-color: var(--ink); }
 
 sg-squares {
   position: absolute;
@@ -508,12 +637,7 @@ sg-board > piece.dragging.touch { top: -50px; }
 /* ---- 座標 ---- */
 
 /* 座標。lishogi の既定は Coords.OUTSIDE（modules/pref/src/main/Pref.scala）で、
-   広い画面では盤の外に出す。内側に置くのは狭い画面のときだけで、
-   lishogi も _coords.scss の内側指定を基本にしつつ、col2 の断層から外へ出している。
-
-   以前ここを内側だけにしていたのは読み違い。外へ出したときに筋の数字が
-   後手の駒台に潜り込んでいたのは座標の置き場所の問題ではなく、駒台が
-   .sg-wrap の外の別要素に生えていたせいで、そちらは hands.inlined で解決済み。 */
+   広い画面では盤の外に出す。内側に置くのは狭い画面のときだけ。 */
 sg-board > coords {
   position: absolute;
   display: flex;
@@ -617,9 +741,71 @@ sg-hp-wrap.selected {
 }
 sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 
+/* 玉分け将棋で置く役の番は、駒台の玉だけが押せる。ほかの駒は薄くして「今はこれ」を示す。 */
+.sg-wrap.kings-only sg-hp-wrap:not(:has(piece.king)) { opacity: .25; }
+
+/* ---- 先後を選ぶ：両玉の札と輪 ---- */
+
+/* 盤の中には置かない（shogiground の持ち物）。.board-column に重ねて、main.js が
+   盤の矩形を測って位置を書く。 */
+.king-tags { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.king-ring {
+  position: absolute;
+  border: 3px solid var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px #ffffffaa, 0 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent);
+  opacity: .55;
+}
+.king-ring.pending { opacity: 1; animation: ring-pulse 1.1s ease-in-out infinite alternate; }
+.king-ring.dim { opacity: .3; border-style: dashed; box-shadow: none; }
+@keyframes ring-pulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) { .king-ring.pending { animation: none; } }
+.king-label {
+  position: absolute;
+  transform: translate(-50%, 0);
+  padding: 0 .4em;
+  background: var(--paper-raised);
+  color: var(--ink);
+  border: 1px solid var(--ink-soft);
+  border-radius: 3px;
+  font-size: clamp(9px, 1.4vw, 12px);
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.king-label.pending { background: var(--accent); color: var(--paper-raised); border-color: var(--accent); }
+/* 選べる玉の上ではカーソルを手にする。shogiground は触れない駒でも pointer にするので、
+   逆に「触れない」ことを示すために、選ぶ最中は玉以外を既定に戻す。 */
+.sg-wrap.choosing piece { cursor: default; }
+.sg-wrap.choosing piece.king { cursor: pointer; }
+
+/* 段の境目の短い知らせ。盤の下端に重ね、数秒で消える。 */
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 1.2rem;
+  z-index: 6;
+  transform: translateX(-50%);
+  max-width: calc(100% - 2rem);
+  padding: .5rem .95rem;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 6px;
+  font-size: .85rem;
+  font-weight: 600;
+  box-shadow: 0 6px 20px -8px #000a;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ---- 右のパネル ---- */
 
-.panel { display: flex; flex-direction: column; gap: 1rem; }
+.panel { display: flex; flex-direction: column; gap: .55rem; }
 
 /* 席（対局者と時計）。lishogiは盤の向こう側と手前を棋譜で挟む。 */
 .seat {
@@ -632,11 +818,16 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   border: 1px solid var(--rule);
   border-radius: 4px;
   font-size: .8125rem;
+  min-width: 0;
 }
-.seat-name { display: flex; align-items: center; gap: .4rem; color: var(--ink-soft); }
+.seat-name {
+  display: flex; align-items: center; gap: .4rem; color: var(--ink-soft);
+  min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 /* 手番の側に印を出す。文字だけだとどちらの番か一目で分からない。 */
 .seat-name::before {
   content: "";
+  flex: 0 0 auto;
   width: .5rem;
   height: .5rem;
   border-radius: 50%;
@@ -665,53 +856,114 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   font-size: .9375rem;
   font-weight: 600;
   letter-spacing: .02em;
+  white-space: nowrap;
 }
 .seat.turn .clock { background: var(--accent); color: var(--paper-raised); }
-.clock { white-space: nowrap; }
 /* AI側には持ち時間が無いので clockText が空を返す。枠だけ残さない。 */
 .clock:empty { display: none; }
 /* 残り30秒を切ったか、秒読みに入ったか。 */
-/* 手番のときは .seat.turn .clock の accent 背景のほうが強く、そちらが勝つ。 */
 .clock.low { color: var(--accent); font-weight: 700; }
 
+/* フェーズ帯。終わった段は薄く、今の段は縁を強く、これからの段は破線。 */
+.stepper {
+  display: flex;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+.step {
+  flex: 1 1 0;
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 0;
+  padding: .3rem .3rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font-size: .7rem;
+  line-height: 1.35;
+  cursor: help;
+}
+:lang(en) .step { font-size: .66rem; padding-inline: .25rem; }
+/* 2段のときだけ布石の段を広く取る。4段では幅が足りず、段の名前が折れる。 */
+.step.wide { flex: 1.6 1 0; }
+.stepper.four .step.wide { flex: 1 1 0; }
+.step .t { font-weight: 700; overflow-wrap: anywhere; }
+.step .s { color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.step .s:empty { display: none; }
+.step.done { background: color-mix(in srgb, var(--rule) 45%, transparent); color: var(--ink-soft); }
+.step.done .t::before { content: "✓ "; color: var(--ok); }
+.step.now { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.step.now .t { color: var(--accent); }
+.step.next { border-style: dashed; color: var(--ink-soft); }
+.step .bar { height: 3px; margin-top: .25rem; background: var(--rule); border-radius: 2px; overflow: hidden; }
+.step .bar i { display: block; height: 100%; width: var(--p, 0%); background: var(--accent); transition: width .25s ease; }
+
 .status {
-  padding: .75rem .9rem;
+  padding: .6rem .8rem;
+  min-height: 4.6rem;
   background: var(--paper-raised);
   border: 1px solid var(--rule);
   border-left: 3px solid var(--accent);
   border-radius: 4px;
 }
-.status-line { margin: 0; font-weight: 600; }
-.status-sub { margin: .15rem 0 0; color: var(--ink-soft); font-size: .8125rem; }
+.status-line {
+  margin: 0; font-weight: 600; font-size: .9rem; line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.status-sub {
+  margin: .15rem 0 0; color: var(--ink-soft); font-size: .78rem; line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
 .status-sub:empty { display: none; }
-/* 両玉先置きの選択。2択なので同じ大きさで並べ、どちらかを目立たせない。 */
-.choice-row { display: flex; gap: .4rem; margin-top: .6rem; }
-.choice-row button {
-  flex: 1;
-  padding: .45rem .5rem;
-  background: var(--ink); color: var(--paper);
-  border: 1px solid var(--ink);
+
+/* 操作枠。三つの中身のうち、パネルの data-state に合うものだけを出す。 */
+.actions > div { display: none; }
+.panel[data-state="play"] .actions-play,
+.panel[data-state="idle"] .actions-play { display: flex; gap: .4rem; }
+.panel[data-state="choose"] .actions-choose { display: grid; gap: .4rem; }
+.panel[data-state="over"] .actions-over { display: grid; gap: .4rem; }
+.actions button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: .4rem .5rem;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  border: 1px solid var(--rule);
   border-radius: 4px;
-  font: inherit; font-size: .875rem; font-weight: 600;
+  font: inherit;
+  font-size: .8125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: pointer;
 }
-.choice-row button:hover { background: var(--accent); border-color: var(--accent); color: var(--paper-raised); }
+.actions button:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-soft); }
+.actions button:disabled { opacity: .4; cursor: not-allowed; }
+.actions button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); font-weight: 600; }
+.actions button.primary:hover:not(:disabled) { color: var(--paper); border-color: var(--ink); }
+/* 投了の確認待ち。押すと戻せないので、見た目で1回止める。 */
+.actions button.armed {
+  background: var(--accent);
+  color: var(--paper-raised);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+/* 先後の2択。同じ大きさで並べ、押した（仮）ほうだけ縁を立てる。 */
+.choice-row { display: flex; gap: .4rem; }
+.choice-row button.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); color: var(--ink); }
+/* 終局後の行き先。4つを2×2に。 */
+.result-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+.result-note { margin: 0; font-size: .72rem; color: var(--ink-soft); line-height: 1.4; }
+.result-note:empty { display: none; }
 
 /* 過去の局面を見ている間は盤の縁を変えて、対局中の局面でないことを示す。 */
 .sg-wrap.reviewing sg-board { border-color: var(--accent); }
 
-.readout { display: grid; gap: .35rem; margin: 0; font-size: .8125rem; }
-.readout > div { display: flex; justify-content: space-between; gap: .5rem; }
-.readout dt { color: var(--ink-soft); }
-.readout dd { margin: 0; font-variant-numeric: tabular-nums; }
-
-.kifu-box h2 {
-  margin: 0 0 .4rem;
-  font-size: .75rem;
-  font-weight: 600;
-  letter-spacing: .12em;
-  color: var(--ink-soft);
-}
+.kifu-box { display: flex; flex-direction: column; min-width: 0; }
 .kifu {
   margin: 0;
   padding: .3rem;
@@ -727,13 +979,27 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .kifu li { display: flex; gap: .5rem; padding: .1rem .3rem; cursor: pointer; }
 .kifu li:hover { background: color-mix(in srgb, var(--ink-soft) 18%, transparent); }
 .kifu li:nth-child(odd) { background: color-mix(in srgb, var(--rule) 30%, transparent); }
-.kifu .n { width: 2.2em; text-align: right; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.kifu .n { flex: 0 0 auto; width: 2.2em; text-align: right; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 .kifu .m { font-family: var(--serif); }
+:lang(en) .kifu .m { font-family: var(--sans); font-variant-numeric: tabular-nums; }
 .kifu li.gote .m { color: var(--ink-soft); }
 /* 直前の手。lishogiも現在の手を1行だけ塗って示す。 */
 .kifu li.current { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .kifu li.current .m,
 .kifu li.current .n { color: var(--ink); font-weight: 600; }
+/* 区切り。先後の選択の行と、41手目の行の上に線と一言を置く。 */
+.kifu li.divider { flex-wrap: wrap; }
+.kifu li.divider::before {
+  content: attr(data-divider);
+  flex: 1 0 100%;
+  margin: .2rem 0 .1rem;
+  padding-top: .15rem;
+  border-top: 1px dashed var(--ink-soft);
+  color: var(--ink-soft);
+  font-size: .7rem;
+  letter-spacing: .06em;
+}
+.kifu li.choice .m { font-family: var(--sans); font-weight: 600; }
 
 /* 棋譜をさかのぼるボタン。lishogiと同じ4つ。 */
 .kifu-nav { display: flex; gap: 1px; margin-top: .4rem; }
@@ -761,37 +1027,20 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .kifu-nav button:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-soft); }
 .kifu-nav button:disabled { opacity: .3; cursor: default; }
 
-.kifu-actions { display: flex; gap: .4rem; margin-top: .4rem; }
-/* 終局後の行き先。結果のすぐそばに置く（対局開始は設定の一番下で遠い）。 */
-/* 終局後の行き先。4つを1行に詰めると文字が折れるので、2つずつ2行に落とす。 */
-.result-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; }
-.result-actions button { flex: 1 1 8rem; }
-.kifu-actions button,
-.result-actions button {
-  flex: 1;
-  white-space: nowrap;
-  padding: .35rem .5rem;
-  background: var(--paper-raised);
-  color: var(--ink-soft);
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  font: inherit;
-  font-size: .8125rem;
-  cursor: pointer;
-}
-.kifu-actions button:hover:not(:disabled),
-.result-actions button:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-soft); }
-.kifu-actions button:disabled,
-.result-actions button:disabled { opacity: .4; cursor: not-allowed; }
-.result-actions button.primary {
-  background: var(--ink); color: var(--paper); border-color: var(--ink); font-weight: 600;
-}
-/* 投了の確認待ち。押すと戻せないので、見た目で1回止める。 */
-.kifu-actions button.armed {
-  background: var(--accent);
-  color: var(--paper-raised);
-  border-color: var(--accent);
-  font-weight: 600;
+/* 広い画面では、パネルは固定スロットの grid。席・帯・状態・操作・棋譜・エンジン・席の
+   7行で、棋譜の行だけが余りを取り、内側でスクロールする。ほかの行は中身で決まるので、
+   状態が変わっても動くのは棋譜の高さだけになる。
+   .layout > .panel と書くのは詳細度のため。上の .panel { display: flex } と同じ詳細度だと
+   後に書いたほうが勝つので、こちらを上げておく（.kifu の max-height も同じ）。 */
+@media (min-width: 56rem) {
+  .layout > .panel {
+    display: grid;
+    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto;
+    gap: .55rem;
+    min-height: 0;
+  }
+  .layout > .panel .kifu-box { min-height: 0; }
+  .layout > .panel .kifu { flex: 1 1 0; min-height: 0; max-height: none; }
 }
 
 /* 局面の受け渡しはダイアログ。パネルの中に置くと、開いたときにパネルが盤より
@@ -807,7 +1056,7 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 }
 .io-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .io-dialog-head { display: flex; align-items: center; gap: .6rem; margin-bottom: .6rem; }
-.io-dialog-head h2 { flex: 1 1 auto; margin: 0; font-size: 1rem; }
+.io-dialog-head h2, .leave-dialog h2 { flex: 1 1 auto; margin: 0; font-size: 1rem; }
 .io-close {
   padding: .2rem .5rem;
   background: none; color: var(--ink-soft);
@@ -832,7 +1081,7 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   font-size: .8125rem;
   resize: vertical;
 }
-.moves-io-actions { display: flex; gap: .4rem; margin-top: .5rem; }
+.moves-io-actions { display: flex; gap: .4rem; margin-top: .5rem; flex-wrap: wrap; }
 .moves-io-actions button {
   flex: 1;
   padding: .4rem .5rem;
@@ -843,61 +1092,16 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   font: inherit;
   font-size: .8125rem;
   cursor: pointer;
+  white-space: nowrap;
 }
 .moves-io-actions button:hover { color: var(--ink); border-color: var(--ink-soft); }
+.moves-io-actions button.danger { background: var(--accent); color: var(--paper-raised); border-color: var(--accent); font-weight: 600; }
 .io-note { margin: .4rem 0 0; line-height: 1.5; color: var(--ink-soft); font-size: .75rem; }
 .io-note:empty { display: none; }
+.leave-dialog { width: min(26rem, calc(100vw - 2rem)); }
+.leave-dialog .io-note { margin-top: .5rem; }
 
-/* 設定は2列。1列に積むと縦に伸びて、棋譜に回せる高さを食う。 */
-.controls { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem .6rem; }
-.controls label { display: flex; flex-direction: column; gap: .15rem; font-size: .75rem; color: var(--ink-soft); }
-/* select の min-content は選択肢の文字列の長さで決まる。ここを切らないと
-   19rem のパネルを押し広げ、盤を大きくしたときにページごと横スクロールする。 */
-.controls label, .controls select { min-width: 0; }
-/* display:flex が hidden 属性に勝ってしまう。ルールで出し入れする「手番」「役」のため。 */
-.controls label[hidden] { display: none; }
-.controls select { width: 100%; }
-.controls .buttons { grid-column: 1 / -1; }
-/* 選択肢の文言が長いものは1行占有させる。 */
-.controls .wide { grid-column: 1 / -1; }
-.controls select:disabled { opacity: .5; cursor: not-allowed; }
-/* 歯車の中の select / range も同じ見た目にする。表示の設定をあちらへ移したときに
-   ここから外れて、スライダーだけブラウザ既定の青になった。 */
-.controls select,
-.settings-pop select {
-  padding: .4rem .5rem;
-  background: var(--paper-raised);
-  color: var(--ink);
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  font: inherit;
-  font-size: .875rem;
-}
-.controls input[type="range"],
-.settings-pop input[type="range"] {
-  width: 100%;
-  height: 1.1rem;
-  margin: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-.buttons { display: flex; flex-wrap: wrap; gap: .5rem; }
-.buttons button {
-  flex: 1 1 auto;
-  padding: .5rem .8rem;
-  background: var(--paper-raised);
-  color: var(--ink);
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  font: inherit;
-  font-size: .875rem;
-  cursor: pointer;
-}
-.buttons button:hover:not(:disabled) { border-color: var(--ink-soft); }
-.buttons button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-.buttons button:disabled { opacity: .45; cursor: not-allowed; }
-:where(button, select, input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:where(button, select, input, a):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .app-footer {
   margin-top: 2.5rem;
@@ -909,9 +1113,60 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .app-footer p { margin: .2rem 0; }
 .app-footer a { color: inherit; }
 
+/* ---- 文章のページ（ルール・コラム） ---- */
+
+.page { max-width: 42rem; margin: 0 auto; padding: .5rem 0 2rem; font-size: .95rem; line-height: 1.85; }
+:lang(en) .page { line-height: 1.6; }
+.page h1 { margin: 0 0 .3rem; font-family: var(--serif); font-size: 1.9rem; line-height: 1.3; letter-spacing: .03em; }
+.page .lead { margin: 0 0 1.6rem; color: var(--ink-soft); }
+.page h2 { margin: 2rem 0 .5rem; font-family: var(--serif); font-size: 1.3rem; line-height: 1.35; }
+.page h3 { margin: 1.4rem 0 .4rem; font-size: 1rem; }
+.page p { margin: .5rem 0; }
+.page ul, .page ol { padding-left: 1.4rem; }
+.page li { margin: .2rem 0; }
+.page table { width: 100%; border-collapse: collapse; font-size: .85rem; margin: .6rem 0 1rem; }
+.page th, .page td { text-align: left; vertical-align: top; padding: .4rem .5rem; border-bottom: 1px solid var(--rule); }
+.page th { color: var(--ink-soft); font-size: .75rem; font-weight: 600; letter-spacing: .04em; }
+.page td.n, .page th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.page .scroll { overflow-x: auto; }
+.page blockquote {
+  margin: .8rem 0; padding: .5rem .9rem;
+  border-left: 3px solid var(--accent);
+  background: var(--paper-raised);
+  border-radius: 0 4px 4px 0;
+}
+.page blockquote p { margin: .2rem 0; }
+.page code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .86em; background: color-mix(in srgb, var(--rule) 45%, transparent); padding: .05em .3em; border-radius: 3px; }
+.page a { color: inherit; }
+.page .note { font-size: .82rem; color: var(--ink-soft); }
+.page figure { margin: 1rem 0; }
+.page figcaption { font-size: .78rem; color: var(--ink-soft); margin-top: .3rem; }
+/* 両玉の価値表のヒートマップ。段×筋の升に色を塗る。 */
+.heat { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+.heat-board { display: grid; gap: .3rem; font-size: .72rem; }
+.heat-title { font-weight: 600; }
+.heat-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 2px; }
+.heat-cell {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 2px;
+  font-size: .62rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.heat-scale { display: flex; align-items: center; gap: .4rem; font-size: .72rem; color: var(--ink-soft); }
+.heat-scale i { flex: 1; height: 8px; border-radius: 2px; background: linear-gradient(90deg, #4e79c4, #f4f2ea 50%, #d9542d); }
+.heat-note { font-size: .75rem; color: var(--ink-soft); }
+.roles { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); margin: .8rem 0; }
+.roles div { padding: .6rem .8rem; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; font-size: .85rem; }
+.roles b { display: block; font-family: var(--serif); font-size: 1.05rem; margin-bottom: .2rem; }
+.stat { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); margin: .8rem 0; }
+.stat div { padding: .5rem .7rem; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; }
+.stat b { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.stat span { font-size: .75rem; color: var(--ink-soft); }
+
 /* hidden 属性は作者スタイルの display に負ける。詳細度が同じなら後に書いた方が、
-   高ければそちらが勝つ（.readout > div の display:flex に実際に負けて、
-   hidden を立てた評価の行がそのまま見えていた）。
-   ここは「隠す」という一点だけの規則なので !important で押し切る。
+   高ければそちらが勝つ。ここは「隠す」という一点だけの規則なので !important で押し切る。
    落とさないと、見えないまま場所を取り、クリックまで横取りする。 */
 [hidden] { display: none !important; }

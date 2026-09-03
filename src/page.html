@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="{{lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{page_title}} — {{site_title}}</title>
+<meta name="description" content="{{page_desc}}">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<link rel="alternate" hreflang="ja" href="https://fusekishogi.com/{{page_path}}">
+<link rel="alternate" hreflang="en" href="https://fusekishogi.com/en/{{page_path}}">
+<link rel="alternate" hreflang="x-default" href="https://fusekishogi.com/{{page_path}}">
+<meta property="og:type" content="article">
+<meta property="og:title" content="{{page_title}} — {{site_title}}">
+<meta property="og:description" content="{{page_desc}}">
+<meta property="og:url" content="https://fusekishogi.com{{self_href}}{{page_path}}">
+<meta name="twitter:card" content="summary">
+{{head_extra}}
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <a class="logo" href="{{self_href}}" aria-label="{{site_title}}">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="2" width="20" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8.7 2v20M15.3 2v20M2 8.7h20M2 15.3h20" stroke="currentColor" stroke-width="1" opacity=".45"/><circle cx="12" cy="18.6" r="2.3" class="logo-dot"/></svg>
+      <span>{{site_title}}</span>
+    </a>
+    <nav class="menu" aria-label="menu">
+      <a href="{{self_href}}">{{nav_play}}</a>
+      <a href="{{self_href}}rules/" data-page="rules">{{nav_rules}}</a>
+      <a href="{{self_href}}story/" data-page="story" class="menu-story">{{nav_story}}</a>
+      <a href="{{alt_href}}{{page_path}}" class="lang" lang="{{alt_lang}}" hreflang="{{alt_lang}}" title="{{nav_lang_title}}">{{nav_lang}}</a>
+    </nav>
+  </header>
+
+  <main class="page">
+{{content}}
+  </main>
+
+  <footer class="app-footer">
+    <p>{{footer_license}}</p>
+    <p>{{footer_build}}: <!--BUILD_INFO--></p>
+  </footer>
+</div>
+<script>
+  // 今いるページのメニュー項目に印を付ける。
+  document.querySelector('.menu a[data-page="{{nav_current}}"]')?.classList.add('current');
+</script>
+</body>
+</html>

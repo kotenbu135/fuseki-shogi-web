@@ -1,12 +1,13 @@
-// 実際のブラウザで dist/ を開き、対局が始まって盤に駒が並ぶところまでを見る。
+// 実際のブラウザで dist/ を開き、ホームから対局を始めて盤に駒が並ぶところまでを見る。
 //
 // pipeline_smoke.mjs はNodeでロジックを通すが、**ブラウザでしか壊れない部分**
-// （COOP/COEPとSharedArrayBuffer、vendor/以下のアセット解決、shogigroundの描画）は
-// 素通りしてしまう。ここはその差分だけを見るためのもの。
+// （COOP/COEPとSharedArrayBuffer、vendor/以下のアセット解決、shogigroundの描画、
+// パネルのレイアウト）は素通りしてしまう。ここはその差分だけを見るためのもの。
 //
 //   node build.mjs && node test/browser_smoke.mjs [dist ディレクトリ]
-//   node build.mjs --full なしでも dist/ を見る。別の重みを当てるなら:
-//   node build.mjs --model <重み> && node test/browser_smoke.mjs dist-local --full [手数]
+//   --full           布石40手→41手目の裁定→通常フェーズまで実際に指して通す
+//   --kings-first    玉分け将棋を両方の役で始め、盤の玉を押して先後を選ぶところまで
+//   --shots <dir>    要所の画面を PNG に残す（目で見るため）
 //
 // Chrome を --headless で起こして CDP で叩く（Node 26 の組み込み WebSocket を使うので
 // 追加の依存は要らない）。CHROME 環境変数で実行ファイルを差し替えられる。
@@ -19,13 +20,12 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
-// 位置引数は [distディレクトリ] [通常フェーズの手数]。--full を付けると、2手見て
-// 終わりにせず布石40手→41手目の裁定→通常フェーズまで実際に指して通す。
-const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
-const FULL = process.argv.includes('--full');
-// --kings-first を付けると、両玉先置きモードを両方の役で始めて選択まで通す
-// （models/ に価値表が要る。無いビルドではモードが閉じているので NG になる）。
-const KINGS = process.argv.includes('--kings-first');
+const argv = process.argv.slice(2);
+const flagValue = name => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : null; };
+const SHOTS = flagValue('--shots');
+const args = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--shots');
+const FULL = argv.includes('--full');
+const KINGS = argv.includes('--kings-first');
 const DIST = args[0] ? path.resolve(args[0]) : path.join(ROOT, 'dist');
 const NORMAL_PLIES = Number(args[1] ?? 4);
 const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
@@ -36,21 +36,24 @@ if (!fs.existsSync(path.join(DIST, 'app.js'))) {
   console.error('dist/ が無い。先に node build.mjs を実行すること。');
   process.exit(1);
 }
+if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 
 /** 画面から読める状態。1手ごとに何度も評価を往復しないよう1回でまとめて取る。 */
 const SNAPSHOT = `({
   status: document.getElementById('status-line').textContent,
   sub: document.getElementById('status-sub').textContent,
-  phase: document.getElementById('readout-phase').textContent,
+  phase: document.getElementById('panel').dataset.phase ?? '',
+  state: document.getElementById('panel').dataset.state ?? '',
   evaluation: document.getElementById('readout-eval').textContent,
+  evalHidden: document.getElementById('engine').hidden,
   kifu: document.querySelectorAll('#kifu li').length,
   boardPieces: document.querySelectorAll('sg-pieces piece:not(.fading)').length,
 })`;
 
 // main.js が setStatus で出すエラーの文言。**ここを見るのが要点**で、drive() は
 // 例外を握って表示へ流すため、Runtime.exceptionThrown には何も出てこない。
-// _transitionToNormal() の「41手目局面をshogiopsが受理しない」もこの経路で消える。
-const FATAL_STATUS = ['起動に失敗した', 'エンジンでエラーが起きた', 'その手は指せない'];
+const FATAL_STATUS = ['起動に失敗した', 'エンジンでエラーが起きた', 'その手は指せない',
+  'Failed to start', 'Engine error', 'That move is not legal'];
 
 let failures = 0;
 const check = (label, cond, detail = '') => {
@@ -63,12 +66,13 @@ const TYPES = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.wasm': 'application/wasm', '.onnx': 'application/octet-stream',
-  // 駒の画像。octet-stream で配るとブラウザがSVGとしてデコードせず、駒が消える。
-  '.svg': 'image/svg+xml',
+  '.svg': 'image/svg+xml', '.json': 'application/json',
 };
 const server = http.createServer((req, res) => {
-  const rel = decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/^\/+/, '') || 'index.html';
-  const file = path.join(DIST, rel);
+  let rel = decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/^\/+/, '');
+  let file = path.join(DIST, rel);
+  // Cloudflare Pages と同じく、ディレクトリは index.html。
+  if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
   if (!file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory())
     return void res.writeHead(404).end('not found');
   res.writeHead(200, {
@@ -103,9 +107,10 @@ const cdp = await connect(wsUrl);
 const logs = [];
 /** これまでに出た未処理例外。logs は増え続けるので、その都度数える。 */
 const exceptions = () => logs.filter(l => l.startsWith('EXCEPTION'));
+let page;
 try {
   const target = await cdp.send('Target.createTarget', { url: 'about:blank' });
-  const page = await cdp.attach(target.targetId);
+  page = await cdp.attach(target.targetId);
   page.on('Runtime.consoleAPICalled', e => logs.push(e.args.map(a => a.value ?? a.description).join(' ')));
   page.on('Runtime.exceptionThrown', e => logs.push('EXCEPTION ' + (e.exceptionDetails.exception?.description ?? e.exceptionDetails.text)));
   await page.send('Runtime.enable');
@@ -115,32 +120,46 @@ try {
   check('crossOriginIsolated', await evalUntil(page, 'crossOriginIsolated', v => v === true, 15000) === true,
     'COOP/COEPが効いていないとやねうら王が1スレッドに落ちる');
 
+  // ---- ホーム ----
+  check('最初はホームで、対局画面は隠れている', await evaluate(page,
+    '!document.getElementById("view-home").hidden && document.getElementById("view-play").hidden'));
+  check('ルールの選択肢が2つ（布石将棋・玉分け将棋）',
+    await evaluate(page, 'document.querySelectorAll("input[name=mode]").length') === 2);
+
   // 3つのエンジンが起きて「対局開始」が押せるようになるまで
   const ready = await evalUntil(page, 'document.getElementById("btn-new").disabled', v => v === false, 120000);
   check('3つのエンジンが起動した', ready === false,
-    await evaluate(page, '[document.getElementById("status-line").textContent, document.getElementById("status-sub").textContent].join(" / ")'));
+    await evaluate(page, 'document.getElementById("boot").textContent'));
   if (failures) { console.log('--- コンソール ---'); logs.forEach(l => console.log('  ' + l)); }
   if (ready !== false) throw new Error('エンジンが起動しないので以降の確認はできない');
+  // 対局開始がファーストビューに入っている（以前は設定の末尾で画面の外だった）。
+  check('対局開始ボタンが画面の中にある', await evaluate(page, `(() => {
+    const r = document.getElementById('btn-new').getBoundingClientRect();
+    return r.top >= 0 && r.bottom <= innerHeight;
+  })()`));
+  check('玉分け将棋が選べる（価値表が読めている）',
+    await evaluate(page, 'document.getElementById("mode-kings").disabled') === false);
+  await shot('01-home');
 
   // 1局通すときはレベル1（いちばん思考時間が短い）にする。movetimeMs は Game の
   // コンストラクタで固定されるので、対局開始を押す**前**に変える。
-  // レベル1の思考時間を延ばすとこのテストがそのぶん遅くなる（src/main.js の LEVELS）。
   if (FULL) await evaluate(page, 'document.getElementById("opt-level").value = "1"');
   // 実マウスで押す。element.click() は利用者の操作と見なされないので、
   // ブラウザの自動再生規制で AudioContext が suspended のままになり、
   // 「音が鳴らない」状態をテストが素通りしてしまう。
   await click(page, await center(page, '#btn-new'));
 
-  // 対局中に「対局開始」が押せると、進行中の対局が黙って消える。
-  check('対局中は対局開始が押せない',
-    await evaluate(page, 'document.getElementById("btn-new").disabled') === true);
+  check('対局開始で対局画面に切り替わり、URL が #play になる', await evaluate(page,
+    'document.getElementById("view-home").hidden && !document.getElementById("view-play").hidden && location.hash === "#play"'));
   check('対局中は投了が押せる',
     await evaluate(page, 'document.getElementById("btn-resign").disabled') === false);
+  check('フェーズ帯が2段で、布石が今の段', await evaluate(page, `(() => {
+    const steps = [...document.querySelectorAll('#stepper .step')];
+    return steps.length === 2 && steps[0].classList.contains('now') && steps[1].classList.contains('next');
+  })()`));
 
   // 合成が動くことと、アプリの経路で鳴ることは別問題。AudioContext は利用者の操作の
   // 中でしか起こせないので、対局開始で起きていなければ1音も出ない。
-  // currentTime は resume した直後だとまだ 0 のことがあり、それを条件に入れると
-  // たまに落ちる（20回まわして1回踏んだ）。state だけを見る。
   const audio = await evaluate(page, `(() => {
     const s = window.__sound;
     if (!s) return 'sound が公開されていない';
@@ -149,31 +168,21 @@ try {
   check('対局開始でAudioContextが起きている',
     typeof audio === 'object' && audio.ctx && audio.state === 'running',
     typeof audio === 'string' ? audio : `state=${audio.state}`);
-  // 触れるのに効かない設定は「壊れている」と区別がつかない。対局中は閉じる。
-  check('対局中は手番とAIの強さを変えられない', await evaluate(page, `(() =>
-    document.getElementById('opt-color').disabled &&
-    document.getElementById('opt-level').disabled)()`) === true);
   // 投了は取り消せないので1クリックでは終わらない。
   const resign = await evaluate(page, `(async () => {
     const b = document.getElementById('btn-resign');
     b.click();
     await new Promise(r => setTimeout(r, 150));
-    return { label: b.textContent,
-             まだ終局していない: document.getElementById('readout-phase').textContent !== '終局' };
+    return { label: b.textContent, notOver: document.getElementById('panel').dataset.phase !== 'over' };
   })()`);
   check('投了は1回目のクリックでは確定しない',
-    resign.まだ終局していない && resign.label !== '投了', `1回目のラベル: ${resign.label}`);
+    resign.notOver && resign.label !== '投了', `1回目のラベル: ${resign.label}`);
   // DOMを手で戻すと main.js 側の確認待ちが残ったままになり、次の1クリックで
   // 本当に投了してしまう。自前で戻るまで待つ。
-  await evalUntil(page, 'document.getElementById("btn-resign").textContent',
-    v => v === '投了', 6000);
+  await evalUntil(page, 'document.getElementById("btn-resign").textContent', v => v === '投了', 6000);
 
   // 先手が人間なので、盤に駒が1枚も無い状態で自分の番になる
-  const dests = await evalUntil(page, 'document.querySelectorAll("sq.dest").length', v => v > 0, 30000);
-  check('駒台の駒を選ぶ前に打てるマスが出る前段階（盤が描かれている）',
-    await evaluate(page, 'document.querySelectorAll("sg-squares sq").length') === 81, '81マス');
-  // 駒台は shogiground が .sg-wrap の直下に作る（board.js の hands.inlined）。
-  // HTML側の器は無くなったので、hand-bottom クラスで引く。
+  check('盤が描かれている', await evaluate(page, 'document.querySelectorAll("sg-squares sq").length') === 81, '81マス');
   check('持ち駒が8種並んでいる',
     await evaluate(page, 'document.querySelectorAll("sg-hand-wrap.hand-bottom sg-hp-wrap").length') === 8);
   check('玉が持ち駒にある（布石では玉も打つ）',
@@ -182,7 +191,6 @@ try {
     await evaluate(page, 'document.querySelectorAll(".sg-wrap > sg-hand-wrap").length') === 2);
   // 駒はCSSの背景画像。URLが通っていても Content-Type が image/svg+xml でないと
   // ブラウザがデコードせず、要素は在るのに何も描かれない（盤が空に見える）。
-  // 見た目だけの失敗はDOMの数え上げをすり抜けるので、実際に読ませて確かめる。
   check('駒の画像がデコードできる', await evaluate(page, `(async () => {
     const piece = document.querySelector('sg-hand piece');
     if (!piece) return 'sg-hand piece が無い';
@@ -199,7 +207,6 @@ try {
   // 音は合成なので、鳴らないまま気づかない事故が起きやすい。
   // OfflineAudioContext で書き出して、無音でないことを数値で見る。
   const sound = await evaluate(page, `(async () => {
-    const mod = await import('./app.js').catch(() => null);
     const VOICES = window.__VOICES;
     if (!VOICES) return 'VOICES が公開されていない';
     const out = {};
@@ -214,11 +221,13 @@ try {
     }
     return out;
   })()`);
-  check('6種類の音がすべて無音でない',
-    typeof sound === 'object' && Object.keys(sound).length === 6
+  check('7種類の音がすべて無音でない',
+    typeof sound === 'object' && Object.keys(sound).length === 7
       && Object.values(sound).every(v => v.peak > 0.02 && v.rms > 0.001),
     typeof sound === 'string' ? sound
       : Object.entries(sound).map(([k, v]) => `${k} peak=${v.peak}`).join(' / '));
+
+  await layoutCheck('対局開始直後');
 
   // 盤の大きさ。広げたときにページごと横スクロールしないこと。
   const scale = await evaluate(page, `(async () => {
@@ -234,8 +243,7 @@ try {
   })()`);
   // 盤の下端が画面の外に出ると、指すたびにスクロールすることになる。
   // 縦に余裕のある画面では起きないので、横長の画面に変えて見る。
-  // 1366x768 と 1280x720 は実際にはみ出していた。
-  for (const [w, h] of [[1366, 768], [1280, 720], [1920, 1080]]) {
+  for (const [w, h] of [[1366, 768], [1280, 720], [1920, 1080], [1400, 900]]) {
     await page.send('Emulation.setDeviceMetricsOverride',
       { width: w, height: h, deviceScaleFactor: 1, mobile: false });
     await new Promise(r => setTimeout(r, 250));
@@ -245,6 +253,7 @@ try {
     })()`);
     check(`盤が画面の高さに収まる（${w}x${h}）`, fits.bottom <= fits.viewport,
       `盤の下端 ${fits.bottom}px / 画面 ${fits.viewport}px`);
+    await layoutCheck(`${w}x${h}`);
   }
   await page.send('Emulation.clearDeviceMetricsOverride');
   await new Promise(r => setTimeout(r, 250));
@@ -255,8 +264,7 @@ try {
 
   // 狭い画面。盤は .board-column の負のmarginで画面幅いっぱいにしているので、
   // 盤の大きさを上げたときに横スクロールが出ないことを見る（430px幅で実際に出たことがある）。
-  // 席の並びもここで見る。lishogiと同じで相手＝盤の上、自分＝盤の下。
-  // 縦積みだと .panel が後ろに来るため、放っておくと相手の席が盤の下へ落ちる。
+  // 席の並びもここで見る。lishogiと同じで相手＝盤の上、自分＝盤の下。操作は盤のすぐ下。
   await page.send('Emulation.setDeviceMetricsOverride',
     { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await new Promise(r => setTimeout(r, 300));
@@ -269,51 +277,33 @@ try {
     set(115); await wait();
     const bigOver = de.scrollWidth > de.clientWidth;
     const colW = Math.round(document.querySelector('.board-column').getBoundingClientRect().width);
-    const order = top('#seat-top') < top('.board-column') && top('.board-column') < top('#seat-bottom');
+    const order = top('#seat-top') < top('.board-column') && top('.board-column') < top('#stepper')
+      && top('#stepper') < top('#actions') && top('#actions') < top('#kifu') && top('#kifu') < top('#seat-bottom');
     set(100); await wait();
     return { bigOver, order, full: colW === de.clientWidth, colW, clientW: de.clientWidth };
   })()`);
+  await shot('02-mobile');
   await page.send('Emulation.clearDeviceMetricsOverride');
   await new Promise(r => setTimeout(r, 250));
   check('狭い画面で盤を広げても横スクロールが出ない', !narrow.bigOver);
-  check('狭い画面では相手の席が盤の上に来る', narrow.order);
+  check('狭い画面では席・盤・帯・操作・棋譜・席の順に積まれる', narrow.order);
   check('狭い画面では盤が画面幅いっぱい', narrow.full, `${narrow.colW}px / 画面 ${narrow.clientW}px`);
 
-  check('対局前から盤が出ている', await evaluate(page, `(() => {
-    const sq = document.querySelectorAll('sg-squares sq').length;
-    const hp = document.querySelectorAll('sg-hp-wrap').length;
-    return sq === 81 && hp === 16;
-  })()`), '起動直後に空の盤と満杯の駒台が描かれる');
-
-  // 人間の1手目を打ってAIに応じさせる
   // 成りダイアログは開くまでDOMに中身が無いので、器の配置だけ先に見る。
   // static のままだと、開いた瞬間に通常フローへ入って盤の高さが崩れる。
   check('成りダイアログが絶対配置',
     await evaluate(page, 'getComputedStyle(document.querySelector("sg-promotion")).position') === 'absolute');
-  check('ダイアログの中身がマス1つ分の大きさになる', await evaluate(page, `(() => {
-    const host = document.querySelector('sg-promotion');
-    const sq = document.createElement('sg-promotion-square');
-    sq.appendChild(document.createElement('sg-promotion-choices'));
-    host.appendChild(sq);
-    host.style.display = '';   // 開いていないと中身に大きさが付かない
-    const cs = getComputedStyle(sq), board = document.querySelector('sg-board').getBoundingClientRect();
-    const ok = cs.position === 'absolute' && Math.abs(parseFloat(cs.width) - board.width / 9) < 1.5;
-    sq.remove();
-    host.style.display = 'none';
-    return ok;
-  })()`));
 
   // 盤の反転。set({orientation}) では再ラップされず、マスのキーと駒台の色が古いまま残る。
   const senteBefore = await evaluate(page, 'document.querySelectorAll("sg-hand-wrap.hand-bottom piece.sente").length');
   await evaluate(page, 'document.getElementById("btn-flip").click()');
   const goteAfter = await evaluate(page, 'document.querySelectorAll("sg-hand-wrap.hand-bottom piece.gote").length');
   check('盤を反転すると手前の駒台が入れ替わる', senteBefore === 8 && goteAfter === 8, `前=${senteBefore} 後=${goteAfter}`);
+  await layoutCheck('盤を反転');
   await evaluate(page, 'document.getElementById("btn-flip").click()');
 
   // 駒の絵は色ごとに向きが焼き込んである（1*.svg が180度回した側）。手前＝自分の駒が
-  // 上を向いていないと自分の駒に見えない。後手を持つと自分の駒だけ逆さまだった。
-  // 手前の色は 0*.svg、向こうの色は 1*.svg。これはどちらの向きでも成り立つ。
-  // 盤に出るのは8種だけなので、使い捨ての piece を挿して14種すべてを測る。
+  // 上を向いていないと自分の駒に見えない。
   const facing = () => evaluate(page, `(() => {
     const roles = ['pawn', 'lance', 'knight', 'silver', 'gold', 'bishop', 'rook', 'king',
       'tokin', 'promotedlance', 'promotedknight', 'promotedsilver', 'horse', 'dragon'];
@@ -327,7 +317,6 @@ try {
       wrap.appendChild(el);
       const url = getComputedStyle(el).backgroundImage;
       el.remove();
-      // url("…/pieces/0FU.svg") の 0/1 が向き。先頭1文字だけ見る。
       const file = url.slice(url.lastIndexOf('/') + 1);
       if (file[0] !== (color === near ? '0' : '1')) bad.push(role + '/' + color + '=' + file);
     }
@@ -349,10 +338,6 @@ try {
   check('盤が正方形のまま', squareBoard);
 
   // 評価ゲージは出入りしても盤の大きさと位置を動かしてはいけない。
-  // 終局した瞬間に評価を見せる作りなので、これが動くと投了した瞬間に盤が縮んで見える
-  // （実際に 1440幅で 716.7px → 701px、右へ17px ずれた）。
-  // 対局の状態には触らずに hidden だけを切り替えて測る。ゲージが出る条件
-  // （通常フェーズ・探索の評価）を作らないと再現しないので、投了の検査に相乗りさせない。
   const gaugeShift = await evaluate(page, `(() => {
     const g = document.getElementById('eval-gauge');
     const r = () => { const b = document.querySelector('sg-board').getBoundingClientRect();
@@ -367,7 +352,7 @@ try {
     Math.abs(gaugeShift.hidden.w - gaugeShift.shown.w) < 0.5
     && Math.abs(gaugeShift.hidden.x - gaugeShift.shown.x) < 0.5
     && gaugeShift.display !== 'none',
-    `隠す ${gaugeShift.hidden.w}px@${gaugeShift.hidden.x} / 出す ${gaugeShift.shown.w}px@${gaugeShift.shown.x} / 隠したときの display=${gaugeShift.display}`);
+    `隠す ${gaugeShift.hidden.w}px@${gaugeShift.hidden.x} / 出す ${gaugeShift.shown.w}px@${gaugeShift.shown.x}`);
 
   // shogiground は合成イベントを弾く（drag.unwantedEvent が isTrusted を見る）。
   // 本物の入力として届くよう Input.dispatchMouseEvent を使う。
@@ -379,38 +364,35 @@ try {
 
   const pieces = await evalUntil(page, 'document.querySelectorAll("sg-pieces piece").length', v => v >= 2, 30000);
   check('人間の1手目とAIの応手が盤に乗った', pieces >= 2, `盤上${pieces}枚`);
-  check('棋譜が2手ぶん出ている',
-    await evaluate(page, 'document.querySelectorAll("#kifu li").length') >= 2,
-    await evaluate(page, '[...document.querySelectorAll("#kifu li .m")].map(e => e.textContent).join(" ")'));
+  const kifuTexts = await evaluate(page, '[...document.querySelectorAll("#kifu li .m")].map(e => e.textContent)');
+  check('棋譜が2手ぶん出ている', kifuTexts.length >= 2, kifuTexts.join(' '));
+  check('日本語版の棋譜は「▲７六歩打」の形', /^▲[１-９][一二三四五六七八九].打$/.test(kifuTexts[0] ?? ''), kifuTexts[0]);
+  check('布石の段の進み具合が出る', await evaluate(page,
+    `document.querySelector('#stepper .step.now .bar i')?.style.getPropertyValue('--p')`) === '5%');
+  await shot('03-play');
 
-  // logs は増え続けるので、数えるのはその都度。const で切り取ると
-  // それ以降に出た例外を1件も見なくなる。
   // 評価の表示。布石専用ネットは価値ヘッドを持たないので勝率が出せず、
   // undefined を素通しすると "NaN%" と出る（落ちないので気付けない）。
-  // 対局中は形勢が見えないように既定で隠している。隠れたままの textContent を見ても
-  // 「画面に何が出ているか」を見たことにならないので、歯車の設定を立ててから読む。
-  // hidden 属性を立てただけでは隠れない（.readout > div の display に負ける）。
-  // 属性ではなく、実際に画面から消えているかを見る。
+  // 対局中は形勢が見えないように既定で隠している。
   check('対局中は既定でAIの評価を隠している', await evaluate(page, `(() => {
-    const row = document.getElementById('readout-eval-row');
+    const row = document.getElementById('engine');
     return row.hidden && getComputedStyle(row).display === 'none';
   })()`) === true);
   const evalShown = await evaluate(page, `(() => {
     const c = document.getElementById('opt-show-eval');
     c.checked = true; c.dispatchEvent(new Event('change'));
     return { text: document.getElementById('readout-eval').textContent,
-             hidden: document.getElementById('readout-eval-row').hidden };
+             hidden: document.getElementById('engine').hidden };
   })()`);
   check('評価の表示がNaNでない', !/NaN|undefined/.test(evalShown.text) && !evalShown.hidden,
     JSON.stringify(evalShown));
+  await layoutCheck('評価を出した');
+  await evaluate(page, `(() => { const c = document.getElementById('opt-show-eval'); c.checked = false; c.dispatchEvent(new Event('change')); })()`);
 
   // ---- 棋譜をさかのぼる ----
-  // 「盤に映っているのが対局中の局面ではない」という壊れ方をしうるので、
-  // 戻した先の駒数と、戻っている間に着手を受け付けないことを見る。
   const nav = await evaluate(page, `(async () => {
     const wait = () => new Promise(r => setTimeout(r, 400));   // animation.duration=250ms より長く
-    // アニメーション中は消えていく駒(.fading)がDOMに残るので除く。
-      const count = () => document.querySelectorAll('sg-pieces piece:not(.fading)').length;
+    const count = () => document.querySelectorAll('sg-pieces piece:not(.fading)').length;
     const dests = () => document.querySelectorAll('sq.dest').length;
     const plies = document.querySelectorAll('#kifu li').length;
     if (plies < 2) return '棋譜が2手に満たない';
@@ -419,7 +401,6 @@ try {
     document.getElementById('nav-first').click(); await wait();
     const atFirst = count();
     const reviewing = document.getElementById('board').classList.contains('reviewing');
-    // さかのぼっている間は駒台の駒を選んでも打てるマスが出てはいけない
     const hp = document.querySelector('sg-hand-wrap.hand-bottom sg-hp-wrap:not([data-nb="0"]) piece');
     hp?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
     document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
@@ -448,35 +429,46 @@ try {
     typeof nav === 'object' && nav.backLive === nav.live && nav.stillReviewing === false
       && nav.navNextDisabledAtLive === true);
 
+  // 局面の受け渡しのダイアログを開いても崩れない。
+  await evaluate(page, 'document.getElementById("btn-io-open").click()');
+  await layoutCheck('受け渡しダイアログを開いた');
+  await evaluate(page, 'document.getElementById("io-dialog").close()');
+
+  // 待った。自分の1手とAIの応手が消える。
+  await click(page, await center(page, '#btn-undo'));
+  await new Promise(r => setTimeout(r, 400));
+  check('待ったで自分の手とAIの応手が消える',
+    await evaluate(page, 'document.querySelectorAll("#kifu li").length') === 0);
+  await layoutCheck('待った');
+
   check('未処理の例外が無い', exceptions().length === 0, exceptions().join(' / '));
 
   if (FULL) await playWholeGame(page);
 
   // ---- 布石フェーズの途中で投了する ----
-  // ここは長く落ちていた。phase が 'over' になるのに position は null のままで、
-  // boardSfen() が phase で分岐して makeSfen(null) を呼んでいた。落ちると
-  // render() が途中で止まるので盤も表示も固まり、新規対局も始められなくなる。
-  // 例外は setStatus を通らないので、画面を見ているだけでは分からない。
+  // phase が 'over' になるのに position は null のままで落ちていたことがある。
   const beforeResign = exceptions().length;
-  await evaluate(page, 'document.getElementById("btn-new").click()');
-  await evalUntil(page, 'document.querySelectorAll("sg-hp-wrap").length', v => v > 0, 20000);
-  await evalUntil(page, 'document.getElementById("status-line").textContent',
-    v => v && v.startsWith('あなたの番'), 30000);
   await evaluate(page, `(() => { const b = document.getElementById('btn-resign'); b.click(); b.click(); })()`);
   await new Promise(r => setTimeout(r, 600));
   const afterResign = await evaluate(page, `({
-    phase: document.getElementById('readout-phase').textContent,
+    phase: document.getElementById('panel').dataset.phase,
+    state: document.getElementById('panel').dataset.state,
     status: document.getElementById('status-line').textContent,
-    newEnabled: !document.getElementById('btn-new').disabled,
-    colorEnabled: !document.getElementById('opt-color').disabled,
+    againVisible: document.getElementById('btn-again').getBoundingClientRect().width > 0,
+    allDone: [...document.querySelectorAll('#stepper .step')].every(s => !s.classList.contains('now')),
   })`);
+  check('布石フェーズの途中で投了しても落ちない',
+    exceptions().length === beforeResign && afterResign.phase === 'over' && afterResign.state === 'over'
+      && afterResign.againVisible && afterResign.allDone,
+    `${JSON.stringify(afterResign)} / 例外 ${exceptions().length - beforeResign} 件`);
+  await layoutCheck('終局');
+  await shot('04-over');
+
   // ---- 2局目 ----
   // 1局目で溜めた状態（棋譜・時計・音を鳴らした位置・さかのぼり位置）を
   // 落とし忘れると、2局目に持ち越される。押す場所が同じなので気づきにくい。
   const second = await (async () => {
-    // 終局後は対局開始を出さない（すぐ上に「もう一局」がある）ので、そちらを押す。
     await click(page, await center(page, '#btn-again'));
-    await evalUntil(page, 'document.querySelectorAll("sg-hp-wrap").length', v => v > 0, 20000);
     await evalUntil(page, 'document.getElementById("status-line").textContent',
       v => v && v.startsWith('あなたの番'), 30000);
     return evaluate(page, `({
@@ -487,26 +479,43 @@ try {
       さかのぼり中: document.getElementById('board').classList.contains('reviewing'),
       navFirst無効: document.getElementById('nav-first').disabled,
       投了の文言: document.getElementById('btn-resign').textContent,
-      対局開始無効: document.getElementById('btn-new').disabled,
-      対局設定を畳んでいる: document.getElementById('controls').hidden,
+      状態: document.getElementById('panel').dataset.state,
       持ち駒: document.querySelectorAll('sg-hand-wrap.hand-bottom sg-hp-wrap:not([data-nb="0"])').length,
     })`);
   })();
   check('2局目が前の対局を持ち越していない',
     second.棋譜 === 0 && second.盤上 === 0 && second.さかのぼり中 === false
       && second.navFirst無効 === true && second.投了の文言 === '投了'
-      && second.対局開始無効 === true && second.持ち駒 === 8
-      && second.対局設定を畳んでいる === true
+      && second.状態 === 'play' && second.持ち駒 === 8
       // 人間側だけが持ち時間を持つ。AI側（上の席）は空で、席から時計が消える。
       && second.時計上 === '' && second.時計下 === '無制限',
     JSON.stringify(second));
 
-  check('布石フェーズの途中で投了しても落ちない',
-    exceptions().length === beforeResign && afterResign.phase === '終局' && afterResign.newEnabled
-      && afterResign.colorEnabled,
-    `${afterResign.phase} / ${afterResign.status} / 例外 ${exceptions().length - beforeResign} 件`);
+  // ---- ホームへ戻る ----
+  // 対局中にロゴを押すと確認が出る。戻ればホーム、やめれば対局に留まる。
+  await evaluate(page, 'document.getElementById("logo").click()');
+  await new Promise(r => setTimeout(r, 200));
+  const leave1 = await evaluate(page, `({
+    open: document.getElementById('leave-dialog').open,
+    playVisible: !document.getElementById('view-play').hidden,
+  })`);
+  check('対局中にロゴを押すと確認が出る', leave1.open && leave1.playVisible, JSON.stringify(leave1));
+  await evaluate(page, 'document.getElementById("btn-leave-cancel").click()');
+  await new Promise(r => setTimeout(r, 200));
+  check('「対局に戻る」で対局に留まり、URL が #play に戻る', await evaluate(page,
+    '!document.getElementById("leave-dialog").open && !document.getElementById("view-play").hidden && location.hash === "#play"'));
+  await evaluate(page, 'document.getElementById("logo").click()');
+  await new Promise(r => setTimeout(r, 200));
+  await evaluate(page, 'document.getElementById("btn-leave-ok").click()');
+  await new Promise(r => setTimeout(r, 300));
+  check('「やめてホームへ」でホームに戻り、対局が消える', await evaluate(page,
+    '!document.getElementById("view-home").hidden && document.getElementById("view-play").hidden'
+    + ' && document.getElementById("panel").dataset.state === "idle" && location.hash !== "#play"'));
 
   if (KINGS) await playKingsFirst(page);
+
+  await checkPages(page);
+  await checkEnglish(page);
 } finally {
   cdp.close();
   chrome.kill();
@@ -517,78 +526,137 @@ try {
 console.log(`\n不一致 ${failures} 件`);
 process.exit(failures ? 1 : 0);
 
-// ---- 両玉先置き（--kings-first） ----
+// ---- パネルのレイアウト ----
 
 /**
- * 両玉先置きモードを実ブラウザで通す。選ぶ役（AIが両玉を置き、人間が2択を押す）と
- * 置く役（人間が先手玉・後手玉を順に置き、AIが側を選ぶ）の両方。
+ * 右のパネルが崩れていないか。「いかなる操作をしても」は、操作のたびにこれを呼んで
+ * はじめて言える。広い画面ではパネルの高さが盤の列と同じで、パネルの子はパネルの
+ * 矩形の中に収まり、ページに横スクロールが無い。
+ */
+async function layoutCheck(label) {
+  const r = await evaluate(page, `(() => {
+    const panel = document.getElementById('panel'), col = document.querySelector('.board-column');
+    const de = document.documentElement;
+    const narrow = getComputedStyle(panel).display === 'contents';
+    const p = panel.getBoundingClientRect(), c = col.getBoundingClientRect();
+    // 棋譜の中身はスクロールするので見ない（枠だけ見る）。hidden の要素は幅0で外れる。
+    const outside = [...panel.querySelectorAll('*')]
+      .filter(e => !e.closest('.kifu') || e.classList.contains('kifu'))
+      .filter(e => { const b = e.getBoundingClientRect();
+        return b.width > 0 && (b.right > p.right + 1 || b.left < p.left - 1 || b.bottom > p.bottom + 1 || b.top < p.top - 1); })
+      .map(e => e.id || e.className).slice(0, 5);
+    return { narrow, dh: Math.round(p.height - c.height), hscroll: de.scrollWidth > de.clientWidth,
+             outside: narrow ? [] : outside };
+  })()`);
+  check(`パネルが崩れていない（${label}）`,
+    !r.hscroll && r.outside.length === 0 && (r.narrow || Math.abs(r.dh) <= 2), JSON.stringify(r));
+}
+
+async function shot(name) {
+  if (!SHOTS) return;
+  const { data } = await page.send('Page.captureScreenshot', { format: 'png' });
+  fs.writeFileSync(path.join(SHOTS, `${name}.png`), Buffer.from(data, 'base64'));
+}
+
+// ---- 玉分け将棋（--kings-first） ----
+
+/**
+ * 玉分け将棋を実ブラウザで通す。選ぶ役（AIが両玉を置き、人間が盤の玉を押して確定する）と
+ * 置く役（人間が先手玉・後手玉を順に置き、AIが先後を選ぶ）の両方。
  * game.js の状態機械は test/kings_first_test.mjs が見ているので、ここで見るのは
- * **画面にしか無いもの**: 2択のボタンの出入り、席の名前が選択で決まること、
- * 盤の向きが人間の色へ回ること、後手の駒台の玉を人間が打てること。
+ * **画面にしか無いもの**: 玉の札と輪、押した玉で盤が回ること、二段の確定、
+ * 席の名前が選択で決まること、後手の駒台の玉を人間が打てること。
  */
 async function playKingsFirst(page) {
-  console.log('\n--- 両玉先置き（--kings-first）---');
+  console.log('\n--- 玉分け将棋（--kings-first）---');
   const errorsAtStart = exceptions().length;
   const status = () => evaluate(page, `({
     line: document.getElementById('status-line').textContent,
     sub: document.getElementById('status-sub').textContent,
-    phase: document.getElementById('readout-phase').textContent,
-    choice: !document.getElementById('choice-row').hidden,
+    phase: document.getElementById('panel').dataset.phase,
+    state: document.getElementById('panel').dataset.state,
     top: document.getElementById('seat-top-name').textContent,
     bottom: document.getElementById('seat-bottom-name').textContent,
     kifu: [...document.querySelectorAll('#kifu li .m')].map(e => e.textContent),
     pieces: document.querySelectorAll('sg-pieces piece:not(.fading)').length,
     undo: !document.getElementById('btn-undo').disabled,
+    confirm: document.getElementById('btn-choose-confirm').textContent,
+    confirmEnabled: !document.getElementById('btn-choose-confirm').disabled,
+    tags: document.querySelectorAll('#king-tags .king-label').length,
+    gote: document.querySelector('.sg-wrap').classList.contains('orientation-gote'),
+    steps: [...document.querySelectorAll('#stepper .step')].map(s => s.className.replace('step ', '')),
   })`);
-  // 直前の対局（2局目）が進行中。投了して終わらせてから設定を変える。
-  await evaluate(page, `(() => { const b = document.getElementById('btn-resign'); b.click(); b.click(); })()`);
-  await evalUntil(page, 'document.getElementById("readout-phase").textContent', v => v === '終局', 10000);
-
-  const option = await evaluate(page, 'document.querySelector("#opt-mode option[value=kings-first]").disabled');
-  check('両玉先置きが選べる（価値表が読めている）', option === false);
-  if (option !== false) return;
-
-  // ---- 選ぶ役 ----
+  // ホームに居る。ルールを玉分け将棋、役を選ぶ役にして始める。
   await evaluate(page, `(() => {
-    const m = document.getElementById('opt-mode'); m.value = 'kings-first'; m.dispatchEvent(new Event('change'));
-    const r = document.getElementById('opt-role'); r.value = 'chooser';
+    const m = document.getElementById('mode-kings'); m.checked = true; m.dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('opt-role').value = 'chooser';
   })()`);
-  check('ルールを両玉先置きにすると「手番」が消えて「役」が出る', await evaluate(page,
+  check('ルールを玉分け将棋にすると「手番」が消えて「役」が出る', await evaluate(page,
     'document.getElementById("lbl-color").hidden && !document.getElementById("lbl-role").hidden'
     + ' && getComputedStyle(document.getElementById("lbl-color")).display === "none"'));
-  await click(page, await center(page, '#btn-again'));
-  await evalUntil(page, '!document.getElementById("choice-row").hidden', v => v === true, 30000);
+  await click(page, await center(page, '#btn-new'));
+  await evalUntil(page, 'document.getElementById("panel").dataset.state', v => v === 'choose', 30000);
   let s = await status();
-  check('AIが両玉を置くと2択が出る', s.choice && s.pieces === 2 && s.phase === '側の選択',
-    `${s.phase} / 盤上${s.pieces}枚 / ${s.line}`);
-  check('選ぶ前は席に「あなた」が無い', !s.top.includes('あなた') && !s.bottom.includes('あなた'),
-    `${s.top} / ${s.bottom}`);
-  check('選ぶ前は待ったが押せない', s.undo === false);
+  check('AIが両玉を置くと先後を選ぶ番になり、両玉に札が付く',
+    s.state === 'choose' && s.pieces === 2 && s.tags === 2 && s.phase === 'choose',
+    `${s.state} / 盤上${s.pieces}枚 / 札${s.tags} / ${s.line}`);
+  check('フェーズ帯が4段で、先後を選ぶ段が今', s.steps.length === 4 && s.steps[1].includes('now') && s.steps[0].includes('done'),
+    s.steps.join(' | '));
+  check('選ぶ前は席に「あなた」が無く、確定は押せない',
+    !s.top.includes('あなた') && !s.bottom.includes('あなた') && !s.confirmEnabled, `${s.top} / ${s.bottom}`);
+  await layoutCheck('先後を選ぶ番');
+  await shot('05-choose');
 
-  await click(page, await center(page, '#btn-choose-gote'));
+  // 盤の後手玉を押す（実マウス）。盤が後手向きに回り、確定ボタンに後手が入る。
+  await click(page, await center(page, 'sg-pieces piece.gote.king'));
+  await evalUntil(page, 'document.getElementById("btn-choose-confirm").disabled', v => v === false, 5000);
+  s = await status();
+  check('後手玉を押すと盤が回って手前が後手になり、確定ボタンに後手が入る',
+    s.gote && s.confirmEnabled && s.confirm.includes('後手') && s.bottom.includes('あなた（仮）'),
+    `${s.confirm} / ${s.bottom} / gote=${s.gote}`);
+  check('押した玉の札が強調される', await evaluate(page,
+    'document.querySelectorAll("#king-tags .king-label.pending").length') === 1);
+  await layoutCheck('玉を押した');
+  await shot('06-choose-pending');
+  // もう一方の玉を押すと入れ替わる。
+  await click(page, await center(page, 'sg-pieces piece.sente.king'));
+  await evalUntil(page, 'document.getElementById("btn-choose-confirm").textContent', v => v.includes('先手'), 5000);
+  s = await status();
+  check('先手玉を押すと入れ替わり、盤が先手向きに戻る', !s.gote && s.confirm.includes('先手'), `${s.confirm} / gote=${s.gote}`);
+  // 戻して後手で確定。
+  await click(page, await center(page, 'sg-pieces piece.gote.king'));
+  await evalUntil(page, 'document.getElementById("btn-choose-confirm").textContent', v => v.includes('後手'), 5000);
+  await click(page, await center(page, '#btn-choose-confirm'));
   await evalUntil(page, 'document.getElementById("status-line").textContent',
     v => v && v.startsWith('あなたの番'), 30000);
   s = await status();
-  check('後手側を選ぶと自分が後手になり、盤が回って手前が後手', s.bottom.startsWith('後手（あなた）')
-    && s.top.startsWith('先手（布石AI'), `${s.top} / ${s.bottom}`);
-  check('選択が棋譜に1行入り、AIの3手目が続く', s.kifu.length === 4 && s.kifu[2] === '△側を選択'
-    && s.choice === false, s.kifu.join(' '));
-  check('選んだ直後の案内に誰が何を選んだかが出る', s.sub.includes('あなたが後手側を選んだ'), s.sub);
+  check('後手を持って始めると自分が後手になり、盤が回って手前が後手',
+    s.bottom === 'あなた ☖' && s.top.startsWith('AI レベル') && s.top.endsWith('☗') && s.gote,
+    `${s.top} / ${s.bottom}`);
+  check('選択が棋譜に1行入り、AIの3手目が続く', s.kifu.length === 4 && s.kifu[2] === '△後手を持つ'
+    && s.state === 'play' && s.tags === 0, s.kifu.join(' '));
+  check('帯の「先後を選ぶ」段に結果が残る', await evaluate(page,
+    'document.querySelectorAll("#stepper .step")[1].textContent').then(v => v.includes('あなた') && v.includes('後手')));
   check('後手の駒台から打てる', await evaluate(page,
     'document.querySelectorAll("sg-hand-wrap.hand-bottom piece.gote").length') === 8);
+  await layoutCheck('先後が決まった');
 
-  // 待ったで選択より前へ戻る。AIの3手目も自分の選択も消え、2択に戻る。
+  // 待ったで選択より前へ戻る。AIの3手目も自分の選択も消え、選ぶ番に戻る。
   await click(page, await center(page, '#btn-undo'));
-  await evalUntil(page, '!document.getElementById("choice-row").hidden', v => v === true, 10000);
+  await evalUntil(page, 'document.getElementById("panel").dataset.state', v => v === 'choose', 10000);
   s = await status();
-  check('待ったで選択まで戻ると2択に戻り、席から「あなた」が消える',
-    s.choice && s.kifu.length === 2 && !s.bottom.includes('あなた'), `${s.kifu.join(' ')} / ${s.bottom}`);
+  check('待ったで選択まで戻ると選ぶ番に戻り、席から「あなた」が消える',
+    s.state === 'choose' && s.kifu.length === 2 && !s.bottom.includes('あなた') && s.tags === 2 && !s.confirmEnabled,
+    `${s.kifu.join(' ')} / ${s.bottom}`);
+  // キーボード向けのボタンでも同じ二段になる。
   await click(page, await center(page, '#btn-choose-sente'));
+  await evalUntil(page, 'document.getElementById("btn-choose-confirm").disabled', v => v === false, 5000);
+  await click(page, await center(page, '#btn-choose-confirm'));
   await evalUntil(page, 'document.getElementById("status-line").textContent',
     v => v && v.startsWith('あなたの番'), 30000);
   s = await status();
-  check('先手側を選ぶと自分が先手で、3手目は自分の番', s.bottom.startsWith('先手（あなた）')
-    && s.kifu.length === 3 && s.kifu[2] === '▲側を選択', `${s.bottom} / ${s.kifu.join(' ')}`);
+  check('ボタンで先手を持つと自分が先手で、3手目は自分の番', s.bottom === 'あなた ☗'
+    && s.kifu.length === 3 && s.kifu[2] === '▲先手を持つ', `${s.bottom} / ${s.kifu.join(' ')}`);
   const sfen3 = await evaluate(page, `(() => {
     document.getElementById('btn-io-open').click();
     const v = document.getElementById('io-sfen').value;
@@ -599,9 +667,15 @@ async function playKingsFirst(page) {
 
   // ---- 置く役 ----
   await evaluate(page, `(() => { const b = document.getElementById('btn-resign'); b.click(); b.click(); })()`);
-  await evalUntil(page, 'document.getElementById("readout-phase").textContent', v => v === '終局', 10000);
-  await evaluate(page, `(() => { const r = document.getElementById('opt-role'); r.value = 'placer'; })()`);
-  await click(page, await center(page, '#btn-again'));
+  await evalUntil(page, 'document.getElementById("panel").dataset.phase', v => v === 'over', 10000);
+  const note = await evaluate(page, 'document.getElementById("result-note").textContent');
+  check('終局後に置く役・両玉・誰が先手を持ったか・表の値が出る',
+    /置く役 AI/.test(note) && /両玉 \d[a-i]\/\d[a-i]/.test(note) && /表の先手勝率 \d+\.\d%/.test(note), note);
+  await shot('07-kings-over');
+  await click(page, await center(page, '#btn-home'));
+  await evalUntil(page, 'document.getElementById("view-home").hidden', v => v === false, 5000);
+  await evaluate(page, `(() => { document.getElementById('opt-role').value = 'placer'; })()`);
+  await click(page, await center(page, '#btn-new'));
   await evalUntil(page, 'document.getElementById("status-line").textContent',
     v => v && v.startsWith('あなたが玉を置く役'), 30000);
   // 玉以外は選べない（実マウスで押す。合成イベントは shogiground が弾く）。
@@ -609,6 +683,8 @@ async function playKingsFirst(page) {
   await new Promise(r => setTimeout(r, 300));
   check('1手目は玉以外を選べない',
     await evaluate(page, 'document.querySelectorAll("sq.dest").length') === 0);
+  check('置く役の番は駒台の玉以外が薄い', await evaluate(page,
+    'parseFloat(getComputedStyle(document.querySelector("sg-hand-wrap.hand-bottom sg-hp-wrap:has(piece.pawn)")).opacity) < 0.5'));
   await click(page, await center(page, 'sg-hand-wrap.hand-bottom piece.king'));
   const kingDests = await evalUntil(page, 'document.querySelectorAll("sq.dest").length', v => v > 0, 10000);
   check('置く役の1手目は先手玉で、先手陣36マス', kingDests === 36, `${kingDests}マス`);
@@ -618,23 +694,74 @@ async function playKingsFirst(page) {
   // 2手目は相手（上）の駒台の玉。自分の色に関わらず置ける。
   await click(page, await center(page, 'sg-hand-wrap.hand-top piece.king'));
   const goteDests = await evalUntil(page, 'document.querySelectorAll("sq.dest").length', v => v > 0, 10000);
-  const diag = goteDests === 36 ? '' : await evaluate(page, `(() => {
-    const el = document.querySelector('sg-hand-wrap.hand-top piece.king');
-    const r = el.getBoundingClientRect();
-    return JSON.stringify({ wrap: el.closest('sg-hand-wrap').className, hp: el.parentElement.outerHTML.slice(0, 120),
-      rect: [r.left, r.top, r.width, r.height].map(Math.round), innerH: innerHeight,
-      selected: !!document.querySelector('sg-hand piece.selected'), status: document.getElementById('status-line').textContent,
-      turnEl: document.querySelector('.sg-wrap').className });
-  })()`);
-  check('2手目は後手の駒台の玉を後手陣36マスへ', goteDests === 36, `${goteDests}マス ${diag}`);
+  check('2手目は後手の駒台の玉を後手陣36マスへ', goteDests === 36, `${goteDests}マス`);
   await click(page, await center(page, 'sg-squares sq.dest'));
   await evalUntil(page, 'document.getElementById("status-line").textContent',
     v => v && v.startsWith('あなたの番'), 30000);
   s = await status();
-  check('AIが側を選ぶと自分の色が決まり、案内にAIの選択が出る',
-    (s.bottom.includes('あなた')) && /AIが(先手|後手)側を選んだ/.test(s.sub) && s.kifu.length >= 3
-    && s.kifu[2].endsWith('側を選択'), `${s.bottom} / ${s.sub} / ${s.kifu.slice(0, 4).join(' ')}`);
-  check('両玉先置きで未処理の例外が無い', exceptions().length === errorsAtStart,
+  check('AIが先後を選ぶと自分の色が決まり、案内にAIの選択が出る',
+    s.bottom.startsWith('あなた') && /AIが(先手 ☗|後手 ☖)を持った/.test(s.sub) && s.kifu.length >= 3
+    && s.kifu[2].endsWith('を持つ'), `${s.bottom} / ${s.sub} / ${s.kifu.slice(0, 4).join(' ')}`);
+  check('玉分け将棋で未処理の例外が無い', exceptions().length === errorsAtStart,
+    exceptions().slice(errorsAtStart).join(' / '));
+  // 次の確認のために終わらせてホームへ。
+  await evaluate(page, `(() => { const b = document.getElementById('btn-resign'); b.click(); b.click(); })()`);
+  await evalUntil(page, 'document.getElementById("panel").dataset.phase', v => v === 'over', 10000);
+  await click(page, await center(page, '#btn-home'));
+  await evalUntil(page, 'document.getElementById("view-home").hidden', v => v === false, 5000);
+}
+
+// ---- 文章のページと英語版 ----
+
+async function checkPages(page) {
+  console.log('\n--- ルール・コラム ---');
+  for (const p of ['/rules/', '/story/', '/en/rules/', '/en/story/']) {
+    const r = await evaluate(page, `fetch(${JSON.stringify(p)}).then(r => r.status)`);
+    check(`${p} が 200`, r === 200, String(r));
+  }
+  const nf = await evaluate(page, `fetch('/no/such/page').then(r => r.status)`);
+  check('無いパスは 404', nf === 404, String(nf));
+  await page.send('Page.navigate', { url: `http://localhost:${PORT}/story/` });
+  const cells = await evalUntil(page, 'document.querySelectorAll(".heat-cell").length', v => v === 72, 10000);
+  check('コラムのヒートマップが 36+36 マス描かれる', cells === 72, `${cells}マス`);
+  check('コラムのメニューに現在地の印がある', await evaluate(page,
+    'document.querySelector(".menu a.current")?.dataset.page') === 'story');
+  await shot('08-story');
+  await page.send('Page.navigate', { url: `http://localhost:${PORT}/en/rules/` });
+  await evalUntil(page, 'document.readyState', v => v === 'complete', 10000);
+  check('英語のルールは lang=en で、言語リンクが日本語版の同じページを指す', await evaluate(page,
+    'document.documentElement.lang === "en" && document.querySelector(".menu .lang").getAttribute("href") === "/rules/"'));
+}
+
+/** 英語版。同じ app.js が lang を見て辞書を替え、棋譜は西洋式になる。 */
+async function checkEnglish(page) {
+  console.log('\n--- 英語版（/en/）---');
+  const errorsAtStart = exceptions().length;
+  await page.send('Page.navigate', { url: `http://localhost:${PORT}/en/` });
+  const ready = await evalUntil(page, 'document.getElementById("btn-new").disabled', v => v === false, 120000);
+  check('/en/ でもエンジンが起動する', ready === false);
+  if (ready !== false) return;
+  check('英語の文言で始まる', await evaluate(page,
+    'document.documentElement.lang === "en" && document.getElementById("btn-new").textContent.startsWith("Start")'));
+  // 対局の設定は前回の値を覚える（--kings-first の後は玉分け将棋のまま）。ここは布石将棋で。
+  await evaluate(page, `(() => { const m = document.getElementById('mode-standard'); m.checked = true; m.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await click(page, await center(page, '#btn-new'));
+  const enStatus = await evalUntil(page, 'document.getElementById("status-line").textContent', v => v && v.startsWith('Your turn'), 30000);
+  check('英語の状態文で自分の番になる', String(enStatus).startsWith('Your turn'), String(enStatus));
+  check('英語の帯（Placement / Shogi）', await evaluate(page,
+    '[...document.querySelectorAll("#stepper .step .t")].map(e => e.textContent).join("/")') === 'Placement/Shogi');
+  await click(page, await center(page, 'sg-hand-wrap.hand-bottom piece.pawn'));
+  await evalUntil(page, 'document.querySelectorAll("sq.dest").length', v => v > 0, 10000);
+  await click(page, await center(page, 'sg-squares sq.dest'));
+  await evalUntil(page, 'document.querySelectorAll("#kifu li").length', v => v >= 2, 30000);
+  const kifu = await evaluate(page, '[...document.querySelectorAll("#kifu li .m")].map(e => e.textContent)');
+  check('英語版の棋譜は西洋式（☗P*7f）', /^☗P\*\d[a-i]$/.test(kifu[0] ?? '') && /^☖[PLNSGBRK]\*\d[a-i]$/.test(kifu[1] ?? ''),
+    kifu.join(' '));
+  check('席の名前が英語', await evaluate(page,
+    'document.getElementById("seat-bottom-name").textContent') === 'You ☗');
+  await layoutCheck('英語版');
+  await shot('09-en-play');
+  check('英語版で未処理の例外が無い', exceptions().length === errorsAtStart,
     exceptions().slice(errorsAtStart).join(' / '));
 }
 
@@ -652,7 +779,7 @@ async function playWholeGame(page) {
   try {
     // ---- 布石フェーズ ----
     let s = await waitTurn(page);
-    for (let guard = 0; guard < 45 && s.phase.startsWith('布石'); guard++) {
+    for (let guard = 0; guard < 45 && s.phase === 'fuseki'; guard++) {
       if (!alive(s)) return;
       const before = s.kifu;
       if (!await dropAnyPiece(page))
@@ -664,46 +791,29 @@ async function playWholeGame(page) {
     check('布石が40手で終わった', s.kifu === 40, `${s.kifu}手`);
 
     // ---- 41手目の裁定 ----
-    // 40手完了時点で手番側が相手玉を取れる形は普通に起こる。そこで終わった場合も正常。
-    if (s.phase === '終局') {
-      // 40手で終わる形は2つある。
-      //   1. 41手目の裁定（手番側が相手玉を取れる） -> fuseki_king_capture
-      //   2. 41手目の局面が既に詰んでいる -> checkmate
-      // 2 は布石フェーズが王手放置を見ないために起こり、game.js の
-      // _transitionToNormal() が最後に _checkNormalGameOver() を呼んで拾っている
-      // （拾わないと「AIの投了」に化ける）。どちらも正常。
-      // 1 は position が null のまま終局するので、表示の取り出し口が
-      // phase で分岐していると落ちる（game_terminal_test.mjs で留めてある）。
+    if (s.phase === 'over') {
       check('裁定で終わった理由が玉取りか詰み',
         ['41手目に玉を取れる形で布石が終わった', '詰み'].includes(s.sub),
         `${s.status} / ${s.sub}`);
-      // ここは position が null のまま phase が 'over' になる経路で、
-      // boardSfen() が phase で分岐していたころは makeSfen(null) で落ちていた。
       check('裁定で終わったときに例外が出ていない', exceptions().length === errorsAtFullStart,
         exceptions().slice(errorsAtFullStart).join(' / '));
       console.log('  41手目の裁定で決着したので通常フェーズは見ない');
       return;
     }
-    check('通常フェーズへ移った', s.phase === '通常', s.phase);
-    // 40手打った直後は最後の1手の描画がまだ動いていることがある。20回まわして
-    // 1回だけ39枚と数えた。Nodeで25局まわしても盤の実体は必ず40枚だったので、
-    // 実体ではなく描画の追いつき待ち。落ち着くまで待ってから数える。
+    check('通常フェーズへ移った', s.phase === 'normal', s.phase);
     const settled = await evalUntil(page,
       'document.querySelectorAll("sg-pieces piece:not(.fading)").length', v => v === 40, 5000);
     check('盤上に40枚ある', settled === 40, `${settled}枚`);
-    // 価値ヘッドの無いネットでは布石フェーズの評価は「採用手の確率」。移った直後は
-    // まだ誰も通常フェーズの評価を出していないので、布石の確率が残っていてはいけない。
-    check('布石の評価を持ち越していない', s.evaluation === '—', s.evaluation);
-    // 41手目でルールが変わる。フェーズ表示が変わるだけでは気づけないので、
-    // 移った最初の手番で一度だけ知らせる。
     check('41手目に入ったことを知らせている',
       s.status.includes('41手目') || s.status.startsWith('AIが考えている'),
       `${s.status} / ${s.sub}`);
+    check('帯が将棋の段に進む', await evaluate(page,
+      'document.querySelector("#stepper .step.now .t")?.textContent') === '将棋');
+    check('盤の縁が将棋の色に変わる', await evaluate(page,
+      'document.querySelector(".sg-wrap").classList.contains("phase-normal")'));
+    await layoutCheck('41手目');
 
     // ---- 通常フェーズ ----
-    // やねうら王が考えている間、席の印が脈打つ。布石フェーズのAIは同期的で
-    // イベントループに戻らないため印が出る隙が無いが、通常フェーズは別スレッドなので
-    // ここでしか確かめられない。
     await evaluate(page, `(() => {
       window.__thinkingSeen = 0;
       window.__thinkingTimer = setInterval(() => {
@@ -711,7 +821,7 @@ async function playWholeGame(page) {
       }, 20);
     })()`);
 
-    for (let i = 0; i < NORMAL_PLIES && s.phase === '通常'; i++) {
+    for (let i = 0; i < NORMAL_PLIES && s.phase === 'normal'; i++) {
       const before = s.kifu;
       if (!await moveAnyPiece(page))
         return void check('通常フェーズで動かせる駒がある', false, JSON.stringify(s));
@@ -723,13 +833,14 @@ async function playWholeGame(page) {
       'clearInterval(window.__thinkingTimer), window.__thinkingSeen');
     check('AIが考えている間、席の印が動く', thinkingSeen > 0, `観測 ${thinkingSeen} 回`);
     check('通常フェーズで手が進んだ', s.kifu > 40, `${s.kifu}手`);
-    // やねうら王が指したので、評価の出どころが替わっている（formatEval のもう一方の枝）。
-    check('通常フェーズの評価がやねうら王のものになった',
-      s.phase === '終局' || /深さ|手詰/.test(s.evaluation), s.evaluation);
+    // 41手目の行（指した後に初めて現れる）に区切りが付く。
+    check('41手目の棋譜の行に区切りが付く', await evaluate(page,
+      'document.querySelector("#kifu li.divider:not(.choice)")?.dataset.divider') === 'ここから将棋');
+    // やねうら王が指したので、評価の出どころが替わっている。見せる設定にして読む。
+    await evaluate(page, `(() => { const c = document.getElementById('opt-show-eval'); c.checked = true; c.dispatchEvent(new Event('change')); })()`);
+    const ev = await evaluate(page, 'document.getElementById("readout-eval").textContent');
+    check('通常フェーズの評価がやねうら王のものになった', s.phase === 'over' || /深さ|手詰/.test(ev), ev);
 
-    // 帯は手前（盤の下側）から伸びる。後手を持つと手前は後手なので、盤の向きに
-    // 合わせて裏返さないと、自分が押しているのに相手側から伸びて見える。
-    // 決めるのは humanColor ではなく orientation（盤を反転したら帯も付いてくる）。
     const gaugeFlip = await evaluate(page, `(() => {
       const g = document.getElementById('eval-gauge');
       const p = () => parseFloat(getComputedStyle(g).getPropertyValue('--eval-p'));
@@ -740,21 +851,20 @@ async function playWholeGame(page) {
       return { before, after, hidden: g.hidden };
     })()`);
     check('盤を反転すると評価の帯も裏返る',
-      s.phase === '終局'
+      s.phase === 'over'
       || (!gaugeFlip.hidden && Math.abs(gaugeFlip.before + gaugeFlip.after - 1) < 1e-6),
       `反転前 ${gaugeFlip.before} / 反転後 ${gaugeFlip.after}`);
+    await evaluate(page, `(() => { const c = document.getElementById('opt-show-eval'); c.checked = false; c.dispatchEvent(new Event('change')); })()`);
 
-    // 布石と通常はフェーズが違い、盤の出どころ（boardPieces / shogiopsのPosition）も違う。
-    // 通常フェーズから布石の局面へ戻れるかは、この継ぎ目でしか壊れない。
+    // 布石と通常はフェーズが違い、盤の出どころも違う。通常フェーズから布石の局面へ戻れるか。
     const cross = await evaluate(page, `(async () => {
-      const wait = () => new Promise(r => setTimeout(r, 400));   // animation.duration=250ms より長く
-      // アニメーション中は消えていく駒(.fading)がDOMに残るので除く。
+      const wait = () => new Promise(r => setTimeout(r, 400));
       const count = () => document.querySelectorAll('sg-pieces piece:not(.fading)').length;
       const live = count();
       const rows = document.querySelectorAll('#kifu li');
-      rows[19].click(); await wait();          // 20手目（布石の途中）
+      rows[19].click(); await wait();
       const at20 = count();
-      rows[39].click(); await wait();          // 40手目（布石が終わった直後）
+      rows[39].click(); await wait();
       const at40 = count();
       document.getElementById('nav-last').click(); await wait();
       return { live, at20, at40, back: count() };
@@ -762,6 +872,8 @@ async function playWholeGame(page) {
     check('通常フェーズから布石の局面へ戻れる',
       cross.at20 === 20 && cross.at40 === 40 && cross.back === cross.live,
       `20手目=${cross.at20}枚 / 40手目=${cross.at40}枚 / 最新へ戻して=${cross.back}枚（対局中=${cross.live}枚）`);
+    await layoutCheck('通常フェーズ');
+    await shot('10-normal');
     check('1局通しても例外が出ていない', exceptions().length === errorsAtFullStart,
       exceptions().slice(errorsAtFullStart).join(' / '));
   } finally {
@@ -781,10 +893,6 @@ function kifuText(page) {
  *   shogiground は着手のコールバックを setTimeout 越しに呼ぶ（events.after）。
  *   クリックが返った時点ではまだ handleDrop が走っておらず、表示は「あなたの番」の
  *   ままなので、「AIが考えている」の消滅だけで待つと**打つ前の状態**をそのまま拾う。
- *   その古い状態で次の着手へ進むと、人間の手番でないのにクリックすることになる。
- *
- * 表示は render() が先に書き換わり、盤のアニメーション（board.js の duration 180ms）は
- * その後で終わる。動いている最中にクリックすると座標がずれるので、少し置いてから返す。
  */
 async function waitTurn(page, minKifu = 0) {
   const s = await evalUntil(page, SNAPSHOT,
@@ -802,8 +910,7 @@ function alive(s) {
 
 /**
  * n番目の要素の中心。shogigroundの駒はマスのキーではなく transform で置かれていて、
- * セレクタでn番目を指す手が無い。**印のclassを足して指してはいけない**。shogiground は
- * piece の className から色と駒種を作っているので、余計なclassは駒の同一性を狂わせる。
+ * セレクタでn番目を指す手が無い。**印のclassを足して指してはいけない**。
  */
 function centerOfNth(page, selector, index) {
   return evaluate(page, `(() => {
@@ -861,11 +968,9 @@ async function moveAnyPiece(page) {
     const at = await centerOfNth(page, mine, i);
     if (!at) return false;
     await click(page, at);
-    // 動けない駒（周りが塞がっている）はマスが光らない。次の駒へ。
     const dests = await evalUntil(page, 'document.querySelectorAll("sq.dest").length', v => v > 0, 1500);
     if (!dests) continue;
     await click(page, await center(page, 'sg-squares sq.dest'));
-    // 成りを選べる手なら、ダイアログが開く（強制成りのときは開かずに成る）。
     const choices = await evalUntil(page, 'document.querySelectorAll("sg-promotion piece").length', v => v > 0, 1000);
     if (choices > 0) await click(page, await center(page, 'sg-promotion piece'));
     return true;

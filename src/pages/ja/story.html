@@ -1,0 +1,128 @@
+<h1>玉分け将棋ができるまで</h1>
+<p class="lead">布石将棋のAIを鍛えたら、先手が勝ちすぎた。ルールをいじって数字を追いかけるのをやめ、対局者自身に釣り合わせてもらうことにした顛末。</p>
+
+<h2>1. きっかけ</h2>
+<p>布石将棋は、空の盤に交互に20枚ずつ打ってから指し始める変則将棋で、初期配置は1通りではなく約 10<sup>37</sup> 通りある。研究され尽くした感じのしない将棋が欲しくて、ブラウザで指せるAIを作った。布石を打つネットを自己対局で鍛え、41手目からはやねうら王に指させる。</p>
+<p>鍛えていくうちに、困ったことがはっきりした。<b>先手が勝ちすぎる。</b>学習の昇格ゲート（同じ強さの方策同士の対局）を全部合わせた 10,767 局で、先手の勝率は 62.1%。学習が進むほど、この数字は下がらなかった。</p>
+
+<h2>2. ふつうの将棋の先手</h2>
+<p>これは布石将棋だけの話ではない。ふつうの将棋でも、プロの公式戦の先手勝率は 52〜53% だが、AIは強くなるほど先手が勝つ。</p>
+<div class="scroll"><table>
+  <tr><th>対局</th><th class="n">先手勝率</th><th>条件</th></tr>
+  <tr><td>人間のプロ公式戦</td><td class="n">52〜53%</td><td></td></tr>
+  <tr><td>世界コンピュータ将棋選手権 第33回 決勝</td><td class="n">67.9%</td><td>2023年</td></tr>
+  <tr><td>同 第36回 決勝</td><td class="n">91.3%</td><td>2026年。千日手・持将棋を除く</td></tr>
+  <tr><td>電竜戦 TSEC7 上位4チーム</td><td class="n">94%</td><td>先手の持ち時間0分、後手10分でも</td></tr>
+</table></div>
+<p>同じ大会でも予選から決勝へと強い層になるほど上がる。先手の利は<b>強さの関数</b>で、持ち時間のハンデでも埋まらなかった。</p>
+
+<h2>3. ルールをいじって試したこと</h2>
+<p>最初は条文で直そうとした。初手を端歩に限る、駒同士の当たりが生じない配置に限る、置ける段を減らす。実際に測った中で効いたのは「三段目までに置き、歩を三段目に並べる」という、通常将棋の幾何に寄せた形だけで、それでもランダム配置で 53.8% だった。</p>
+<p>そして気づいた。当たりを消しても、段を変えても、先手の利の本体は動かない。動くのは<b>手番の価値</b>で、それは局面の幾何ではなく、指す側の強さで決まる。ある強さで 50% に見える条文は、別の強さでは外れる。</p>
+
+<h2>4. 固定ルールは強さに追従しない</h2>
+<p>チェスも白が有利だが、上位ほど引き分けが増え、その幅が先手の利を飲み込む。将棋には持ち駒があって引き分けの幅が無い。だから「50% になる条文」を探す測定は、この環境（やねうら王＋古い評価関数）で見つけたとしても、最新のAIには当てはまらない。測って位置を決める方針をやめた。</p>
+
+<h2>5. 切って、選ぶ</h2>
+<p>強さによらず釣り合う仕組みは一つしか知られていない。<b>一方が切り、もう一方が選ぶ</b>。ケーキを二人で分けるときの方法で、Hex や五目並べで使われている。五目並べの Swap2 は、先攻が黒黒白の3子を置いて後攻が色を選ぶ手順で、先手 67% を約 52% まで下げた。</p>
+<p>ただし、切る人と選ぶ人が同じでは壊れる。布石の後に「どちらの陣を取るか」を選べるようにすると、選ぶ側は自分の陣を弱く築いて相手の陣を取ればよい。前に検討したときは、この理由で捨てていた。</p>
+<p>布石将棋には「置く」と「動かす」の境目がある。そこで、切る・選ぶ・築くの三つを分けられることに気づいた。</p>
+<div class="roles">
+  <div><b>切る</b>布石の冒頭で、一方が両方の玉を置く。自分がどちらになるかは知らない。</div>
+  <div><b>選ぶ</b>もう一方が、置かれた両玉を見て先手か後手かを取る。まだ何も築いていない。</div>
+  <div><b>築く</b>残りの19枚ずつを、先手から交互に置く。ここは元のまま。</div>
+</div>
+<p>切る側は自分の側を知らないので中立、選ぶ側はまだ陣を築いていないので手抜きの余地が無い。先手の残りの利は、切る側が先手玉を少し悪いマスに置くことで、毎局その場で打ち消される。</p>
+
+<h2>6. なぜ玉なのか</h2>
+<p>切るのが玉だけで足りるか。先手の利を打ち消せるだけの幅が、玉の置き場にあるか。これは測れる。先手玉 36 マス × 後手玉 36 マスの組ごとに、両玉を置いた局面から布石ネットに残りを置かせ、41手目局面をやねうら王で採点して先手勝率を出した（1組 256 本、約 40 分）。</p>
+<div class="stat" id="stat">
+  <div><b>91pt</b><span>幅（最良の組と最悪の組の差）</span></div>
+  <div><b>104組</b><span>釣り合いの帯（50%±誤差）に入る組</span></div>
+  <div><b>7.5%</b><span>最悪の組 5f・1a の先手勝率（実対局）</span></div>
+  <div><b>99.0%</b><span>最良の組 1i・5d の先手勝率（実対局）</span></div>
+</div>
+<p>幅は 91 ポイント。先手の利（この環境で約 12 ポイント）を玉だけで埋めて、なお余る。表を実際の対局（6 組 × 400 局）と突き合わせると、誤差は 2.5 ポイントだった。</p>
+<figure>
+  <div class="heat" id="heat"></div>
+  <figcaption>玉のマスの価値（勝率ポイント、先手から見た値）。左が先手玉、右が後手玉。正なら先手に有利、負なら後手に有利。どちらも最前段が最悪で、隅の最下段が最良。公開している表 <code>{{king_table}}</code> から描いている。</figcaption>
+</figure>
+<p>最前段（相手に近い段）に玉を置くと大きく損をし、隅の最下段が最も良い。この表が、AIの置く役と選ぶ役の判断そのものになっている。</p>
+
+<h2>7. 本当に釣り合うのか</h2>
+<p>置く役も選ぶ役もこの表を引くAI同士で 800 局。</p>
+<div class="scroll"><table>
+  <tr><th>置く役 / 選ぶ役</th><th class="n">対局の先手勝率</th><th class="n">置く役の勝率</th></tr>
+  <tr><td>表 / 表</td><td class="n">50.9%</td><td class="n">47.4%</td></tr>
+  <tr><td>ランダム / 表</td><td class="n">60.9%</td><td class="n">24.4%</td></tr>
+  <tr><td>表 / ランダム</td><td class="n">50.9%</td><td class="n">48.0%</td></tr>
+</table></div>
+<p>表同士なら先手勝率は 50% 近傍に収まり、選ぶ役の取り分は 2〜3 ポイント。置き方を考えない置く役は 75% 取られる。置く役が損をしないためには両玉を釣り合わせるしかない、という設計の狙いが、そのまま数字に出た。</p>
+
+<h2>8. 名前</h2>
+<p>一方が両玉を置いて分け、もう一方が選ぶ。振り駒の代わりに、玉で先後を決める。だから<b>玉分け（たまわけ）</b>。英語では King Split。</p>
+
+<h2>9. これから</h2>
+<ul>
+  <li>最新のAIでは先手の利がもっと大きい。玉だけで足りなくなったら、切る駒を「玉と飛」に広げる。</li>
+  <li>五目並べの Swap2 のように、選ぶ代わりに両陣に1枚ずつ足して選択権を返す第3の選択肢。切る側だけが研究した置き方を押し付けられなくなる。</li>
+  <li>玉分け将棋の下で布石ネットを鍛え直すと、釣り合いの帯がどう動くか。表と方策は対で更新していく。</li>
+</ul>
+
+<h2>出典</h2>
+<ul>
+  <li><a href="https://yaneuraou.yaneu.com/2026/07/23/shogi-ai-black-win-rate-94-percent/">将棋AIの大会、ついに先手勝率94%になる</a>（やねうら王）</li>
+  <li><a href="https://yaneuraou.yaneu.com/2023/12/22/first-player-advantage-in-shogi-ai/">いま将棋AIの世界では、どれくらい先手が有利なのか</a>（やねうら王）</li>
+  <li><a href="https://ykakinoki.hateblo.jp/entry/2026/05/09/032700">第36回世界コンピュータ将棋選手権の勝率・戦型分析</a></li>
+  <li><a href="https://en.wikipedia.org/wiki/Pie_rule">Pie rule</a>、<a href="https://en.wikipedia.org/wiki/Swap_opening_rule">Swap opening rule</a>（Wikipedia）</li>
+  <li><a href="https://en.wikipedia.org/wiki/First-move_advantage_in_chess">First-move advantage in chess</a>（Wikipedia）</li>
+</ul>
+
+<script type="module">
+// 両玉の価値表のヒートマップ。公開している表（models/）をそのまま読む。
+// 表を作り直せば、このページも追従する。
+const el = document.getElementById('heat');
+try {
+  const d = await (await fetch('/models/{{king_table}}')).json();
+  const boards = [
+    { title: '先手玉（先手陣、下が最下段）', vals: d.black_king_value_pt, ranks: ['f', 'g', 'h', 'i'] },
+    { title: '後手玉（後手陣、上が最下段）', vals: d.white_king_value_pt, ranks: ['a', 'b', 'c', 'd'] },
+  ];
+  const lim = 50;
+  const color = v => {
+    const x = Math.max(-1, Math.min(1, v / lim));
+    // 青（後手に有利）〜 紙 〜 朱（先手に有利）
+    const mix = (a, b, t) => a.map((c, i) => Math.round(c + (b[i] - c) * t));
+    const paper = [244, 242, 234], blue = [78, 121, 196], red = [217, 84, 45];
+    const c = x < 0 ? mix(paper, blue, -x) : mix(paper, red, x);
+    return `rgb(${c.join(',')})`;
+  };
+  for (const b of boards) {
+    const box = document.createElement('div');
+    box.className = 'heat-board';
+    const title = document.createElement('div');
+    title.className = 'heat-title';
+    title.textContent = b.title;
+    const grid = document.createElement('div');
+    grid.className = 'heat-grid';
+    for (const r of b.ranks) for (let f = 9; f >= 1; f--) {
+      const v = b.vals[`${f}${r}`];
+      const cell = document.createElement('div');
+      cell.className = 'heat-cell';
+      cell.style.background = color(v);
+      cell.style.color = Math.abs(v) > 30 ? '#fff' : '#1d1b16';
+      cell.textContent = v > 0 ? `+${Math.round(v)}` : String(Math.round(v));
+      cell.title = `${f}${r}: ${v.toFixed(1)}pt`;
+      grid.appendChild(cell);
+    }
+    box.append(title, grid);
+    el.appendChild(box);
+  }
+  const scale = document.createElement('div');
+  scale.className = 'heat-scale';
+  scale.innerHTML = `<span>後手に有利 −${lim}</span><i></i><span>+${lim} 先手に有利</span>`;
+  el.after(scale);
+} catch (e) {
+  el.textContent = '表を読み込めなかった: ' + e.message;
+}
+</script>

@@ -126,6 +126,8 @@ export const VOICES = {
   win: (ctx, t) => [523.25, 659.25, 783.99].forEach((f, i) => tone(ctx, t + i * 0.11, f, 0.34)),
   lose: (ctx, t) => [493.88, 415.30, 329.63].forEach((f, i) => tone(ctx, t + i * 0.13, f, 0.4, 0.24)),
   draw: (ctx, t) => [440, 440].forEach((f, i) => tone(ctx, t + i * 0.16, f, 0.26, 0.22)),
+  // 段の境目（先後が決まった・41手目に入った）。駒音とも終局音とも違う、短い上がりの2音。
+  phase: (ctx, t) => [659.25, 987.77].forEach((f, i) => tone(ctx, t + i * 0.09, f, 0.22, 0.16)),
 };
 
 export class Sound {

@@ -1,0 +1,57 @@
+<h1>Rules</h1>
+<p class="lead">Fuseki Shogi is a shogi variant in which both players place 20 pieces on an empty board, one at a time, before the game begins. King Split Shogi adds a short opening procedure that lets the players balance the first-move advantage themselves.</p>
+
+<h2>Fuseki Shogi</h2>
+<ol>
+  <li>The board starts empty. Starting with Sente, the players alternately place their 20 pieces (9 pawns, 2 lances, 2 knights, 2 silvers, 2 golds, 1 bishop, 1 rook, 1 king) <b>within their own first four ranks</b>.</li>
+  <li>Until both players have placed all 20 pieces (40 moves), nothing moves. Only placements.</li>
+  <li>To avoid a double pawn (nifu), <b>filling all four squares of a file with your own non-pawn pieces is illegal</b>. All nine pawns must end up on nine different files, so filling a file with other pieces would force a double pawn somewhere else. The rule stops it one move early.</li>
+  <li>From move 41 it is ordinary shogi. Sente moves first. Checkmate wins.</li>
+</ol>
+
+<h3>The move-41 adjudication and the move-40 restriction</h3>
+<p>Check and checkmate are not considered during placement, so after 40 placements a king may already be attacked. This site handles it as follows.</p>
+<ul>
+  <li><b>Adjudication at move 41</b>: if the side to move (Sente) could capture the opposing king after the 40th placement, Sente wins.</li>
+  <li><b>Restriction on move 40</b>: Gote’s last placement may not leave Gote’s own king attacked. The only exception is when Gote’s king was already in check after move 39 and one piece cannot cover it; then the restriction is lifted and the adjudication decides.</li>
+</ul>
+<p class="note">Sente’s last placement (move 39) has no such restriction. Sente being in check at move 41 is an ordinary check, not an illegal position.</p>
+
+<h2>King Split Shogi</h2>
+<p>Fuseki Shogi favours Sente: between AIs Sente wins a little over 60%, and the gap widens as the engines get stronger. King Split lets the players cancel this advantage themselves, every game, at their own strength. It is the pie rule (one cuts, the other chooses) applied to the kings.</p>
+
+<div class="roles">
+  <div><b>The placer</b>puts the Sente king in Sente’s camp and the Gote king in Gote’s camp, without knowing yet which side they will play.</div>
+  <div><b>The chooser</b>looks at both kings and decides whether to play Sente or Gote.</div>
+  <div><b>Sente ☗ / Gote ☖</b>are fixed by that choice. The remaining 19 pieces each are placed alternately from Sente, and Sente plays move 41.</div>
+</div>
+
+<h3>Procedure</h3>
+<ol>
+  <li>Furigoma decides who is the <b>placer</b>. The other player is the <b>chooser</b>.</li>
+  <li>The placer puts the Sente king somewhere in Sente’s camp (the first four ranks) — move 1.</li>
+  <li>The same player then puts the Gote king in Gote’s camp — move 2.</li>
+  <li>The chooser declares whether they <b>play Sente or Gote</b>. This fixes the sides for the game. The position does not change.</li>
+  <li>The remaining 19 pieces per side are placed alternately, Sente first (moves 3–40). The kings are already on the board.</li>
+  <li>After Gote’s 40th placement the placement phase ends. Sente plays move 41 and the game continues as ordinary shogi.</li>
+</ol>
+<p>The placement zone, the nifu-avoidance restriction, the move-40 restriction and the move-41 adjudication are unchanged. Only the first two moves and the choice are new.</p>
+
+<h3>Roles and sides</h3>
+<p>The <em>roles</em> (placer, chooser) are decided by furigoma; the <em>sides</em> (Sente, Gote) are decided by the choice. They need not coincide. The game record keeps both.</p>
+
+<h3>Why it balances</h3>
+<p>The placer puts down both kings without knowing which side they will get. Put the Sente king on a good square and the opponent takes Sente; put the Gote king on a good square and the opponent takes Gote. The only way not to lose out is to place both kings so the two sides are as even as possible. The judgement is made by the players at their own strength, so no measurement and no numeric compensation is needed. Read more in <a href="{{self_href}}story/">How King Split came to be</a>.</p>
+
+<h3>What the AI does</h3>
+<p>On this site the AI’s placer and chooser use a table of Sente’s winning rate for every pair of king squares. The placer draws a random pair from those closest to 50%; the chooser takes Sente whenever the table value exceeds 50%. From move 3 the placement engine continues as usual. There is no search.</p>
+
+<h2>Game record format</h2>
+<p>A game is written as USI drops (such as <code>P*7f</code>) separated by spaces. In King Split, one extra token follows move 2: <code>choose:sente</code> or <code>choose:gote</code>. Paste a sequence under “Game record” in the menu to replay it.</p>
+<p class="note">SFEN during placement is a Fuseki Shogi extension with kings in hand and cannot be read by ordinary shogi software. From move 41 it is standard SFEN.</p>
+
+<h2>Sources</h2>
+<ul>
+  <li>Fuseki Shogi rules: <a href="https://shogitter.com/rule/布石将棋">shogitter</a> (Japanese)</li>
+  <li>King Split Shogi: this site’s own rule (<a href="https://github.com/kotenbu135/fuseki-shogi-web">source</a>)</li>
+</ul>
