@@ -24,10 +24,10 @@ const ASSETS = {
   // esbuildを通さずに素で読み込んだときのために既定値を持たせる。ここだけは
   // build.mjs の PUBLIC_MODEL と二重に持つことになるので、片方を変えたら両方直す。
   model: new URL(`./models/${typeof __MODEL_FILE__ === 'undefined'
-    ? 'fuseki_degct_b3_iter64.onnx' : __MODEL_FILE__}`, import.meta.url).href,
+    ? 'fuseki_degct_b3_iter90.onnx' : __MODEL_FILE__}`, import.meta.url).href,
   // 玉分け将棋の価値表（src/kings.js）。重みと世代が対（build.mjs の KING_TABLE）。
   kingTable: new URL(`./models/${typeof __KING_TABLE_FILE__ === 'undefined'
-    ? 'king_pairs_iter64.json' : __KING_TABLE_FILE__}`, import.meta.url).href,
+    ? 'king_pairs_iter90.json' : __KING_TABLE_FILE__}`, import.meta.url).href,
   yaneuraou: new URL('./vendor/yaneuraou/yaneuraou.k-p.js', import.meta.url).href,
 };
 

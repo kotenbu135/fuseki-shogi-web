@@ -137,7 +137,7 @@ node test/yaneuraou_smoke.mjs test/sample_sfens.jsonl 12 1000
 
 # 布石方策が本家と同じlogitを返すか（onnxruntime-web ↔ Python onnxruntime）
 node test/policy_probe.mjs policy_probe.json
-python3 test/policy_parity.py policy_probe.json models/fuseki_degct_b3_iter64.onnx
+python3 test/policy_parity.py policy_probe.json models/fuseki_degct_b3_iter90.onnx
 
 # 41手目の裁定が shogiops の Position より前に効いていること
 node test/adjudication_test.mjs

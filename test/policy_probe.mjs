@@ -6,10 +6,10 @@
 // AIは落ちずに弱くなるだけなので、UIのバグと区別できない。
 //
 //   node test/policy_probe.mjs policy_probe.json [局面数] [モデル.onnx]
-//   python3 test/policy_parity.py policy_probe.json models/fuseki_degct_b3_iter64.onnx
+//   python3 test/policy_parity.py policy_probe.json models/fuseki_degct_b3_iter90.onnx
 //
 // モデルは第3引数で差し替えられる（布石専用ネットの検証や、開発リポジトリ側に置いた
-// 途中経過のONNXを当てるため）。省略すると従来どおり models/fuseki_degct_b3_iter64.onnx。
+// 途中経過のONNXを当てるため）。省略すると従来どおり models/fuseki_degct_b3_iter90.onnx。
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -20,7 +20,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
 const OUT = process.argv[2] || path.join(ROOT, 'policy_probe.json');
 const SAMPLES = Number(process.argv[3] || 8);
-const MODEL = process.argv[4] || path.join(ROOT, 'models/fuseki_degct_b3_iter64.onnx');
+const MODEL = process.argv[4] || path.join(ROOT, 'models/fuseki_degct_b3_iter90.onnx');
 
 const fuseki = await Fuseki.load(pathToFileURL(path.join(ROOT, 'wasm/dist/fuseki.mjs')).href);
 const policy = await FusekiPolicy.load({ model: new Uint8Array(fs.readFileSync(MODEL)) });
