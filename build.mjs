@@ -90,6 +90,13 @@ const hasModel = copy(MODEL_SRC, path.join(OUT, 'models'));
 if (!hasModel) console.warn(`警告: ${MODEL_SRC} が無いので含めていない。布石フェーズは指せない`);
 else if (custom) console.warn(`--model: ${path.basename(OUT)}/models/${MODEL} を含めた。この出力は配布しないこと`);
 
+// 両玉先置きモードの価値表（src/kings.js）。公開重みのロールアウトをやねうら王で採点した
+// もので、GCT由来の値は含まない（models/README.md）。重みと世代が対になっており、
+// --model で別の重みを当てたときは src/kings.js の照合が落として、そのモードだけ閉じる。
+const KING_TABLE = 'king_pairs_iter64.json';
+const hasTable = copy(path.join(HERE, 'models', KING_TABLE), path.join(OUT, 'models'));
+if (!hasTable) console.warn(`警告: models/${KING_TABLE} が無いので含めていない。両玉先置きモードは使えない`);
+
 // ビルドの素性。GPL v3 の「対応するソースの提供」は、配ったバイナリと対応するソースを
 // 指せて初めて意味を持つ。wasm/dist/ をコミットしている以上、成果物とソースが食い違って
 // いないことを利用者が確かめられる必要があるので、submoduleのコミットIDと .wasm の
@@ -106,6 +113,7 @@ const info = {
   web_commit: git('rev-parse', 'HEAD'),
   fuseki_wasm_sha256: sha256(path.join(HERE, 'wasm/dist/fuseki.wasm')),
   model: hasModel ? MODEL : null,
+  king_table: hasTable ? KING_TABLE : null,
 };
 fs.writeFileSync(path.join(OUT, 'build-info.json'), JSON.stringify(info, null, 2) + '\n');
 
@@ -153,7 +161,7 @@ const options = {
   legalComments: 'linked', // GPLの著作権表示をdist側にも残す
   // モデルのファイル名をmain.jsへ渡す。main.js側に名前を書くと定義が2箇所になり、
   // --model で差し替えたときに片方だけが古い名前を指す。
-  define: { __MODEL_FILE__: JSON.stringify(MODEL) },
+  define: { __MODEL_FILE__: JSON.stringify(MODEL), __KING_TABLE_FILE__: JSON.stringify(KING_TABLE) },
   logLevel: 'info',
 };
 

@@ -30,13 +30,30 @@ export class Game {
    * @param {Fuseki} fuseki 布石フェーズの局面（WASM）
    * @param {FusekiPolicy} policy 布石フェーズのAI
    * @param {NormalEngine} engine 通常フェーズのAI
-   * @param {'sente'|'gote'} humanColor
+   * @param {'sente'|'gote'} humanColor 通常モードの人間の色。両玉先置きでは選択まで未定
+   * @param {'standard'|'kings-first'} [mode] 両玉先置き（docs/rules.md「両玉先置きモード」）
+   * @param {'placer'|'chooser'|null} [humanRole] 両玉先置きでの人間の役
+   * @param {import('./kings.js').KingTable|null} [kingTable] 置く役・選ぶ役のAIが引く価値表
    */
-  constructor({ fuseki, policy, engine, humanColor = SENTE, movetimeMs = 1000, temperature = 1 }) {
+  constructor({ fuseki, policy, engine, humanColor = SENTE, movetimeMs = 1000, temperature = 1,
+                mode = 'standard', humanRole = null, kingTable = null, rng = Math.random }) {
     this.fuseki = fuseki;
     this.policy = policy;
     this.engine = engine;
-    this.humanColor = humanColor;
+    this.mode = mode;
+    this.kingTable = kingTable;
+    this.rng = rng;
+    if (mode === 'kings-first') {
+      if (humanRole !== 'placer' && humanRole !== 'chooser')
+        throw new Error(`両玉先置きの人間の役は placer か chooser: ${humanRole}`);
+      this.humanRole = humanRole;
+      // 色は選ぶ役が決めるまで無い。役（置く役・選ぶ役）と色（先手・後手）は別物で、
+      // 一致するとは限らない。
+      this.humanColor = null;
+    } else {
+      this.humanRole = null;
+      this.humanColor = humanColor;
+    }
     this.movetimeMs = movetimeMs;
     // 布石方策のサンプリング温度。1より下げないこと（policy.js 冒頭）。
     // 弱くする方向にだけ使い、強くする側は movetimeMs で作る。
@@ -45,7 +62,10 @@ export class Game {
     // 見分けるためだけに使う。phase を見るだけでは足りない（undoTo の注記を参照）。
     this.epoch = 0;
 
-    this.phase = 'fuseki';           // 'fuseki' | 'normal' | 'over'
+    // 'kings' | 'choose' | 'fuseki' | 'normal' | 'over'。kings と choose は両玉先置きだけ。
+    this.phase = mode === 'kings-first' ? 'kings' : 'fuseki';
+    this.chosen = null;              // 両玉先置きで選ばれた側（'sente'|'gote'）
+    this._aiKingsPlan = null;        // AIの置く役が決めた両玉のマス [先手玉, 後手玉]
     this.fusekiMoves = [];           // USIの駒打ち列（例: "P*5e"）
     this.normalMoves = [];           // 41手目以降のUSI
     this.position = null;            // shogiops の Position（通常フェーズのみ）
@@ -63,14 +83,40 @@ export class Game {
   // ---- 手番 ----
 
   get turnColor() {
-    if (this.phase === 'fuseki') return COLOR_NAME[this.fuseki.turn];
+    if (this.phase === 'kings' || this.phase === 'fuseki') return COLOR_NAME[this.fuseki.turn];
     if (this.phase === 'normal') return this.position.turn;
-    return null;
+    return null;   // 選択の最中と終局後
   }
 
-  get isHumanTurn() { return this.phase !== 'over' && this.turnColor === this.humanColor; }
-  get aiColor() { return this.humanColor === SENTE ? GOTE : SENTE; }
+  /** 人間が動く番か。両玉先置きの冒頭は役で決まり、色では決まらない。 */
+  get isHumanTurn() {
+    if (this.phase === 'kings') return this.humanRole === 'placer';
+    if (this.phase === 'choose') return this.humanRole === 'chooser';
+    return this.phase !== 'over' && this.turnColor === this.humanColor;
+  }
+  get aiColor() {
+    if (this.humanColor === null) return null;
+    return this.humanColor === SENTE ? GOTE : SENTE;
+  }
+  /**
+   * 盤で人間が触れる駒の色。置く役は自分の色に関わらず手番の色の玉を置く
+   * （1手目は先手の駒台の玉、2手目は後手の駒台の玉）。
+   */
+  get activeColor() {
+    if (this.phase === 'kings') return this.humanRole === 'placer' ? this.turnColor : undefined;
+    if (this.phase === 'fuseki' || this.phase === 'normal') return this.humanColor ?? undefined;
+    return undefined;
+  }
   get ply() { return this.position ? 40 + this.normalMoves.length + 1 : this.fuseki.ply + 1; }
+  /** 指し手の数。棋譜の行数とは違う（両玉先置きは選択の行が1つ挟まる）。 */
+  get moveCount() { return this.fusekiMoves.length + this.normalMoves.length; }
+  /** 両玉先置きで置かれた両玉のマス（USI）。まだなら null。 */
+  get kingSquares() {
+    return {
+      sente: this.fusekiMoves[0]?.slice(2) ?? null,
+      gote: this.fusekiMoves[1]?.slice(2) ?? null,
+    };
+  }
 
   // ---- 盤の表示状態（ルールは含まない） ----
 
@@ -108,10 +154,13 @@ export class Game {
   /** shogiground の droppable.dests。手番側の駒打ちのみを入れる。 */
   dropDests() {
     const dests = new Map();
-    if (this.phase === 'over') return dests;
+    // 選択の最中は手番が無く、position も無い。else 側へ落ちると null を叩く。
+    if (this.phase === 'over' || this.phase === 'choose') return dests;
     const color = this.turnColor;
-    if (this.phase === 'fuseki') {
+    if (this.phase === 'kings' || this.phase === 'fuseki') {
       for (const d of this.fuseki.legalDrops()) {
+        // 両玉先置きの1・2手目は玉だけ。合法手そのものは変わらない（movegen は無変更）。
+        if (this.phase === 'kings' && d.role !== 'king') continue;
         const name = `${color} ${d.role}`;
         if (!dests.has(name)) dests.set(name, []);
         dests.get(name).push(usiDropSquare(d.usi));
@@ -165,9 +214,47 @@ export class Game {
 
   /** 布石フェーズ。usi は "P*5e" 形式。合法性はWASMの合法手一覧と照合される。 */
   playFusekiDrop(usi) {
-    this._assertTurn('fuseki');
+    this._assertTurn(['kings', 'fuseki']);
+    if (this.phase === 'kings' && !usi.startsWith('K*'))
+      throw new Error(`両玉先置きの1・2手目に置けるのは玉だけ: ${usi}`);
     const move = this.fuseki.drop(usi);      // 非合法ならここで例外
     this._recordFusekiMove(move);
+  }
+
+  /** 両玉先置きの選択。選ぶ役が先手側か後手側かを宣言する。局面は変わらない。 */
+  choose(side) {
+    this._assertTurn('choose');
+    if (side !== SENTE && side !== GOTE) throw new Error(`選べるのは先手側か後手側: ${side}`);
+    const actor = this.humanRole === 'chooser' ? 'human' : 'ai';
+    this.chosen = side;
+    this.humanColor = this.humanRole === 'chooser' ? side : (side === SENTE ? GOTE : SENTE);
+    this.phase = 'fuseki';
+    // 棋譜には1行として残す。手数は持たない（3手目は次の駒打ち）。
+    this.kifu.push({
+      ply: null, color: side, usi: `choose:${side}`, actor,
+      text: `${MARK[side]}側を選択`, snapshot: this._snapshot(),
+    });
+  }
+
+  /**
+   * 手順のトークンを1つ適用する。待った（undoTo）と手順の読み込みが使う。
+   * 駒打ち "P*5e"、通常の指し手 "7g7f"、両玉先置きの選択 "choose:sente"。
+   */
+  play(token) {
+    if (token.startsWith('choose:')) {
+      if (this.mode !== 'kings-first') throw new Error('選択（choose:）は両玉先置きの手順にしか無い');
+      return this.choose(token.slice('choose:'.length));
+    }
+    if (this.phase === 'kings' || this.phase === 'fuseki') return this.playFusekiDrop(token);
+    if (this.phase === 'normal') return this.playNormalMove(token);
+    throw new Error(`${this.phase === 'choose' ? '側を選ぶ前' : '終局後'}に指し手は入れられない: ${token}`);
+  }
+
+  /** 手順。棋譜の行と1対1で、両玉先置きでは2手目の後に選択のトークンが挟まる。 */
+  tokens() {
+    const f = this.fusekiMoves;
+    const head = this.chosen ? [...f.slice(0, 2), `choose:${this.chosen}`, ...f.slice(2)] : [...f];
+    return [...head, ...this.normalMoves];
   }
 
   /** 通常フェーズ。usi は "7g7f" / "P*5e" 形式。 */
@@ -182,9 +269,36 @@ export class Game {
 
   /** 手番側の手をAIに指させる。返り値は表示用の情報。 */
   async playAiMove() {
+    if (this.phase === 'kings') return this._aiKingsMove();
+    if (this.phase === 'choose') return this._aiChoose();
     if (this.phase === 'fuseki') return this._aiFusekiMove();
     if (this.phase === 'normal') return this._aiNormalMove();
     return null;
+  }
+
+  /**
+   * AIの置く役。1手目で両玉の組を価値表から引き、2手目はその続き。
+   * 探索はしない（表を引くだけ）。表が無ければ両玉先置きは始められない。
+   */
+  _aiKingsMove() {
+    if (!this.kingTable) throw new Error('両玉の価値表が読み込まれていない');
+    const n = this.fusekiMoves.length;
+    if (n === 0) this._aiKingsPlan = this.kingTable.placerPick(this.rng);
+    if (!this._aiKingsPlan) throw new Error('AIの両玉の予定が無い（1手目の前に局面が変わった）');
+    this._recordFusekiMove(this.fuseki.drop(`K*${this._aiKingsPlan[n]}`));
+    if (this.phase !== 'choose') return null;
+    const { sente, gote } = this.kingSquares;
+    this.lastEval = { kind: 'kings', winRate: this.kingTable.v(sente, gote) };
+    return this.lastEval;
+  }
+
+  /** AIの選ぶ役。表の先手勝率が 50% を超えていれば先手側。 */
+  _aiChoose() {
+    if (!this.kingTable) throw new Error('両玉の価値表が読み込まれていない');
+    const { sente, gote } = this.kingSquares;
+    this.choose(this.kingTable.chooserPick(sente, gote));
+    this.lastEval = { kind: 'kings', winRate: this.kingTable.v(sente, gote) };
+    return this.lastEval;
   }
 
   async _aiFusekiMove() {
@@ -229,15 +343,22 @@ export class Game {
   // ---- 内部 ----
 
   _assertTurn(phase) {
-    if (this.phase !== phase) throw new Error(`${phase}フェーズではない（現在: ${this.phase}）`);
+    const want = Array.isArray(phase) ? phase : [phase];
+    if (!want.includes(this.phase))
+      throw new Error(`${want.join('/')}フェーズではない（現在: ${this.phase}）`);
   }
 
   _recordFusekiMove(move) {
     const color = COLOR_NAME[this.fusekiMoves.length % 2];
+    // 誰の手か。待ったが「自分の直前の一手」を探すのに使う。両玉先置きの置く役は
+    // 両方の色の玉を置くので、色から人間の手かは決まらない。役で決める。
+    const actor = this.phase === 'kings'
+      ? (this.humanRole === 'placer' ? 'human' : 'ai')
+      : (color === this.humanColor ? 'human' : 'ai');
     const key = usiDropSquare(move.usi);
     const square = parseSquareName(key);
     this.kifu.push({
-      ply: this.fusekiMoves.length + 1, color, usi: move.usi,
+      ply: this.fusekiMoves.length + 1, color, usi: move.usi, actor,
       text: `${MARK[color]}${fusekiDropText(move.usi, move.role)}打`,
     });
     this.fusekiMoves.push(move.usi);
@@ -247,6 +368,11 @@ export class Game {
     // 控えは _transitionToNormal() の前に取る。40手目の控えは布石が終わった
     // 時点の盤で、41手目の裁定より前の姿でなければならない。
     this.kifu[this.kifu.length - 1].snapshot = this._snapshot();
+    // 両玉が置かれたら選択へ。盤も手番も変えない（3手目は先手番のまま）。
+    if (this.phase === 'kings' && this.fusekiMoves.length === 2) {
+      this.phase = 'choose';
+      return;
+    }
     if (this.fuseki.isPlacementDone) this._transitionToNormal();
   }
 
@@ -294,6 +420,7 @@ export class Game {
     this.position.play(md);
     this.kifu.push({
       ply: 40 + this.normalMoves.length + 1, color, usi, capture,
+      actor: color === this.humanColor ? 'human' : 'ai',
       text: `${MARK[color]}${text ?? usi}`,
     });
     this.normalMoves.push(usi);
@@ -310,13 +437,19 @@ export class Game {
     if (outcome) this._end(outcome.winner ?? null, outcome.result);
   }
 
-  _end(winner, reason) {
+  /**
+   * winnerIs は「人間とAIのどちらが勝ったか」。両玉先置きで側を選ぶ前に投了すると
+   * 勝った色が無い（winner が null）ので、色とは別に持つ。
+   */
+  _end(winner, reason, winnerIs) {
     this.phase = 'over';
-    this.result = { winner, reason };
+    if (winnerIs === undefined)
+      winnerIs = winner === null ? null : winner === this.humanColor ? 'human' : 'ai';
+    this.result = { winner, reason, winnerIs };
   }
 
   resign() {
-    if (this.phase !== 'over') this._end(this.aiColor, 'human_resign');
+    if (this.phase !== 'over') this._end(this.aiColor, 'human_resign', 'ai');
   }
 
   /**
@@ -324,7 +457,7 @@ export class Game {
    * 布石将棋そのものに時間切れ負けのルールは無く、これは対局画面が乗せている取り決め。
    */
   timeout() {
-    if (this.phase !== 'over') this._end(this.aiColor, 'human_timeout');
+    if (this.phase !== 'over') this._end(this.aiColor, 'human_timeout', 'ai');
   }
 
   /**
@@ -365,23 +498,27 @@ export class Game {
   }
 
   /**
-   * 待った。n手だけ残して、あとは無かったことにする。
+   * 待った。棋譜の先頭 n 行だけ残して、あとは無かったことにする（n は tokens() の数）。
    *
    * 差分で1手ずつ戻さないのは、布石フェーズのWASMにundoが無い（fuseki.js は
    * fw_reset しか持たない）ため。加えて40/41の境目をまたいで戻すときは
    * position を null に、phase を 'fuseki' に戻す必要があり、全再生ならこの
-   * 境目を特別扱いせずに済む。
+   * 境目を特別扱いせずに済む。両玉先置きの選択をまたいで戻すときも同じで、
+   * 選択より前へ戻れば色は再び未定になる。
    *
    * 再生は安い。布石40手は fw_do_drop を呼ぶだけでNNを通らず、通常フェーズも
    * position.play の再適用だけで、エンジンには一度も問い合わせない。
    * ただし40手目を通ると _transitionToNormal() が usinewgame を再送する。
    */
   undoTo(n) {
-    const fusekiMoves = this.fusekiMoves.slice(0, Math.min(n, 40));
-    const normalMoves = this.normalMoves.slice(0, Math.max(0, n - 40));
+    const tokens = this.tokens().slice(0, Math.max(0, n));
     // 先に上げる。これを見てAIが自分の考えた手を捨てる。
     this.epoch++;
+    this._reset();
+    for (const t of tokens) this.play(t);
+  }
 
+  _reset() {
     this.fuseki.reset();
     this.boardPieces.clear();
     this.kifu.length = 0;
@@ -389,14 +526,14 @@ export class Game {
     this.normalMoves.length = 0;
     this.position = null;
     this.finalSfen = null;
-    this.phase = 'fuseki';
+    this.phase = this.mode === 'kings-first' ? 'kings' : 'fuseki';
+    this.chosen = null;
+    this._aiKingsPlan = null;
+    if (this.mode === 'kings-first') this.humanColor = null;
     this.result = null;
     this.lastDests = [];
     this.lastEval = null;
     this._lastDestSquare = undefined;
-
-    for (const usi of fusekiMoves) this._recordFusekiMove(this.fuseki.drop(usi));
-    for (const usi of normalMoves) this.playNormalMove(usi);
   }
 }
 

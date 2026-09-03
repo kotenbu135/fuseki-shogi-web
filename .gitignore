@@ -13,6 +13,8 @@ node_modules/
 models/*
 !models/README.md
 !models/fuseki_degct_b3_iter64.onnx
+# 両玉先置きモードの価値表。上の重みのロールアウトをやねうら王で採点したもの（GCT由来ゼロ）
+!models/king_pairs_iter64.json
 
 # 参照データ（test/gen_parity_ref.py が生成する）
 parity_ref.json

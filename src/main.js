@@ -6,6 +6,7 @@ import { Fuseki } from './fuseki.js';
 import { FusekiPolicy } from './policy.js';
 import { NormalEngine, loadYaneuraOuFactory } from './normal.js';
 import { Game, SENTE, GOTE } from './game.js';
+import { KingTable } from './kings.js';
 import { createBoard, showIdleBoard, showSnapshot, syncBoard } from './board.js';
 import { Sound, VOICES } from './sound.js';
 
@@ -19,6 +20,9 @@ const ASSETS = {
   // build.mjs の PUBLIC_MODEL と二重に持つことになるので、片方を変えたら両方直す。
   model: new URL(`./models/${typeof __MODEL_FILE__ === 'undefined'
     ? 'fuseki_degct_b3_iter64.onnx' : __MODEL_FILE__}`, import.meta.url).href,
+  // 両玉先置きモードの価値表（src/kings.js）。重みと世代が対（build.mjs の KING_TABLE）。
+  kingTable: new URL(`./models/${typeof __KING_TABLE_FILE__ === 'undefined'
+    ? 'king_pairs_iter64.json' : __KING_TABLE_FILE__}`, import.meta.url).href,
   yaneuraou: new URL('./vendor/yaneuraou/yaneuraou.k-p.js', import.meta.url).href,
 };
 
@@ -34,6 +38,8 @@ const ui = {
   kifu: el('kifu'),
   color: el('opt-color'), level: el('opt-level'), volume: el('opt-volume'),
   scale: el('opt-scale'), time: el('opt-time'), theme: el('opt-theme'),
+  mode: el('opt-mode'), role: el('opt-role'), colorLabel: el('lbl-color'), roleLabel: el('lbl-role'),
+  choiceRow: el('choice-row'), chooseSente: el('btn-choose-sente'), chooseGote: el('btn-choose-gote'),
   app: document.querySelector('.app'), controls: el('controls'),
   settingsAgain: el('btn-settings-again'),
   gear: el('btn-settings'), settingsPop: el('display-settings'),
@@ -290,10 +296,13 @@ function formatClock(ms) {
   return total < 10 ? `${mmss}.${Math.floor(ms / 100) % 10}` : mmss;
 }
 
-let engines = null;   // { fuseki, policy, engine }
+let engines = null;   // { fuseki, policy, engine, kingTable }
 let game = null;
 let sg = null;
 let orientation = SENTE;
+// 両玉先置きでは人間の色が選択の時点で決まる。その対局で一度だけ盤をその色へ回す
+// （以後は手で反転できる）。回し終えた対局を覚えておく。
+let orientedGame = null;
 let busy = false;     // AIが考えている間の二重駆動を防ぐ
 
 /** 盤を1枚だけ作る。対局前から出しておきたいので、起動時にも呼ぶ。 */
@@ -335,7 +344,18 @@ async function boot() {
       factory: await loadYaneuraOuFactory(ASSETS.yaneuraou), threads, hashMb: 64,
     });
 
-    engines = { fuseki, policy, engine };
+    // 両玉先置きの価値表。無くても通常の布石将棋は指せるので、落とさずにモードだけ閉じる。
+    let kingTable = null;
+    try {
+      kingTable = await KingTable.load(ASSETS.kingTable, { modelFile: ASSETS.model });
+    } catch (e) {
+      console.warn('両玉先置きモードは使えない:', e.message);
+      ui.mode.querySelector('option[value="kings-first"]').disabled = true;
+      if (ui.mode.value === 'kings-first') ui.mode.value = 'standard';
+      renderModeControls();
+    }
+
+    engines = { fuseki, policy, engine, kingTable };
     ui.newGame.disabled = false;
     setStatus('対局開始を押してください', threads === 1
       ? 'SharedArrayBufferが無いため通常フェーズは1スレッドで動く' : '');
@@ -376,13 +396,14 @@ ui.undo.addEventListener('click', () => {
   drive();
 });
 
-/** 待ったで戻す先の手数。自分がまだ1手も指していなければ -1。 */
+/** 待ったで戻す先（棋譜の行数）。自分がまだ1手も指していなければ -1。 */
 function undoTarget() {
   if (!game) return -1;
   const k = game.kifu;
   let n = k.length;
-  while (n > 0 && k[n - 1].color !== game.humanColor) n--;   // AIの手を飛ばす
-  return n - 1;                                             // 自分の手を1つ消す
+  // 色ではなく actor で見る。両玉先置きの置く役は両方の色の玉を置く。
+  while (n > 0 && k[n - 1].actor !== 'human') n--;   // AIの手を飛ばす
+  return n - 1;                                       // 自分の手を1つ消す
 }
 // 投了は取り消せない。1回目は確認に変え、2回目で確定する（lishogiも2段階）。
 let resignArmed = null;
@@ -409,6 +430,46 @@ ui.resign.addEventListener('click', () => {
 function chosenColor() {
   if (ui.color.value === 'random') return Math.random() < .5 ? SENTE : GOTE;
   return ui.color.value === GOTE ? GOTE : SENTE;
+}
+
+/** 両玉先置きでの人間の役。振り駒はここで決まる。 */
+function chosenRole() {
+  if (ui.role.value === 'random') return Math.random() < .5 ? 'placer' : 'chooser';
+  return ui.role.value === 'chooser' ? 'chooser' : 'placer';
+}
+
+/** ルールに応じて「手番」か「役」のどちらかを出す。両方出すと片方が効かないのに触れる。 */
+function renderModeControls() {
+  const kf = ui.mode.value === 'kings-first';
+  ui.colorLabel.hidden = kf;
+  ui.roleLabel.hidden = !kf;
+}
+renderModeControls();
+ui.mode.addEventListener('change', () => {
+  renderModeControls();
+  if (game && game.phase !== 'over') return;
+  // 両玉先置きは色が選択まで決まらないので、盤は先手側から始める。
+  if (ui.mode.value === 'kings-first' || ui.color.value !== 'random') {
+    orientation = ui.mode.value === 'kings-first' || ui.color.value !== GOTE ? SENTE : GOTE;
+    ensureBoard();
+    showIdleBoard(sg);
+  }
+  renderSeats();
+});
+ui.role.addEventListener('change', renderSeats);
+
+// 両玉先置きの選択。選ぶ役の人間だけが押せる（render() が出し入れする）。
+for (const [button, side] of [[ui.chooseSente, SENTE], [ui.chooseGote, GOTE]]) {
+  button.addEventListener('click', () => {
+    if (!game || game.phase !== 'choose' || !game.isHumanTurn || busy || viewPly !== null) return;
+    try {
+      game.choose(side);
+    } catch (e) {
+      setStatus('選べない', e.message);
+    }
+    render();
+    drive();
+  });
 }
 
 // 対局前に手番を変えたら、盤の向きも先に合わせる（対局開始を押す前に確かめられる）。
@@ -468,13 +529,21 @@ ui.flip.addEventListener('click', () => {
 
 function startGame() {
   if (busy || !engines) return;
-  const humanColor = chosenColor();
+  // 両玉先置きは価値表が読めたときだけ。無ければ select の option が無効になっている。
+  const mode = ui.mode.value === 'kings-first' && engines.kingTable ? 'kings-first' : 'standard';
+  // 両玉先置きの色は選択まで未定。盤は先手側から始め、決まった時点で回す（render）。
+  const humanColor = mode === 'standard' ? chosenColor() : SENTE;
+  const humanRole = mode === 'kings-first' ? chosenRole() : null;
   orientation = humanColor;
+  orientedGame = null;
   // レベルは select を真とする（値を直接入れてから対局開始を押されても効くように）。
   const n = Number(ui.level.value);
   if (LEVELS[n]) aiLevel = n;
   const lv = LEVELS[aiLevel] ?? LEVELS[3];
-  game = new Game({ ...engines, humanColor, movetimeMs: lv.movetimeMs, temperature: lv.temperature });
+  game = new Game({
+    ...engines, humanColor, mode, humanRole,
+    movetimeMs: lv.movetimeMs, temperature: lv.temperature,
+  });
   soundedKifu = 0;
   soundedOver = false;
   viewPly = null;
@@ -520,7 +589,7 @@ function onClockTick() {
 function handleDrop(piece, key) {
   if (!game || !game.isHumanTurn || viewPly !== null) return render();
   try {
-    if (game.phase === 'fuseki') game.playFusekiDrop(`${USI_LETTER[piece.role]}*${key}`);
+    if (game.phase === 'kings' || game.phase === 'fuseki') game.playFusekiDrop(`${USI_LETTER[piece.role]}*${key}`);
     else game.playNormalMove(`${USI_LETTER[piece.role]}*${key}`);
   } catch (e) {
     setStatus('その手は指せない', e.message);
@@ -629,6 +698,8 @@ function renderNav() {
 function renderSettingsEnabled() {
   const playing = !!game && game.phase !== 'over';
   ui.color.disabled = playing;
+  ui.mode.disabled = playing;
+  ui.role.disabled = playing;
   ui.level.disabled = playing;
   ui.time.disabled = playing;
   // 対局の設定は対局前だけ出す。対局中は無効化して灰色のまま置いても場所を食うだけだし、
@@ -643,7 +714,8 @@ function renderSettingsEnabled() {
 /** 席の名前・手番の印・時計。対局前でも呼べる。 */
 function renderSeats() {
   // ランダムを選んで対局前のあいだは、どちらを持つか決まっていない。
-  const randomPending = !game && ui.color.value === 'random';
+  // 両玉先置きは対局前も、始めてから側が選ばれるまでも決まっていない（humanColor が null）。
+  const randomPending = !game && (ui.color.value === 'random' || ui.mode.value === 'kings-first');
   const humanColor = game ? game.humanColor : (ui.color.value === GOTE ? GOTE : SENTE);
   // 下が手前（自分）。盤を反転しても席の並びは動かさない。
   const bottom = orientation;
@@ -653,7 +725,7 @@ function renderSeats() {
   // 副題に出ていて二重になる。
   const label = c => {
     const name = c === SENTE ? '先手' : '後手';
-    if (randomPending) return name;
+    if (randomPending || humanColor === null) return name;
     return c === humanColor ? `${name}（あなた）` : `${name}（布石AI レベル${aiLevel}）`;
   };
   ui.seatTopName.textContent = label(top);
@@ -693,17 +765,36 @@ function render() {
     ui.evalRow.hidden = false;
     ui.undo.disabled = true;
     ui.ioSfen.value = '';
+    ui.choiceRow.hidden = true;
     renderSeats();
     renderNav();
     return;
   }
+  // 両玉先置きで側が選ばれた。人間の色が決まったので、その対局で一度だけ盤を回す。
+  // 待ったで選択より前へ戻ると色が未定に戻るので、次の選択でもう一度回せるようにする。
+  if (game.humanColor === null) {
+    orientedGame = null;
+  } else if (orientedGame !== game) {
+    orientedGame = game;
+    if (orientation !== game.humanColor) {
+      orientation = game.humanColor;
+      ensureBoard();
+    }
+  }
   renderBoard();
 
-  ui.ply.textContent = game.phase === 'over' ? `${game.kifu.length}手で終局` : `${game.ply}手目`;
-  ui.phase.textContent = game.phase === 'fuseki'
-    ? `布石（残り${40 - game.fusekiMoves.length}手）`
-    : game.phase === 'normal' ? '通常' : '終局';
+  ui.ply.textContent = game.phase === 'over' ? `${game.moveCount}手で終局`
+    : game.phase === 'choose' ? '選択' : `${game.ply}手目`;
+  ui.phase.textContent = {
+    kings: `両玉（残り${2 - game.fusekiMoves.length}手）`,
+    choose: '側の選択',
+    fuseki: `布石（残り${40 - game.fusekiMoves.length}手）`,
+    normal: '通常',
+    over: '終局',
+  }[game.phase];
   ui.evaluation.textContent = formatEval(game.lastEval);
+  // 両玉先置きの2択。選ぶ役の人間の番にだけ出す。
+  ui.choiceRow.hidden = !(game.phase === 'choose' && game.isHumanTurn && viewPly === null && !busy);
   tickClock(game.phase === 'over' ? null : game.turnColor);
   renderSeats();
   renderKifu();
@@ -732,21 +823,45 @@ function render() {
     // 41手目でルールが変わる。フェーズの表示が切り替わるだけでは気づけないので、
     // 通常フェーズで自分がまだ1手も指していないあいだは言い続ける。
     // 「一度だけ」にすると、直後の drive() の再描画に上書きされて誰も読めない。
-    if (game.phase === 'normal' && !hasHumanMovedInNormal()) {
+    if (game.phase === 'kings') {
+      // 置く役は自分の色を知らずに両玉を置く。2手目は相手の駒台の玉を相手陣へ。
+      setStatus(game.fusekiMoves.length === 0
+        ? 'あなたが玉を置く役。先手玉を先手陣に置く。'
+        : '次に後手玉を後手陣に置く。',
+      '置き終えると、相手がどちらの側で指すかを選ぶ。');
+    } else if (game.phase === 'choose') {
+      setStatus('どちらの側で指すか選ぶ。',
+        '先手は3手目から先に置き、41手目を指す。後手は布石の最後の一枚を置く。');
+    } else if (game.phase === 'normal' && !hasHumanMovedInNormal()) {
       setStatus('41手目。ここから普通の将棋。', '打つのは取った駒だけ。盤の駒を動かす。');
     } else {
-      setStatus(game.phase === 'fuseki' ? 'あなたの番。駒台から駒を打つ。' : 'あなたの番。');
+      setStatus(game.phase === 'fuseki' ? 'あなたの番。駒台から駒を打つ。' : 'あなたの番。',
+        chosenNote());
     }
   } else {
-    setStatus('AIが考えている…', game.phase === 'fuseki' ? '布石エンジン' : 'やねうら王');
+    const line = game.phase === 'kings' ? 'AIが両玉を置いている…'
+      : game.phase === 'choose' ? 'AIがどちらの側で指すか選んでいる…' : 'AIが考えている…';
+    const sub = game.phase === 'kings' || game.phase === 'choose' ? '両玉の価値表'
+      : game.phase === 'fuseki' ? '布石エンジン' : 'やねうら王';
+    setStatus(line, sub);
   }
+}
+
+/** 両玉先置きで側が決まった直後だけ、誰がどちらを選んだかを言う。3手目の案内に添える。 */
+function chosenNote() {
+  if (game.mode !== 'kings-first' || game.phase !== 'fuseki' || game.fusekiMoves.length > 3) return '';
+  const who = game.humanRole === 'chooser' ? 'あなた' : 'AI';
+  const side = game.chosen === SENTE ? '先手' : '後手';
+  const yours = game.humanColor === SENTE ? '先手' : '後手';
+  return `${who}が${side}側を選んだ。あなたは${yours}。`;
 }
 
 /** 勝敗の一行。表示と棋譜の書き出しで共有する。 */
 function resultLine() {
-  const { winner, reason } = game.result;
-  const who = winner === null ? '引き分け'
-    : `${winner === SENTE ? '先手' : '後手'}の勝ち${winner === game.humanColor ? '（あなた）' : ''}`;
+  const { winner, reason, winnerIs } = game.result;
+  // 両玉先置きで側を選ぶ前に投了すると、勝った色が無い。人間とAIのどちらかだけ言う。
+  const who = winner === null ? (winnerIs === 'ai' ? 'AIの勝ち' : '引き分け')
+    : `${winner === SENTE ? '先手' : '後手'}の勝ち${winnerIs === 'human' ? '（あなた）' : ''}`;
   return { who, why: RESULT_TEXT[reason] ?? reason };
 }
 
@@ -755,8 +870,8 @@ function renderEngine() {
   const ev = game.lastEval;
   if (!ev || !evalVisible()) { ui.engine.hidden = true; return; }
   ui.engine.hidden = false;
-  if (ev.kind === 'policy') {
-    ui.engineHead.textContent = '布石エンジン';
+  if (ev.kind === 'policy' || ev.kind === 'kings') {
+    ui.engineHead.textContent = ev.kind === 'policy' ? '布石エンジン' : '両玉の価値表';
     ui.enginePv.textContent = '';
     return;
   }
@@ -801,15 +916,19 @@ function renderGauge() {
  * KIFと名乗って どのKIFリーダーも読めないのは、素のテキストより悪い。
  */
 function kifuText() {
-  const seats = game.humanColor === SENTE
-    ? '先手 あなた・後手 布石AI' : '先手 布石AI・後手 あなた';
-  const lines = [`布石将棋 / AIレベル${aiLevel} / ${seats}`];
+  const seats = game.humanColor === null ? '先後は未定'
+    : game.humanColor === SENTE ? '先手 あなた・後手 布石AI' : '先手 布石AI・後手 あなた';
+  // 両玉先置きは役も残す。色と役は一致するとは限らないので、両方書く。
+  const roles = game.mode !== 'kings-first' ? ''
+    : game.humanRole === 'placer' ? '置く役 あなた・選ぶ役 布石AI / ' : '置く役 布石AI・選ぶ役 あなた / ';
+  const rule = game.mode === 'kings-first' ? '布石将棋（両玉先置き）' : '布石将棋';
+  const lines = [`${rule} / AIレベル${aiLevel} / ${roles}${seats}`];
   for (const e of game.kifu) {
     // 41手目の局面は指し手からは再現できない（布石フェーズにPositionが無い）。
     if (e.ply === 41 && game.finalSfen) lines.push(`41手目局面 sfen ${game.finalSfen}`);
-    lines.push(`${String(e.ply).padStart(3, ' ')} ${e.text}`);
+    lines.push(`${e.ply === null ? '   ' : String(e.ply).padStart(3, ' ')} ${e.text}`);
   }
-  if (game.kifu.length === 40 && game.finalSfen) lines.push(`41手目局面 sfen ${game.finalSfen}`);
+  if (game.moveCount === 40 && game.finalSfen) lines.push(`41手目局面 sfen ${game.finalSfen}`);
   if (game.phase === 'over') {
     const { who, why } = resultLine();
     lines.push(`結果: ${who}（${why}）`);
@@ -842,7 +961,7 @@ async function copyText(text, button, label) {
 
 /** 局面を渡すのは手順のほう。布石フェーズにはSFENから局面を作る道が無い。 */
 function movesText() {
-  return game ? [...game.fusekiMoves, ...game.normalMoves].join(' ') : '';
+  return game ? game.tokens().join(' ') : '';
 }
 
 /**
@@ -857,6 +976,12 @@ function loadMoves() {
   if (!engines) return note('まだエンジンが起動していません。');
   if (busy) return note('AIが考えているあいだは読み込めません。');
 
+  // ルールは手順に書いてある。選択のトークンがあれば両玉先置き。
+  const kingsFirst = moves.some(m => m.startsWith('choose:'));
+  if (kingsFirst && !engines.kingTable) return note('両玉先置きの手順ですが、価値表が読み込まれていません。');
+  ui.mode.value = kingsFirst ? 'kings-first' : 'standard';
+  renderModeControls();
+
   sound.unlock();     // 利用者の操作の中でしか起こせない。ここも最初の機会になりうる
   startGame();        // 時計も設定も入れ直す。この直後の drive() は下の undoTo で捨てられる
   game.undoTo(0);
@@ -864,8 +989,7 @@ function loadMoves() {
   try {
     for (; i < moves.length; i++) {
       if (game.phase === 'over') throw new Error('この手順は途中で終局している');
-      if (game.phase === 'fuseki') game.playFusekiDrop(moves[i]);
-      else game.playNormalMove(moves[i]);
+      game.play(moves[i]);
     }
   } catch (e) {
     // 途中まで再生された盤は、正しい盤と区別がつかない。握り潰さずどこで止めたか言う。
@@ -890,13 +1014,15 @@ function playMoveSounds() {
   if (game.kifu.length > soundedKifu) {
     const last = game.kifu[game.kifu.length - 1];
     // 王手は駒音を含んだ別の音にする（lishogiも王手だけ差し替えている）。
-    sound.play(game.checks() ? 'check' : last.capture ? 'capture' : 'move');
+    // 両玉先置きの選択は駒を動かさないので鳴らさない。
+    if (!last.usi.startsWith('choose:'))
+      sound.play(game.checks() ? 'check' : last.capture ? 'capture' : 'move');
     soundedKifu = game.kifu.length;
   }
   if (game.phase === 'over' && !soundedOver) {
     soundedOver = true;
-    const { winner } = game.result;
-    sound.play(winner === null ? 'draw' : winner === game.humanColor ? 'win' : 'lose');
+    const { winnerIs } = game.result;
+    sound.play(winnerIs === null ? 'draw' : winnerIs === 'human' ? 'win' : 'lose');
   }
 }
 
@@ -907,7 +1033,7 @@ function renderKifu() {
     const entry = game.kifu[i];
     const li = document.createElement('li');
     li.className = entry.color === SENTE ? 'sente' : 'gote';
-    li.innerHTML = `<span class="n">${entry.ply}</span><span class="m">${entry.text}</span>`;
+    li.innerHTML = `<span class="n">${entry.ply ?? ''}</span><span class="m">${entry.text}</span>`;
     ui.kifu.appendChild(li);
   }
   // 塗るのは「今見ている手」。対局中の局面なら最後の手。
@@ -924,6 +1050,8 @@ function renderKifu() {
 
 function formatEval(evaluation) {
   if (!evaluation) return '—';
+  // 両玉先置きの置く役・選ぶ役が引いた表の値。先手から見た勝率。
+  if (evaluation.kind === 'kings') return `表の先手勝率 ${(evaluation.winRate * 100).toFixed(1)}%`;
   if (evaluation.kind === 'policy') {
     // 布石専用ネットは価値ヘッドを持たない（採点はやねうら王がやる）ので勝率が出ない。
     // その場合は方策が採用手に与えた確率を出す。undefinedを%にして "NaN%" と

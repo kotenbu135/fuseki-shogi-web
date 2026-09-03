@@ -8,6 +8,7 @@
 | `game.js` | 対局の状態機械。**局面の真実はここだけが持つ**。41手目の裁定もここ |
 | `fuseki.js` | `wasm/` のWASMラッパ。布石フェーズの合法手・利き・特徴量 |
 | `policy.js` | 布石方策。onnxruntime-web で1手あたりNN前向き1回 |
+| `kings.js` | 両玉先置きモードの置く役・選ぶ役。両玉のマスの組の価値表（`models/king_pairs_*.json`）を引くだけ |
 | `normal.js` | やねうら王WASMとのUSIの往復 |
 | `board.js` | [shogiground](https://github.com/WandererXII/shogiground) の生成とGameからの同期 |
 | `sound.js` | 対局音。音源は持たずWebAudioで合成する |

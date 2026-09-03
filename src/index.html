@@ -75,6 +75,11 @@
       <div class="status" id="status" role="status" aria-live="polite">
         <p class="status-line" id="status-line">読み込み中…</p>
         <p class="status-sub" id="status-sub"></p>
+        <!-- 両玉先置きの選択。選ぶ役の人間にだけ出す（main.js の render）。 -->
+        <div class="choice-row" id="choice-row" hidden>
+          <button type="button" id="btn-choose-sente">先手側で指す</button>
+          <button type="button" id="btn-choose-gote">後手側で指す</button>
+        </div>
       </div>
 
       <dl class="readout">
@@ -127,11 +132,24 @@
       </div>
 
       <form class="controls" id="controls">
-        <label>手番
+        <label class="wide" title="両玉先置き: 振り駒で決まった側が先手玉と後手玉を置き、もう一方がどちらの側で指すかを選ぶ。先手の利を対局者自身が打ち消す">ルール
+          <select id="opt-mode">
+            <option value="standard" selected>布石将棋</option>
+            <option value="kings-first">両玉先置き</option>
+          </select>
+        </label>
+        <label id="lbl-color">手番
           <select id="opt-color">
             <option value="sente" selected>先手（下）</option>
             <option value="gote">後手（上）</option>
             <option value="random">ランダム</option>
+          </select>
+        </label>
+        <label id="lbl-role" hidden title="置く役は先手玉と後手玉を置く。選ぶ役はそれを見て先手側か後手側かを選ぶ。先手・後手は選択で決まる">役
+          <select id="opt-role">
+            <option value="placer" selected>玉を置く役</option>
+            <option value="chooser">選ぶ役</option>
+            <option value="random">振り駒</option>
           </select>
         </label>
         <label title="レベル1〜2は布石の打ち方が散り、3〜5の差は41手目以降の読みの深さに出る">AIの強さ

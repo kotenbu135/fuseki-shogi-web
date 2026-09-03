@@ -684,6 +684,18 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .status-line { margin: 0; font-weight: 600; }
 .status-sub { margin: .15rem 0 0; color: var(--ink-soft); font-size: .8125rem; }
 .status-sub:empty { display: none; }
+/* 両玉先置きの選択。2択なので同じ大きさで並べ、どちらかを目立たせない。 */
+.choice-row { display: flex; gap: .4rem; margin-top: .6rem; }
+.choice-row button {
+  flex: 1;
+  padding: .45rem .5rem;
+  background: var(--ink); color: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  font: inherit; font-size: .875rem; font-weight: 600;
+  cursor: pointer;
+}
+.choice-row button:hover { background: var(--accent); border-color: var(--accent); color: var(--paper-raised); }
 
 /* 過去の局面を見ている間は盤の縁を変えて、対局中の局面でないことを示す。 */
 .sg-wrap.reviewing sg-board { border-color: var(--accent); }
@@ -842,6 +854,8 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 /* select の min-content は選択肢の文字列の長さで決まる。ここを切らないと
    19rem のパネルを押し広げ、盤を大きくしたときにページごと横スクロールする。 */
 .controls label, .controls select { min-width: 0; }
+/* display:flex が hidden 属性に勝ってしまう。ルールで出し入れする「手番」「役」のため。 */
+.controls label[hidden] { display: none; }
 .controls select { width: 100%; }
 .controls .buttons { grid-column: 1 / -1; }
 /* 選択肢の文言が長いものは1行占有させる。 */

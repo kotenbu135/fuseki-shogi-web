@@ -95,9 +95,10 @@ export function syncBoard(sg, game) {
       hands: handsToSfen(game.hands(), HAND_ROLES),
     },
     turnColor: game.turnColor ?? SENTE,
-    // 触れるのは常に人間の色だけ。shogigroundは activeColor と turnColor が
+    // 触れるのは人間が動かしてよい色だけ。shogigroundは activeColor と turnColor が
     // 一致した色しか動かさないので、AIの手番では自動的に操作できなくなる。
-    activeColor: game.humanColor,
+    // 両玉先置きの置く役は1手目に先手の玉、2手目に後手の玉を置くので、色は手番で変わる。
+    activeColor: game.activeColor,
     lastDests: game.lastDests,
     checks: game.checks(),
     movable: { dests: humanTurn ? game.moveDests() : new Map() },

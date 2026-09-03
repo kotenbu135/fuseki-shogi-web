@@ -23,6 +23,9 @@ const ROOT = path.join(HERE, '..');
 // 終わりにせず布石40手→41手目の裁定→通常フェーズまで実際に指して通す。
 const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
 const FULL = process.argv.includes('--full');
+// --kings-first を付けると、両玉先置きモードを両方の役で始めて選択まで通す
+// （models/ に価値表が要る。無いビルドではモードが閉じているので NG になる）。
+const KINGS = process.argv.includes('--kings-first');
 const DIST = args[0] ? path.resolve(args[0]) : path.join(ROOT, 'dist');
 const NORMAL_PLIES = Number(args[1] ?? 4);
 const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
@@ -502,6 +505,8 @@ try {
     exceptions().length === beforeResign && afterResign.phase === '終局' && afterResign.newEnabled
       && afterResign.colorEnabled,
     `${afterResign.phase} / ${afterResign.status} / 例外 ${exceptions().length - beforeResign} 件`);
+
+  if (KINGS) await playKingsFirst(page);
 } finally {
   cdp.close();
   chrome.kill();
@@ -511,6 +516,127 @@ try {
 
 console.log(`\n不一致 ${failures} 件`);
 process.exit(failures ? 1 : 0);
+
+// ---- 両玉先置き（--kings-first） ----
+
+/**
+ * 両玉先置きモードを実ブラウザで通す。選ぶ役（AIが両玉を置き、人間が2択を押す）と
+ * 置く役（人間が先手玉・後手玉を順に置き、AIが側を選ぶ）の両方。
+ * game.js の状態機械は test/kings_first_test.mjs が見ているので、ここで見るのは
+ * **画面にしか無いもの**: 2択のボタンの出入り、席の名前が選択で決まること、
+ * 盤の向きが人間の色へ回ること、後手の駒台の玉を人間が打てること。
+ */
+async function playKingsFirst(page) {
+  console.log('\n--- 両玉先置き（--kings-first）---');
+  const errorsAtStart = exceptions().length;
+  const status = () => evaluate(page, `({
+    line: document.getElementById('status-line').textContent,
+    sub: document.getElementById('status-sub').textContent,
+    phase: document.getElementById('readout-phase').textContent,
+    choice: !document.getElementById('choice-row').hidden,
+    top: document.getElementById('seat-top-name').textContent,
+    bottom: document.getElementById('seat-bottom-name').textContent,
+    kifu: [...document.querySelectorAll('#kifu li .m')].map(e => e.textContent),
+    pieces: document.querySelectorAll('sg-pieces piece:not(.fading)').length,
+    undo: !document.getElementById('btn-undo').disabled,
+  })`);
+  // 直前の対局（2局目）が進行中。投了して終わらせてから設定を変える。
+  await evaluate(page, `(() => { const b = document.getElementById('btn-resign'); b.click(); b.click(); })()`);
+  await evalUntil(page, 'document.getElementById("readout-phase").textContent', v => v === '終局', 10000);
+
+  const option = await evaluate(page, 'document.querySelector("#opt-mode option[value=kings-first]").disabled');
+  check('両玉先置きが選べる（価値表が読めている）', option === false);
+  if (option !== false) return;
+
+  // ---- 選ぶ役 ----
+  await evaluate(page, `(() => {
+    const m = document.getElementById('opt-mode'); m.value = 'kings-first'; m.dispatchEvent(new Event('change'));
+    const r = document.getElementById('opt-role'); r.value = 'chooser';
+  })()`);
+  check('ルールを両玉先置きにすると「手番」が消えて「役」が出る', await evaluate(page,
+    'document.getElementById("lbl-color").hidden && !document.getElementById("lbl-role").hidden'
+    + ' && getComputedStyle(document.getElementById("lbl-color")).display === "none"'));
+  await click(page, await center(page, '#btn-again'));
+  await evalUntil(page, '!document.getElementById("choice-row").hidden', v => v === true, 30000);
+  let s = await status();
+  check('AIが両玉を置くと2択が出る', s.choice && s.pieces === 2 && s.phase === '側の選択',
+    `${s.phase} / 盤上${s.pieces}枚 / ${s.line}`);
+  check('選ぶ前は席に「あなた」が無い', !s.top.includes('あなた') && !s.bottom.includes('あなた'),
+    `${s.top} / ${s.bottom}`);
+  check('選ぶ前は待ったが押せない', s.undo === false);
+
+  await click(page, await center(page, '#btn-choose-gote'));
+  await evalUntil(page, 'document.getElementById("status-line").textContent',
+    v => v && v.startsWith('あなたの番'), 30000);
+  s = await status();
+  check('後手側を選ぶと自分が後手になり、盤が回って手前が後手', s.bottom.startsWith('後手（あなた）')
+    && s.top.startsWith('先手（布石AI'), `${s.top} / ${s.bottom}`);
+  check('選択が棋譜に1行入り、AIの3手目が続く', s.kifu.length === 4 && s.kifu[2] === '△側を選択'
+    && s.choice === false, s.kifu.join(' '));
+  check('選んだ直後の案内に誰が何を選んだかが出る', s.sub.includes('あなたが後手側を選んだ'), s.sub);
+  check('後手の駒台から打てる', await evaluate(page,
+    'document.querySelectorAll("sg-hand-wrap.hand-bottom piece.gote").length') === 8);
+
+  // 待ったで選択より前へ戻る。AIの3手目も自分の選択も消え、2択に戻る。
+  await click(page, await center(page, '#btn-undo'));
+  await evalUntil(page, '!document.getElementById("choice-row").hidden', v => v === true, 10000);
+  s = await status();
+  check('待ったで選択まで戻ると2択に戻り、席から「あなた」が消える',
+    s.choice && s.kifu.length === 2 && !s.bottom.includes('あなた'), `${s.kifu.join(' ')} / ${s.bottom}`);
+  await click(page, await center(page, '#btn-choose-sente'));
+  await evalUntil(page, 'document.getElementById("status-line").textContent',
+    v => v && v.startsWith('あなたの番'), 30000);
+  s = await status();
+  check('先手側を選ぶと自分が先手で、3手目は自分の番', s.bottom.startsWith('先手（あなた）')
+    && s.kifu.length === 3 && s.kifu[2] === '▲側を選択', `${s.bottom} / ${s.kifu.join(' ')}`);
+  const sfen3 = await evaluate(page, `(() => {
+    document.getElementById('btn-io-open').click();
+    const v = document.getElementById('io-sfen').value;
+    document.getElementById('io-dialog').close();
+    return v;
+  })()`);
+  check('選択の後のSFENは3手目・先手番', String(sfen3).includes(' b 3'), sfen3);
+
+  // ---- 置く役 ----
+  await evaluate(page, `(() => { const b = document.getElementById('btn-resign'); b.click(); b.click(); })()`);
+  await evalUntil(page, 'document.getElementById("readout-phase").textContent', v => v === '終局', 10000);
+  await evaluate(page, `(() => { const r = document.getElementById('opt-role'); r.value = 'placer'; })()`);
+  await click(page, await center(page, '#btn-again'));
+  await evalUntil(page, 'document.getElementById("status-line").textContent',
+    v => v && v.startsWith('あなたが玉を置く役'), 30000);
+  // 玉以外は選べない（実マウスで押す。合成イベントは shogiground が弾く）。
+  await click(page, await center(page, 'sg-hand-wrap.hand-bottom piece.pawn'));
+  await new Promise(r => setTimeout(r, 300));
+  check('1手目は玉以外を選べない',
+    await evaluate(page, 'document.querySelectorAll("sq.dest").length') === 0);
+  await click(page, await center(page, 'sg-hand-wrap.hand-bottom piece.king'));
+  const kingDests = await evalUntil(page, 'document.querySelectorAll("sq.dest").length', v => v > 0, 10000);
+  check('置く役の1手目は先手玉で、先手陣36マス', kingDests === 36, `${kingDests}マス`);
+  await click(page, await center(page, 'sg-squares sq.dest'));
+  await evalUntil(page, 'document.getElementById("status-line").textContent',
+    v => v && v.startsWith('次に後手玉'), 10000);
+  // 2手目は相手（上）の駒台の玉。自分の色に関わらず置ける。
+  await click(page, await center(page, 'sg-hand-wrap.hand-top piece.king'));
+  const goteDests = await evalUntil(page, 'document.querySelectorAll("sq.dest").length', v => v > 0, 10000);
+  const diag = goteDests === 36 ? '' : await evaluate(page, `(() => {
+    const el = document.querySelector('sg-hand-wrap.hand-top piece.king');
+    const r = el.getBoundingClientRect();
+    return JSON.stringify({ wrap: el.closest('sg-hand-wrap').className, hp: el.parentElement.outerHTML.slice(0, 120),
+      rect: [r.left, r.top, r.width, r.height].map(Math.round), innerH: innerHeight,
+      selected: !!document.querySelector('sg-hand piece.selected'), status: document.getElementById('status-line').textContent,
+      turnEl: document.querySelector('.sg-wrap').className });
+  })()`);
+  check('2手目は後手の駒台の玉を後手陣36マスへ', goteDests === 36, `${goteDests}マス ${diag}`);
+  await click(page, await center(page, 'sg-squares sq.dest'));
+  await evalUntil(page, 'document.getElementById("status-line").textContent',
+    v => v && v.startsWith('あなたの番'), 30000);
+  s = await status();
+  check('AIが側を選ぶと自分の色が決まり、案内にAIの選択が出る',
+    (s.bottom.includes('あなた')) && /AIが(先手|後手)側を選んだ/.test(s.sub) && s.kifu.length >= 3
+    && s.kifu[2].endsWith('側を選択'), `${s.bottom} / ${s.sub} / ${s.kifu.slice(0, 4).join(' ')}`);
+  check('両玉先置きで未処理の例外が無い', exceptions().length === errorsAtStart,
+    exceptions().slice(errorsAtStart).join(' / '));
+}
 
 // ---- 1局通す（--full） ----
 
