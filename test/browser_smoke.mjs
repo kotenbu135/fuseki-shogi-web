@@ -608,6 +608,7 @@ async function playKingsFirst(page) {
   await shot('05-choose');
 
   // 盤の後手玉を押す（実マウス）。盤が後手向きに回り、確定ボタンに後手が入る。
+  await piecesSettled(page);
   await click(page, await center(page, 'sg-pieces piece.gote.king'));
   await evalUntil(page, 'document.getElementById("btn-choose-confirm").disabled', v => v === false, 5000);
   s = await status();
@@ -1038,6 +1039,19 @@ async function evaluate(page, expression) {
   const r = await page.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
   if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
   return r.result.value;
+}
+
+/** shogiground の駒は「置く」動きの途中だと盤の外の座標にいる。実測で後手玉が
+ *  translate(-134.606%, 699.757%) にいるあいだに center() を取り、盤の左外
+ *  （x=78, 盤は x>=142）を押して空振りしていた。300ms 後には translate(600%, 100%) に
+ *  着地する。座標から押す操作の前に必ず静止を待つこと。整数%なら静止とみなす
+ *  （アニメーション中だけ端数が出る。.anim クラスは付かないので使えない）。 */
+async function piecesSettled(page, timeoutMs = 5000) {
+  const ok = await evalUntil(page, `[...document.querySelectorAll('sg-pieces piece')].every(el => {
+    const m = /translate\\(\\s*(-?[\\d.]+)%\\s*,\\s*(-?[\\d.]+)%\\s*\\)/.exec(el.getAttribute('style') || '');
+    return m && Number.isInteger(+m[1]) && Number.isInteger(+m[2]);
+  })`, v => v === true, timeoutMs);
+  if (ok !== true) throw new Error('駒が静止しない（アニメーションが終わらない）');
 }
 
 /** 条件が満たされるまで評価を繰り返す。最後の値を返す。 */
