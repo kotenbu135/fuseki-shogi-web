@@ -48,8 +48,8 @@ console.log(`seed ${SEED}: ${fuseki.toSfen()}`);
 const CODE = { pawn: 'FU', lance: 'KY', knight: 'KE', silver: 'GI', gold: 'KI', bishop: 'KA', rook: 'HI', king: 'OU' };
 const PIECES = pathToFileURL(path.join(ROOT, 'src/pieces/kanji_light')).href;
 const TEXT = {
-  ja: { title: '布石将棋', line1: '空の盤に交互に20枚ずつ打つ。', line2: '41手目からは普通の将棋。', sub: 'ブラウザで指せる · AI対局 · 玉分け将棋', credit: '駒: kanji_light (CC BY 4.0)' },
-  en: { title: 'Fuseki Shogi', line1: 'Place 20 pieces each on an empty board.', line2: 'From move 41 it is ordinary shogi.', sub: 'Play in the browser · vs AI · King Split Shogi', credit: 'pieces: kanji_light (CC BY 4.0)' },
+  ja: { title: '布石将棋', line1: '空の盤に交互に20枚ずつ打つ。', line2: '41手目からは本将棋。', sub: 'ブラウザで指せる · AI対局 · 天秤将棋', credit: '駒: kanji_light (CC BY 4.0)' },
+  en: { title: 'Fuseki Shogi', line1: 'Place 20 pieces each on an empty board.', line2: 'From move 41 it is ordinary shogi.', sub: 'Play in the browser · vs AI · Balance Shogi', credit: 'pieces: kanji_light (CC BY 4.0)' },
 };
 
 const html = lang => {

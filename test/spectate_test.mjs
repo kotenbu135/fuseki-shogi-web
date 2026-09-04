@@ -1,7 +1,7 @@
 // 観戦（AI同士）の Game を単体で見る。ブラウザもエンジンも要らない。
 //
-//   - 人間の手番は一度も来ない（布石将棋・玉分け将棋とも）
-//   - 玉分け将棋で先後が選ばれても人間の色は付かない
+//   - 人間の手番は一度も来ない（布石将棋・天秤将棋とも）
+//   - 天秤将棋で先後が選ばれても人間の色は付かない
 //   - 待ったの対象（actor が human の行）が無い
 //   - 中断すると勝敗なしで終局し、表示の口が全部読める
 //   - AIの投了は手番の相手の勝ち。勝者はあるが winnerIs は無い
@@ -93,7 +93,7 @@ await check('通常フェーズでAIが投了すると手番の相手の勝ち�
   eq(g.kifu[39].eval.score, -900, '根の評価は先手から見て -900');
 });
 
-console.log('--- 玉分け将棋の観戦 ---');
+console.log('--- 天秤将棋の観戦 ---');
 
 await check('AIが両玉を置いて選んでも人間の色は付かず、手番も来ない', async () => {
   const g = new Game({ fuseki, policy: null, engine: null, mode: 'kings-first', spectate: true, kingTable: makeTable() });

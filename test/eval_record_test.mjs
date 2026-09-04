@@ -6,7 +6,7 @@
 //   - 人間の手番の解析（analysis）は読み筋から写した値（pv）を置き換える
 //   - positionAt が40手目（41手目の局面）と通常フェーズの行だけ Position を返す
 //   - 待った（undoTo）で残る行の評価が消えない
-//   - 玉分け将棋の2手目の行に表の値が入る
+//   - 天秤将棋の2手目の行に表の値が入る
 //
 //   node test/eval_record_test.mjs
 import fs from 'node:fs';
@@ -163,7 +163,7 @@ await check('undoTo の後も残る行の評価はそのまま', () => {
   eq(g.lastEval, null, '最後の行に評価が無ければ lastEval も無い');
 });
 
-console.log('--- 玉分け将棋 ---');
+console.log('--- 天秤将棋 ---');
 
 await check('2手目の行に表の値が入る（置いたのが人間でも）', () => {
   const pairs = {};

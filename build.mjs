@@ -104,12 +104,12 @@ const hasModel = copy(MODEL_SRC, path.join(OUT, 'models'));
 if (!hasModel) console.warn(`警告: ${MODEL_SRC} が無いので含めていない。布石フェーズは指せない`);
 else if (custom) console.warn(`--model: ${path.basename(OUT)}/models/${MODEL} を含めた。この出力は配布しないこと`);
 
-// 玉分け将棋の価値表（src/kings.js）。公開重みのロールアウトをやねうら王で採点した
+// 天秤将棋の価値表（src/kings.js）。公開重みのロールアウトをやねうら王で採点した
 // もので、GCT由来の値は含まない（models/README.md）。重みと世代が対になっており、
 // --model で別の重みを当てたときは src/kings.js の照合が落として、そのモードだけ閉じる。
 const KING_TABLE = 'king_pairs_iter171.json';
 const hasTable = copy(path.join(HERE, 'models', KING_TABLE), path.join(OUT, 'models'));
-if (!hasTable) console.warn(`警告: models/${KING_TABLE} が無いので含めていない。玉分け将棋は使えない`);
+if (!hasTable) console.warn(`警告: models/${KING_TABLE} が無いので含めていない。天秤将棋は使えない`);
 
 // ビルドの素性。GPL v3 の「対応するソースの提供」は、配ったバイナリと対応するソースを
 // 指せて初めて意味を持つ。wasm/dist/ をコミットしている以上、成果物とソースが食い違って

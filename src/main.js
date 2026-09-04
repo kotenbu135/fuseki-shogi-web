@@ -29,7 +29,7 @@ const ASSETS = {
   // build.mjs の PUBLIC_MODEL と二重に持つことになるので、片方を変えたら両方直す。
   model: new URL(`./models/${typeof __MODEL_FILE__ === 'undefined'
     ? 'fuseki_degct_b3_iter171.onnx' : __MODEL_FILE__}`, import.meta.url).href,
-  // 玉分け将棋の価値表（src/kings.js）。重みと世代が対（build.mjs の KING_TABLE）。
+  // 天秤将棋の価値表（src/kings.js）。重みと世代が対（build.mjs の KING_TABLE）。
   kingTable: new URL(`./models/${typeof __KING_TABLE_FILE__ === 'undefined'
     ? 'king_pairs_iter171.json' : __KING_TABLE_FILE__}`, import.meta.url).href,
   yaneuraou: new URL('./vendor/yaneuraou/yaneuraou.k-p.js', import.meta.url).href,
@@ -339,7 +339,7 @@ let engines = null;   // { fuseki, policy, engine, kingTable }
 let game = null;
 let sg = null;
 let orientation = SENTE;
-// 玉分け将棋では人間の色が選択の時点で決まる。その対局で一度だけ盤をその色へ回す
+// 天秤将棋では人間の色が選択の時点で決まる。その対局で一度だけ盤をその色へ回す
 // （以後は手で反転できる）。回し終えた対局を覚えておく。
 let orientedGame = null;
 let busy = false;     // AIが考えている間の二重駆動を防ぐ
@@ -490,12 +490,12 @@ async function boot() {
       factory: await loadYaneuraOuFactory(ASSETS.yaneuraou), threads, hashMb: 64,
     });
 
-    // 玉分け将棋の価値表。無くても布石将棋は指せるので、落とさずにモードだけ閉じる。
+    // 天秤将棋の価値表。無くても布石将棋は指せるので、落とさずにモードだけ閉じる。
     let kingTable = null;
     try {
       kingTable = await KingTable.load(ASSETS.kingTable, { modelFile: ASSETS.model });
     } catch (e) {
-      console.warn('玉分け将棋は使えない:', e.message);
+      console.warn('天秤将棋は使えない:', e.message);
       ui.modeKings.disabled = true;
       ui.modeKings.closest('.mode-card').title = t('kings_unavailable');
       if (ui.modeKings.checked) ui.modeStandard.checked = true;
@@ -552,7 +552,7 @@ function undoTarget() {
   if (!game) return -1;
   const k = game.kifu;
   let n = k.length;
-  // 色ではなく actor で見る。玉分け将棋の置く役は両方の色の玉を置く。
+  // 色ではなく actor で見る。天秤将棋の置く役は両方の色の玉を置く。
   while (n > 0 && k[n - 1].actor !== 'human') n--;   // AIの手を飛ばす
   return n - 1;                                       // 自分の手を1つ消す
 }
@@ -591,7 +591,7 @@ ui.abort.addEventListener('click', () => {
   render();
 });
 
-/** ホームの「手番」（玉分け将棋では「役」）で観戦が選ばれているか。 */
+/** ホームの「手番」（天秤将棋では「役」）で観戦が選ばれているか。 */
 function spectateChosen() {
   return (modeValue() === 'kings-first' ? ui.role.value : ui.color.value) === 'spectate';
 }
@@ -602,7 +602,7 @@ function chosenColor() {
   return ui.color.value === GOTE ? GOTE : SENTE;
 }
 
-/** 玉分け将棋での人間の役。振り駒はここで決まる。 */
+/** 天秤将棋での人間の役。振り駒はここで決まる。 */
 function chosenRole() {
   if (ui.role.value === 'random') return Math.random() < .5 ? 'placer' : 'chooser';
   return ui.role.value === 'chooser' ? 'chooser' : 'placer';
@@ -620,7 +620,7 @@ function renderModeControls() {
 }
 for (const r of [ui.modeKings, ui.modeStandard, ui.color, ui.role]) r.addEventListener('change', renderModeControls);
 
-// ---- 先後の選択（玉分け将棋） ----
+// ---- 先後の選択（天秤将棋） ----
 
 /** 押した玉を仮に持つ。盤がその玉が手前に来るよう回り、確定ボタンが押せるようになる。 */
 function setPendingSide(side) {
@@ -772,11 +772,11 @@ ui.flipAnalyze.addEventListener('click', flipBoard);
 function startGame() {
   if (busy || !engines) return;
   endAnalysis();   // 前の対局の検討が開いていれば閉じる（MultiPV も戻す）
-  // 玉分け将棋は価値表が読めたときだけ。無ければ radio が無効になっている。
+  // 天秤将棋は価値表が読めたときだけ。無ければ radio が無効になっている。
   const mode = modeValue() === 'kings-first' && engines.kingTable ? 'kings-first' : 'standard';
   // 観戦（AI同士）。人間の色も役も無い。盤は先手側から見る。
   const spectate = spectateChosen();
-  // 玉分け将棋の色は選択まで未定。盤は先手側から始め、決まった時点で回す（render）。
+  // 天秤将棋の色は選択まで未定。盤は先手側から始め、決まった時点で回す（render）。
   const humanColor = spectate || mode !== 'standard' ? SENTE : chosenColor();
   const humanRole = mode === 'kings-first' && !spectate ? chosenRole() : null;
   orientation = humanColor;
@@ -999,7 +999,7 @@ function renderSeats() {
   // 下が手前（自分）。盤を反転しても席の並びは動かさない。
   const bottom = orientation;
   const top = bottom === SENTE ? GOTE : SENTE;
-  // 誰が座っているか。玉分け将棋で選ぶ前は色しか無い。押した（仮の）玉があれば仮の席にする。
+  // 誰が座っているか。天秤将棋で選ぶ前は色しか無い。押した（仮の）玉があれば仮の席にする。
   const label = c => {
     const who = game.spectate ? t('seat_ai', { n: aiLevel })
       : game.humanColor !== null
@@ -1007,7 +1007,7 @@ function renderSeats() {
         : pendingSide !== null
           ? (c === pendingSide ? t('seat_you_pending') : t('seat_ai', { n: aiLevel }))
           : null;
-    // 誰かが決まっても先後は語で言う（81Dojoと同じ）。玉分け将棋は色と役が一致しないので、記号だけでは足りない。
+    // 誰かが決まっても先後は語で言う（81Dojoと同じ）。天秤将棋は色と役が一致しないので、記号だけでは足りない。
     return who === null ? sideName(c) : `${who} · ${sideName(c)}`;
   };
   ui.seatTopName.textContent = label(top);
@@ -1040,20 +1040,23 @@ function renderSeats() {
   ui.seatBottom.classList.toggle('thinking', thinking && turn === bottom);
 }
 
-/** 棋譜の見出し行（玉分け将棋だけ）。役と、決まっていれば誰がどちらを持ったか。
+/** 棋譜の見出し行（天秤将棋だけ）。役と、決まっていれば誰がどちらを持ったか。
  *  書き出しの見出しと同じ文で、対局中も棋譜の上に残す。 */
 function renderKifuHead() {
   const show = !!game && game.mode === 'kings-first';
   ui.kifuHead.hidden = !show;
   if (!show) { ui.kifuHead.textContent = ''; return; }
-  const roles = t(game.spectate ? 'kifu_roles_spectate'
-    : game.humanRole === 'placer' ? 'kifu_roles_you_placer' : 'kifu_roles_you_chooser');
-  const took = game.chosen === null ? ''
-    : ` · ${t('kifu_head_took', {
-      who: t(!game.spectate && game.humanRole === 'chooser' ? 'You' : 'AI'),
-      side: sideName(game.chosen),   // 「後手 ☖」。記号込み
-    })}`;
-  ui.kifuHead.textContent = roles + took;
+  ui.kifuHead.textContent = kifuHeadText();
+}
+
+/** 「誰が両玉を置き、誰が何を持ったか」の一文。対局中の棋譜の上と、書き出しの見出しで共有。 */
+function kifuHeadText() {
+  const humanChooses = !game.spectate && game.humanRole === 'chooser';
+  const choice = game.chosen === null
+    ? t(humanChooses ? 'choice_pending_you' : 'choice_pending_ai')
+    : t('choice_took', { side: sideName(game.chosen) });   // 「後手 ☖」。記号込み
+  return t(game.spectate ? 'kifu_head_spectate'
+    : game.humanRole === 'placer' ? 'kifu_head_you_placer' : 'kifu_head_you_chooser', { choice });
 }
 
 /** 通常フェーズに入ってから人間が指したか。41手目の案内を引っ込める合図に使う。
@@ -1147,7 +1150,7 @@ function render() {
     return;
   }
   if (game.phase !== 'choose') pendingSide = null;
-  // 玉分け将棋で先後が決まった。人間の色が決まったので、その対局で一度だけ盤を回す。
+  // 天秤将棋で先後が決まった。人間の色が決まったので、その対局で一度だけ盤を回す。
   // 待ったで選択より前へ戻ると色が未定に戻るので、次の選択でもう一度回せるようにする。
   if (game.humanColor === null) {
     orientedGame = null;
@@ -1213,8 +1216,9 @@ function render() {
     // 「一度だけ」にすると、直後の drive() の再描画に上書きされて誰も読めない。
     if (game.phase === 'kings') {
       // 置く役は自分の色を知らずに両玉を置く。2手目は相手の駒台の玉を相手陣へ。
-      setStatus(t(game.fusekiMoves.length === 0 ? 'status_placer_first' : 'status_placer_second'),
-        t('status_placer_sub'));
+      const first = game.fusekiMoves.length === 0;
+      setStatus(t(first ? 'status_placer_first' : 'status_placer_second'),
+        t(first ? 'status_placer_first_sub' : 'status_placer_second_sub'));
     } else if (game.phase === 'choose') {
       if (pendingSide) setStatus(t('status_pending', { side: sideName(pendingSide) }), t('status_pending_sub'));
       else setStatus(t('status_choose'), t('status_choose_sub'));
@@ -1307,7 +1311,7 @@ function renderChoice() {
     ? t('btn_confirm_side_idle') : t('btn_confirm_side', { side: sidePlain(pendingSide) });
 }
 
-/** 玉分け将棋で先後が決まった直後だけ、誰がどちらを持ったかを言う。3手目の案内に添える。 */
+/** 天秤将棋で先後が決まった直後だけ、誰がどちらを持ったかを言う。3手目の案内に添える。 */
 function chosenNote() {
   if (game.mode !== 'kings-first' || game.phase !== 'fuseki' || game.fusekiMoves.length > 3) return '';
   // 自分で選んだときは言わない（帯とトーストに出ている）。AIが選んだときだけ、その結果を添える。
@@ -1318,7 +1322,7 @@ function chosenNote() {
   });
 }
 
-/** 終局後の一行。玉分け将棋なら、役・両玉のマス・誰が先手を持ったか・表の値。 */
+/** 終局後の一行。天秤将棋なら、役・両玉のマス・誰が先手を持ったか・表の値。 */
 function resultNote() {
   if (game.mode !== 'kings-first' || !game.chosen) return '';
   const { sente, gote } = game.kingSquares;
@@ -1327,7 +1331,7 @@ function resultNote() {
   // マスは棋譜と同じ表記で（日本語なら「４七」。表のキー 4g をそのまま出すと英字が混じる）。
   const sq = key => (LANG === 'en' ? key : makeJapaneseSquare(parseSquareName(key)));
   return t('summary_kings', {
-    placer: t(game.humanRole === 'placer' ? 'you' : 'AI'), kb: sq(sente), kw: sq(gote),
+    placer: t(game.humanRole === 'placer' ? 'You' : 'AI'), kb: sq(sente), kw: sq(gote),
     chooser: t(game.humanRole === 'chooser' ? 'You' : 'AI'), side: sideName(game.chosen), p,
   });
 }
@@ -1335,7 +1339,7 @@ function resultNote() {
 /** 勝敗の一行。表示と棋譜の書き出しで共有する。 */
 function resultLine() {
   const { winner, reason, winnerIs } = game.result;
-  // 玉分け将棋で先後を選ぶ前に投了すると、勝った色が無い。人間とAIのどちらかだけ言う。
+  // 天秤将棋で先後を選ぶ前に投了すると、勝った色が無い。人間とAIのどちらかだけ言う。
   const who = reason === 'aborted' ? t('result_aborted')
     : winner === null ? t(winnerIs === 'ai' ? 'result_ai_wins' : 'result_draw')
     : t('result_color_wins', { side: sideName(winner) }) + (winnerIs === 'human' ? t('result_you') : '');
@@ -1567,7 +1571,7 @@ function renderAnalysis() {
 /** 布石の局面の候補手。2つ目のWASMに手順を入れ直して方策を1回通す。 */
 async function fusekiCandidates(row, gen) {
   const g = game;
-  // 玉分け将棋の選択の行（局面は変わらない）と、1・2手目の玉の置き場所は候補を出さない
+  // 天秤将棋の選択の行（局面は変わらない）と、1・2手目の玉の置き場所は候補を出さない
   // （方策は玉以外も混ぜて返す。置く役の指針は価値表のほうで、ここには載せない）。
   if (g.mode === 'kings-first' && row < 3) return renderAnalysis();
   if (!analysisFuseki) analysisFuseki = await Fuseki.load(ASSETS.fuseki);
@@ -1758,7 +1762,7 @@ async function runPass() {
 // ---- 評価グラフ ----
 
 // 横軸は棋譜の行（0 = 空の盤、i = i行目を指した後）、縦軸は先手の勝率。
-// 布石の手には評価が無いので左側は空白のまま。玉分け将棋の2手目だけ表の値を点で打つ。
+// 布石の手には評価が無いので左側は空白のまま。天秤将棋の2手目だけ表の値を点で打つ。
 const CHART = { top: 4, bottom: 4, left: 2, right: 2 };
 let chartHover = null;   // なぞっている行（0〜n）。null なら出さない
 
@@ -1809,7 +1813,7 @@ function renderChart() {
   vals.forEach((p, i) => { if (p == null) flush(); else run.push([i, p]); });
   flush();
 
-  // 41手目の区切り。行の添字は玉分け将棋の選択の行ぶんずれるので ply で探す。
+  // 41手目の区切り。行の添字は天秤将棋の選択の行ぶんずれるので ply で探す。
   const i41 = rows.findIndex(e => e.ply === 41);
   const i40 = rows.findIndex(e => e.ply === 40);
   const split = i41 >= 0 ? i41 : i40 >= 0 ? i40 + 1 : -1;
@@ -1825,7 +1829,7 @@ function renderChart() {
   const blankEnd = split < 0 ? n : Math.max(0, split - 1);
   if (blankEnd > 0 && !vals.slice(0, blankEnd).some(p => p != null))
     add('text', { x: x(blankEnd / 2), y: mid - 3, 'text-anchor': 'middle' }, t('chart_no_eval'));
-  // 玉分け将棋の2手目。表の値を点で。
+  // 天秤将棋の2手目。表の値を点で。
   rows.forEach((e, i) => {
     if (e.eval?.kind === 'kings') add('circle', { class: 'kings', cx: x(i + 1), cy: y(e.eval.winRate), r: 2.5 });
   });
@@ -1877,10 +1881,8 @@ function kifuText() {
   const seats = game.spectate ? t('kifu_seats_spectate')
     : game.humanColor === null ? t('kifu_seats_undecided')
     : t(game.humanColor === SENTE ? 'kifu_seats_you_sente' : 'kifu_seats_you_gote');
-  // 玉分け将棋は役も残す。色と役は一致するとは限らないので、両方書く。
-  const roles = game.mode !== 'kings-first' ? ''
-    : `${t(game.spectate ? 'kifu_roles_spectate'
-      : game.humanRole === 'placer' ? 'kifu_roles_you_placer' : 'kifu_roles_you_chooser')} / `;
+  // 天秤将棋は役も残す。色と役は一致するとは限らないので、両方書く。
+  const roles = game.mode !== 'kings-first' ? '' : `${kifuHeadText()} / `;
   const rule = t(game.mode === 'kings-first' ? 'kifu_rule_kings' : 'kifu_rule_standard');
   const lines = [`${rule} / ${t('kifu_level', { n: aiLevel })} / ${roles}${seats}`];
   for (const e of game.kifu) {
@@ -1936,7 +1938,7 @@ function loadMoves() {
   if (!engines) return note(t('io_not_ready'));
   if (busy) return note(t('io_busy'));
 
-  // ルールは手順に書いてある。選択のトークンがあれば玉分け将棋。
+  // ルールは手順に書いてある。選択のトークンがあれば天秤将棋。
   const kingsFirst = moves.some(m => m.startsWith('choose:'));
   if (kingsFirst && !engines.kingTable) return note(t('io_no_table'));
   setMode(kingsFirst ? 'kings-first' : 'standard');
@@ -1975,7 +1977,7 @@ function playMoveSounds() {
   if (game.kifu.length > soundedKifu) {
     const last = game.kifu[game.kifu.length - 1];
     // 王手は駒音を含んだ別の音にする（lishogiも王手だけ差し替えている）。
-    // 玉分け将棋の選択は駒を動かさないので鳴らさない。
+    // 天秤将棋の選択は駒を動かさないので鳴らさない。
     if (!last.usi.startsWith('choose:'))
       sound.play(game.checks() ? 'check' : last.capture ? 'capture' : 'move');
     soundedKifu = game.kifu.length;
@@ -2026,7 +2028,7 @@ function renderKifu() {
 
 function formatEval(evaluation) {
   if (!evaluation) return '—';
-  // 玉分け将棋の置く役・選ぶ役が引いた表の値。先手から見た勝率。
+  // 天秤将棋の置く役・選ぶ役が引いた表の値。先手から見た勝率。
   if (evaluation.kind === 'kings') return t('eval_table', { p: (evaluation.winRate * 100).toFixed(1) });
   if (evaluation.kind === 'policy') {
     // 布石専用ネットは価値ヘッドを持たない（採点はやねうら王がやる）ので勝率が出ない。

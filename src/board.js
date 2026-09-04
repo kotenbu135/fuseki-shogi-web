@@ -124,7 +124,7 @@ export function syncBoard(sg, game) {
     turnColor: game.turnColor ?? SENTE,
     // 触れるのは人間が動かしてよい色だけ。shogigroundは activeColor と turnColor が
     // 一致した色しか動かさないので、AIの手番では自動的に操作できなくなる。
-    // 玉分け将棋の置く役は1手目に先手の玉、2手目に後手の玉を置くので、色は手番で変わる。
+    // 天秤将棋の置く役は1手目に先手の玉、2手目に後手の玉を置くので、色は手番で変わる。
     activeColor: game.activeColor,
     lastDests: game.lastDests,
     checks: game.checks(),

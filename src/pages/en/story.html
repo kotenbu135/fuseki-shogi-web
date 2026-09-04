@@ -1,4 +1,4 @@
-<h1>How King Split came to be</h1>
+<h1>How Balance Shogi came to be</h1>
 <p class="lead">I trained an AI for Fuseki Shogi and Sente won far too often. This is how I stopped chasing a magic number in the rules and let the players balance the game themselves.</p>
 
 <h2>1. The problem</h2>
@@ -66,11 +66,11 @@
 <p>It is not perfect. The table calls all 21 of those pairs “50.0%”, yet real games spread them from 43.0% to 56.5%. Subtracting sampling error leaves about 1.6 points of genuine error in the table. <b>Part of why this looks balanced is that the placer and the chooser read the same table.</b> A chooser with a better table could exploit that residue. The precision of the table is the ceiling on fairness.</p>
 
 <h2>8. The name</h2>
-<p>One player splits by placing both kings, the other chooses. The kings replace the coin toss. Hence <b>King Split</b> — in Japanese <em>tamawake</em> (玉分け), “dividing the kings”.</p>
+<p>One player places both kings, the other takes whichever they prefer. On one pan of the scale sits the first move, on the other the safety of the kings, and the placer has no choice but to balance them. Hence <b>Balance Shogi</b> — in Japanese <em>tenbin shōgi</em> (天秤将棋), “scale shogi”.</p>
 
 <h2>9. What comes next</h2>
 <ul>
-  <li><b>The placement network has now been retrained under King Split.</b> Around a hundred generations made the policy clearly stronger, yet the width of the balanced band barely moved: 90.7 → 86.9 points. The structure of the balance does not seem to follow the strength of the policy. The table and the network are still updated as a pair.</li>
+  <li><b>The placement network has now been retrained under Balance Shogi.</b> Around a hundred generations made the policy clearly stronger, yet the width of the balanced band barely moved: 90.7 → 86.9 points. The structure of the balance does not seem to follow the strength of the policy. The table and the network are still updated as a pair.</li>
   <li>Making the table more precise. Most of the band’s width comes from the rollout count, and so does the ceiling on fairness (about 1.6 points).</li>
   <li>The newest engines have a much larger first-move advantage. If the kings alone stop being enough, the cut widens to “king and rook”.</li>
   <li>A third option in the style of Gomoku’s Swap2: instead of choosing, add one piece to each camp and hand the choice back. Then a cutter cannot impose a placement only they have studied.</li>

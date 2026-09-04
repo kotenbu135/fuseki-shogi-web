@@ -86,7 +86,7 @@
           <input type="radio" name="mode" id="mode-standard" value="standard" checked>
           <span class="mode-name">{{mode_standard}}</span>
           <span class="mode-desc">{{mode_standard_desc}}</span>
-          <!-- 空の盤から始める、を図で。玉分け将棋の札は両玉だけ置いた盤（下）。 -->
+          <!-- 空の盤から始める、を図で。天秤将棋の札は両玉だけ置いた盤（下）。 -->
           <svg class="mode-fig" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><rect x="5" y="5" width="90" height="90" rx="2"/><g class="l"><path d="M20 5v90M5 20h90" /><path d="M30 5v90M5 30h90" /><path d="M40 5v90M5 40h90" /><path d="M50 5v90M5 50h90" /><path d="M60 5v90M5 60h90" /><path d="M70 5v90M5 70h90" /><path d="M80 5v90M5 80h90" /><path d="M90 5v90M5 90h90" /></g></svg>
           <!-- 1局の流れ。対局画面のフェーズ帯（#stepper）と同じ形にして、ここで見た帯が
                対局画面にそのまま出るようにする。凡例の要る図にしない。 -->
@@ -192,12 +192,12 @@
            2つの席で挟む。時計は1手ごとの消費ではなく、その色が考えた累計。 -->
       <div class="seat" id="seat-top">
         <span class="seat-name" id="seat-top-name">{{seat_gote}}</span>
-        <!-- 玉分け将棋の役。先後が決まってから終局まで残す（色と役は一致しない）。 -->
+        <!-- 天秤将棋の役。先後が決まってから終局まで残す（色と役は一致しない）。 -->
         <span class="seat-role" id="seat-top-role" hidden></span>
         <span class="clock" id="clock-top"></span>
       </div>
 
-      <!-- フェーズ帯。玉分け将棋は4段、布石将棋は2段。今どこかが常に見える。 -->
+      <!-- フェーズ帯。天秤将棋は4段、布石将棋は2段。今どこかが常に見える。 -->
       <ol class="stepper" id="stepper" aria-label="phase"></ol>
 
       <div class="status" id="status" role="status" aria-live="polite">
@@ -246,7 +246,7 @@
       </div>
 
       <div class="kifu-box">
-        <!-- 玉分け将棋の役と、誰がどちらを持ったか。書き出しの見出しと同じ文を対局中も見せる。 -->
+        <!-- 天秤将棋の役と、誰がどちらを持ったか。書き出しの見出しと同じ文を対局中も見せる。 -->
         <p class="kifu-head" id="kifu-head" hidden></p>
         <ol class="kifu" id="kifu" aria-label="{{kifu_heading}}"></ol>
         <!-- 検討で試している変化。本譜の下に1本だけ。 -->
