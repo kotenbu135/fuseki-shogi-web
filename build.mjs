@@ -50,6 +50,9 @@ fs.mkdirSync(OUT, { recursive: true });
 
 copy(path.join(HERE, 'src', 'style.css'), OUT);
 copy(path.join(HERE, 'src', 'favicon.svg'), OUT);
+// 共有プレビューの画像（scripts/og.mjs が描いてコミットしてある。ここでは写すだけ）。
+for (const f of ['og-ja.png', 'og-en.png'])
+  if (!copy(path.join(HERE, 'src/og', f), path.join(OUT, 'og'))) console.warn(`警告: src/og/${f} が無い。node scripts/og.mjs で作る`);
 copy(path.join(HERE, '_headers'), OUT);
 
 // 駒の画像（CC BY 4.0 / Ka-hu。THIRD_PARTY.md を参照）。
@@ -146,6 +149,7 @@ const langVars = lang => ({
   alt_href: lang === 'en' ? '/' : '/en/',
   alt_lang: lang === 'en' ? 'ja' : 'en',
   king_table: KING_TABLE,
+  og_image: `og-${lang}.png`,
 });
 const BUILD_INFO = `dlshogi <code>${info.dlshogi_commit.slice(0, 12)}</code> / ` +
   `web <code>${info.web_commit.slice(0, 12)}</code> / ` +

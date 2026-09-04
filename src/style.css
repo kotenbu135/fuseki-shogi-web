@@ -189,7 +189,32 @@ body {
 
 /* ---- ホーム ---- */
 
-.home { max-width: 44rem; margin: 0 auto; padding: .5rem 0 1rem; }
+/* ホーム。見出しの下で2列に割り、左に設定、右に生成する盤（homeboard.js）。
+   開始ボタンを押す前に盤が見え、1280×900 で下半分が空いていたのも埋まる。
+   狭い画面では1列で、盤は設定の後ろ（開始ボタンを押し下げない）。 */
+.home {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 3rem;
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: .5rem 0 1rem;
+}
+@media (min-width: 56rem) {
+  .home { max-width: 66rem; grid-template-columns: minmax(0, 1fr) minmax(16rem, 24rem); align-items: start; }
+  .home > h1, .home > .tagline { grid-column: 1 / -1; }
+  .home > .setup, .home > .intro { grid-column: 1; }
+  .home > .home-board { grid-column: 2; grid-row: 3 / span 2; position: sticky; top: 1rem; }
+}
+.home-board { display: grid; gap: .5rem; justify-items: center; margin: 1.6rem auto 0; max-width: 20rem; width: 100%; }
+@media (min-width: 56rem) { .home-board { margin: 0; max-width: none; } }
+.home-board canvas { display: block; width: 100%; aspect-ratio: 1; }
+.home-board-cap { margin: 0; font-size: .78rem; color: var(--ink-soft); line-height: 1.6; text-align: center; }
+/* モード札の小盤。空の盤（布石将棋）と、両玉だけ置いた盤（玉分け将棋）。 */
+.mode-fig { grid-column: 2; grid-row: 1 / 3; width: 3.6rem; height: 3.6rem; justify-self: end; align-self: start; }
+.mode-fig rect { fill: var(--board); stroke: var(--board-edge); stroke-width: 3; }
+.mode-fig .l path { stroke: #000; stroke-width: 1; opacity: .8; }
+.mode-fig .k { fill: #fbf3d5; stroke: var(--accent); stroke-width: 2.2; stroke-linejoin: round; }
 .home h1 {
   margin: 0;
   font-family: var(--serif);
@@ -221,7 +246,8 @@ body {
 .mode-card {
   position: relative;
   display: grid;
-  gap: .3rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .3rem .8rem;
   align-content: start;
   padding: .9rem 1rem;
   background: var(--paper-raised);
@@ -238,7 +264,7 @@ body {
 .mode-desc { font-size: .84rem; color: var(--ink-soft); line-height: 1.5; }
 /* カードの中の1局の流れ。対局画面のフェーズ帯（.stepper / .step）と同じ部品で、
    この将棋だけの段は塗り、普通の将棋の段は破線。段の本体の見た目は「右のパネル」の節。 */
-.stepper.mini { margin-top: .3rem; }
+.stepper.mini { margin-top: .3rem; grid-column: 1 / -1; }
 .stepper.mini .step { cursor: inherit; text-align: center; padding: .15rem .25rem; font-size: .68rem;
                       color: var(--ink-soft); background: color-mix(in srgb, var(--rule) 35%, transparent); }
 .stepper.mini .step.shogi { border-style: dashed; background: transparent; }
@@ -384,7 +410,8 @@ body {
   /* 盤を画面幅いっぱいに。.app の左右paddingをちょうど打ち消す。 */
   .board-column { margin-inline: -1.25rem; }
 
-  /* 相手の席を盤の上へ。lishogiは相手＝上、自分＝下で固定。
+  /* 相手の席を盤の上へ、自分の席を盤の直下へ。lishogiは相手＝上、自分＝下で固定。
+     自分の席を棋譜の後ろに置くと、秒読み中に自分の時計が画面の外に出る（実際に出ていた）。
      縦積みだと .panel が .board-column の後ろに来るので、#seat-top が盤の下に落ちる。
      DOMを付け替えず、.panel を透明にして .layout の直接の子として並べ替える。
      .panel 自身の gap は display:contents で消えるので、.layout の gap がその役をする。
@@ -392,15 +419,21 @@ body {
      セレクタを .layout > .panel にしているのは詳細度のため。 */
   .layout > .panel { display: contents; }
   .layout { gap: .8rem; }
+  /* 指で押す寸法。44px を下回っていた（棋譜ナビ30px・操作32px・棋譜の行22px）。広い画面は変えない。 */
+  .kifu-nav button { padding: .65rem 0; }
+  .actions button { padding: .7rem .5rem; }
+  .kifu li, .variation li { padding: .35rem .3rem; }
+  .candidates li { padding: .4rem .5rem; }
+
   #seat-top       { order: 1; }
   .board-column   { order: 2; }
-  .stepper        { order: 3; }
-  .status         { order: 4; }
-  .actions        { order: 5; }
-  .kifu-box       { order: 6; }
-  .eval-chart     { order: 7; }
-  .engine         { order: 8; }
-  #seat-bottom    { order: 9; }
+  #seat-bottom    { order: 3; }
+  .stepper        { order: 4; }
+  .status         { order: 5; }
+  .actions        { order: 6; }
+  .kifu-box       { order: 7; }
+  .eval-chart     { order: 8; }
+  .engine         { order: 9; }
 }
 
 /* 盤と駒台の配置。lishogi と同じで、狭いときは盤の上下、広いときは盤の左右に
@@ -457,7 +490,10 @@ sg-board {
   box-shadow: 0 1px 0 #0002, 0 8px 24px #0000001f;
   font-size: clamp(9px, 2.2vw, 15px);   /* 盤内の文字はここを基準に決まる */
 }
-/* 41手目からは盤の縁の色を変える。文を読まなくても、ルールが変わったことが見える。 */
+/* 41手目からは盤の縁の色を変える。文を読まなくても、ルールが変わったことが見える。
+   色は幕（.toast）と一緒に0.4秒で変わる。 */
+sg-board { transition: border-color .4s ease; }
+@media (prefers-reduced-motion: reduce) { sg-board { transition: none; } }
 .sg-wrap.phase-normal sg-board { border-color: var(--ink); }
 
 sg-squares {
@@ -493,6 +529,13 @@ sq:nth-child(61)::after {
   background: var(--line);
   border-radius: 50%;
 }
+
+/* 布石フェーズは手番側の陣（自陣四段）を淡く塗る。置ける範囲が駒を掴む前から見え、
+   41手目で塗りが消えるので「ルールが変わった」が幕と二重に見える。
+   :where() で特異度を sq と同じに落とし、下の last-dest / selected / dest の塗りに負けるようにする。
+   マスの並びは表示上の位置（sg-squares の子の順、左上から）。手前の4段は 46 番目から。 */
+:where(.sg-wrap.zone-bottom) sq:where(:nth-child(n+46)),
+:where(.sg-wrap.zone-top) sq:where(:nth-child(-n+36)) { background-color: rgba(70, 35, 0, .085); }
 
 sq.last-dest { background-color: var(--last-dest); }
 sq.check { background-color: var(--check); }
@@ -790,25 +833,73 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .sg-wrap.choosing piece { cursor: default; }
 .sg-wrap.choosing piece.king { cursor: pointer; }
 
-/* 段の境目の短い知らせ。盤の下端に重ね、数秒で消える。 */
+/* 段の境目の幕。盤の中央に浮いて1.6秒で消える（先後が決まった・41手目）。
+   強い動きはここと終局の帯にだけ使い、ほかは静かなままにしておく。 */
 .toast {
   position: absolute;
   left: 50%;
-  bottom: 1.2rem;
+  top: 50%;
   z-index: 6;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
+  display: grid;
+  gap: .1rem;
+  justify-items: center;
+  text-align: center;
   max-width: calc(100% - 2rem);
-  padding: .5rem .95rem;
-  background: var(--ink);
+  padding: .75rem 1.5rem .8rem;
+  background: color-mix(in srgb, var(--ink) 94%, transparent);
   color: var(--paper);
   border-radius: 6px;
-  font-size: .85rem;
-  font-weight: 600;
-  box-shadow: 0 6px 20px -8px #000a;
+  box-shadow: 0 12px 32px -12px #000c;
   pointer-events: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  animation: toast-in .25s ease-out;
+}
+.toast b { font-family: var(--serif); font-size: clamp(1.1rem, 3vw, 1.6rem); font-weight: 700; letter-spacing: .08em; line-height: 1.3; }
+.toast span { font-size: .8rem; opacity: .85; }
+.toast span:empty { display: none; }
+.toast.leaving { opacity: 0; transition: opacity .35s ease; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(.96); }
+}
+/* 終局の帯。盤の上に結果と行き先。数秒で消える。パネルの結果枠と4つのボタンは残る。 */
+.result-banner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 7;
+  transform: translate(-50%, -50%);
+  width: min(22rem, calc(100% - 2rem));
+  padding: .9rem 1.1rem 1rem;
+  background: var(--paper-raised);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  box-shadow: 0 16px 40px -14px #000c;
+  text-align: center;
+  animation: toast-in .3s ease-out;
+}
+.rb-line { margin: 0; font-family: var(--serif); font-size: 1.35rem; font-weight: 700; letter-spacing: .04em; line-height: 1.3; }
+.rb-sub { margin: .15rem 0 0; font-size: .82rem; color: var(--ink-soft); }
+.rb-sub:empty { display: none; }
+.rb-actions { display: flex; gap: .5rem; margin-top: .8rem; }
+.rb-actions button {
+  flex: 1 1 0;
+  padding: .55rem .6rem;
+  background: var(--paper-raised);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font: inherit;
+  font-size: .875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rb-actions button:hover { border-color: var(--ink-soft); }
+.rb-actions button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.result-banner.leaving { opacity: 0; transition: opacity .35s ease; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+  .toast, .result-banner { animation: none; }
+  .toast.leaving, .result-banner.leaving { transition: none; }
 }
 
 /* ---- 右のパネル ---- */
@@ -882,6 +973,7 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   min-width: 0;
 }
 .step {
+  position: relative;
   flex: 1 1 0;
   min-width: 0;
   display: grid;
@@ -900,10 +992,17 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .step.wide { flex: 1.6 1 0; }
 .stepper.four .step.wide { flex: 1 1 0; }
 .step .t { font-weight: 700; overflow-wrap: anywhere; }
+/* 4段のときは1段が4remほどしか無い。段名は折らず（「先後を選／ぶ」になった）、済みの段の
+   副題は省く。英語は語の切れ目で折ってよい（Choose side が2行になるのは読める）。 */
+.stepper.four .step { font-size: .66rem; padding-inline: .25rem; }
+.stepper.four .step .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:lang(en) .stepper.four .step .t { white-space: normal; overflow-wrap: normal; }
 .step .s { color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .step .s:empty { display: none; }
 .step.done { background: color-mix(in srgb, var(--rule) 45%, transparent); color: var(--ink-soft); }
-.step.done .t::before { content: "✓ "; color: var(--ok); }
+/* 済みの印は段名の前に置かない（幅を食って段名が折れる）。右上の角に小さく。 */
+.step.done::after { content: "✓"; position: absolute; top: .1rem; right: .2rem; color: var(--ok); font-size: .6rem; line-height: 1; }
+.step.done .t { padding-right: .55rem; }
 .step.now { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .step.now .t { color: var(--accent); }
 .step.next { border-style: dashed; color: var(--ink-soft); }

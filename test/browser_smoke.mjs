@@ -141,6 +141,15 @@ try {
   })()`));
   check('玉分け将棋が選べる（価値表が読めている）',
     await evaluate(page, 'document.getElementById("mode-kings").disabled') === false);
+  // ホームの盤（homeboard.js）。起動後に布石エンジンが打ち始め、紙色の駒が描かれる。
+  const homeBoard = await evalUntil(page, `(() => {
+    const c = document.getElementById('home-board'), ctx = c.getContext('2d');
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let paper = 0;
+    for (let i = 0; i < d.length; i += 16) if (d[i] > 240 && d[i + 1] > 230 && d[i + 2] > 190 && d[i + 2] < 230) paper++;
+    return paper;
+  })()`, v => v > 50, 8000);
+  check('ホームの盤に布石エンジンの駒が落ちてくる', homeBoard > 50, `紙色の標本 ${homeBoard}`);
   await shot('01-home');
 
   // 1局通すときはレベル1（いちばん思考時間が短い）にする。movetimeMs は Game の
@@ -279,16 +288,20 @@ try {
     set(115); await wait();
     const bigOver = de.scrollWidth > de.clientWidth;
     const colW = Math.round(document.querySelector('.board-column').getBoundingClientRect().width);
-    const order = top('#seat-top') < top('.board-column') && top('.board-column') < top('#stepper')
-      && top('#stepper') < top('#actions') && top('#actions') < top('#kifu') && top('#kifu') < top('#seat-bottom');
+    const order = top('#seat-top') < top('.board-column') && top('.board-column') < top('#seat-bottom')
+      && top('#seat-bottom') < top('#stepper') && top('#stepper') < top('#actions') && top('#actions') < top('#kifu');
     set(100); await wait();
-    return { bigOver, order, full: colW === de.clientWidth, colW, clientW: de.clientWidth };
+    // 自分の席（時計）は初期表示に入っていること。秒読み中に見えないのは致命的。
+    const seat = document.getElementById('seat-bottom').getBoundingClientRect();
+    const seatVisible = seat.bottom <= innerHeight;
+    return { bigOver, order, seatVisible, seatBottom: Math.round(seat.bottom), full: colW === de.clientWidth, colW, clientW: de.clientWidth };
   })()`);
   await shot('02-mobile');
   await page.send('Emulation.clearDeviceMetricsOverride');
   await new Promise(r => setTimeout(r, 250));
   check('狭い画面で盤を広げても横スクロールが出ない', !narrow.bigOver);
-  check('狭い画面では席・盤・帯・操作・棋譜・席の順に積まれる', narrow.order);
+  check('狭い画面では席・盤・席・帯・操作・棋譜の順に積まれる', narrow.order);
+  check('狭い画面で自分の席と時計が初期表示に入る', narrow.seatVisible, `席の下端 ${narrow.seatBottom}px / 画面 844px`);
   check('狭い画面では盤が画面幅いっぱい', narrow.full, `${narrow.colW}px / 画面 ${narrow.clientW}px`);
 
   // 成りダイアログは開くまでDOMに中身が無いので、器の配置だけ先に見る。
@@ -547,7 +560,8 @@ async function layoutCheck(label) {
       .filter(e => !e.closest('.kifu') || e.classList.contains('kifu'))
       .filter(e => { const b = e.getBoundingClientRect();
         return b.width > 0 && (b.right > p.right + 1 || b.left < p.left - 1 || b.bottom > p.bottom + 1 || b.top < p.top - 1); })
-      .map(e => e.id || e.className).slice(0, 5);
+      // SVG の className は文字列でない（{} と出て何か分からなかった）。属性で読む。
+      .map(e => e.id || e.getAttribute('class') || e.tagName.toLowerCase()).slice(0, 5);
     return { narrow, dh: Math.round(p.height - c.height), hscroll: de.scrollWidth > de.clientWidth,
              outside: narrow ? [] : outside };
   })()`);
@@ -639,8 +653,15 @@ async function playKingsFirst(page) {
     `${s.top} / ${s.bottom}`);
   check('選択が棋譜に1行入り、AIの3手目が続く', s.kifu.length === 4 && s.kifu[2] === '△後手を持つ'
     && s.state === 'play' && s.tags === 0, s.kifu.join(' '));
-  check('帯の「先後を選ぶ」段に結果が残る', await evaluate(page,
-    'document.querySelectorAll("#stepper .step")[1].textContent').then(v => v.includes('あなた') && v.includes('後手')));
+  check('帯の「先後を選ぶ」段に結果が残る（副題は側、誰が選んだかは title）', await evaluate(page,
+    `(() => { const s = document.querySelectorAll("#stepper .step")[1];
+      return s.textContent.includes('後手') && s.title.includes('あなた') && s.title.includes('後手'); })()`));
+  // 4段の帯で段名が語の途中で折れない（「先後を選／ぶ」になっていた）。1行の高さに収まること。
+  check('4段の帯の段名が1行に収まり、切れてもいない', await evaluate(page, `(() => {
+    const ts = [...document.querySelectorAll('#stepper .step .t')];
+    return ts.every(e => e.getBoundingClientRect().height < parseFloat(getComputedStyle(e).lineHeight) * 1.5
+      && e.scrollWidth <= e.clientWidth + 1);
+  })()`), await evaluate(page, `[...document.querySelectorAll('#stepper .step .t')].map(e => e.scrollWidth + '/' + e.clientWidth).join(' ')`));
   check('後手の駒台から打てる', await evaluate(page,
     'document.querySelectorAll("sg-hand-wrap.hand-bottom piece.gote").length') === 8);
   await layoutCheck('先後が決まった');
@@ -674,7 +695,7 @@ async function playKingsFirst(page) {
   await evalUntil(page, 'document.getElementById("panel").dataset.phase', v => v === 'over', 10000);
   const note = await evaluate(page, 'document.getElementById("result-note").textContent');
   check('終局後に置く役・両玉・誰が先手を持ったか・表の値が出る',
-    /置く役 AI/.test(note) && /両玉 \d[a-i]\/\d[a-i]/.test(note) && /表の先手勝率 \d+\.\d%/.test(note), note);
+    /置く役 AI/.test(note) && /両玉 [１-９][一二三四五六七八九]・[１-９][一二三四五六七八九]/.test(note) && /表の先手勝率 \d+\.\d%/.test(note), note);
   await shot('07-kings-over');
   await evaluate(page, 'document.getElementById("logo").click()');   // 終局後なので確認は出ない
   await evalUntil(page, 'document.getElementById("view-home").hidden', v => v === false, 5000);

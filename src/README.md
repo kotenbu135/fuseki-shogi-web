@@ -13,6 +13,8 @@
 | `normal.js` | やねうら王WASMとのUSIの往復 |
 | `board.js` | [shogiground](https://github.com/WandererXII/shogiground) の生成とGameからの同期 |
 | `sound.js` | 対局音。音源は持たずWebAudioで合成する |
+| `homeboard.js` | ホームの盤。自分専用の Fuseki（WASMをもう1つ）に方策で40手打たせ、canvas に駒を落として見せる。対局には関わらない |
+| `og/` | 共有プレビュー（og:image）の画像2枚。`scripts/og.mjs` が固定シードの布石を描く。ビルドは写すだけ（Pages のビルド環境に Chrome が無い） |
 | `pieces/` | 駒の画像30枚（kanji_light / CC BY 4.0。[THIRD_PARTY.md](../THIRD_PARTY.md)） |
 | `index.html` / `style.css` | 画面（テンプレート。`{{key}}` を build.mjs が2言語に展開する）。見た目は lishogi に寄せてある（下記） |
 | `page.html` / `pages/<lang>/` | ルールとコラムのページ。殻と中身 |
@@ -30,6 +32,12 @@
 棋譜より後ろに置く。** grid は `display:none` の子を数えないので、前に置くと棋譜が `auto` の行へ
 落ちて潰れる（実際に起きた）。狭い画面では `display: contents` で `.layout` の直接の子に
 並べ替える（席・盤・帯・状態・操作・棋譜・グラフ・エンジン・席の順）。
+
+**盤の上に重ねるものは3つ**（`.board-column` の中、shogiground の外）。先後を選ぶときの両玉の札と輪（`#king-tags`）、
+段の境目の幕（`#toast`。先後が決まった・41手目。盤の中央に1.6秒）、終局の帯（`#result-banner`。結果と
+もう一局・検討。1局に一度、5秒か盤を押すまで）。強い動きはこの2つの境目にだけ使い、ほかは静かなまま。
+布石フェーズは手番側の陣（置ける四段）を `.sg-wrap.zone-bottom / .zone-top` で淡く塗る（`sq` の並びは表示上の
+位置なので、手前の4段は46番目から）。特異度は `:where()` で `sq` と同じに落とし、last-dest などの塗りに負けるようにしてある。
 
 **評価は棋譜の行ごとに持つ**（`kifu[i].eval`。その手を指した後の局面の値、**常に先手から見た値**）。
 やねうら王の探索1回で2行が埋まる: 根の値は直前の手の行、同じ値をAIの手の行にも写す

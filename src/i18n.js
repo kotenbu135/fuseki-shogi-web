@@ -48,6 +48,11 @@ const DICT = {
     ja: '一方が両方の玉を置き、もう一方が先後を選ぶ。先手の利を対局者が自分で均す。',
     en: 'One player places both kings, the other picks a side. The players balance the first-move advantage themselves.',
   },
+  home_board_label: { ja: 'AIが打つ布石', en: 'A placement played by the AI' },
+  home_board_cap: {
+    ja: '布石エンジンがいま打っている布石。初期配置は約10³⁷通りあり、同じ盤は二度と出ない。',
+    en: 'The placement engine placing a fuseki right now. About 10³⁷ starting positions exist; no two boards are alike.',
+  },
   home_intro_head: { ja: 'はじめての方へ', en: 'New here?' },
   home_intro: {
     ja: 'ふつうの将棋との違いは三つ。空の盤から始める、20枚を自陣四段目までに打つ、41手目から動かす。',
@@ -167,6 +172,7 @@ const DICT = {
   status_paused_sub: { ja: '「再開」で続きを見る。', en: 'Press Resume to continue.' },
   engine_table: { ja: '両玉の価値表', en: 'king-pair value table' },
   engine_policy: { ja: '布石エンジン', en: 'placement engine' },
+  engine_policy_random: { ja: '布石エンジン（確率で選ぶ。低い手も出る）', en: 'placement engine (sampled; low-probability moves happen)' },
   engine_yaneuraou: { ja: 'やねうら王', en: 'YaneuraOu' },
   status_reviewing: { ja: '{n}手目までを表示中', en: 'Showing the position after move {n}' },
   status_reviewing_sub: { ja: '盤には触れない。最新へ戻すと指せる（→ / End）。', en: 'The board is locked. Go back to the latest position to play (→ / End).' },
@@ -223,7 +229,8 @@ const DICT = {
   chart_from41: { ja: '41手目〜', en: 'move 41+' },
   chart_tip: { ja: '{n}手目 {v}', en: 'move {n}: {v}' },
   eval_table: { ja: '表の先手勝率 {p}%', en: 'table: Sente {p}%' },
-  eval_policy_prob: { ja: '採用手の確率 {p}%', en: 'move probability {p}%' },
+  // 方策の自信であって優劣ではない。「採用手の確率 0.3%」は観る人に「0.3%の手を指した」と読めた。
+  eval_policy_prob: { ja: 'この手を選ぶ確率 {p}%', en: 'chance of this move {p}%' },
   eval_policy_win: { ja: '勝率 {p}%（手番側）', en: 'win rate {p}% (side to move)' },
   eval_mate: { ja: '{n}手詰', en: 'mate in {n}' },
   eval_cp: { ja: '{cp}（深さ{d}）', en: '{cp} (depth {d})' },
@@ -246,7 +253,7 @@ const DICT = {
   reason_ai_nyugyoku_declaration: { ja: 'AIの入玉宣言', en: 'AI declared an entering king' },
   reason_engine_illegal_move: { ja: 'エンジンが非合法手を返した', en: 'engine returned an illegal move' },
   summary_kings: {
-    ja: '置く役 {placer} · 両玉 {kb}/{kw} · {chooser}が{side}を持った · 表の先手勝率 {p}%',
+    ja: '置く役 {placer} · 両玉 {kb}・{kw} · {chooser}が{side}を持った · 表の先手勝率 {p}%',
     en: 'Placer {placer} · kings {kb}/{kw} · {chooser} took {side} · table: Sente {p}%',
   },
   side_sente: { ja: '先手 ☗', en: 'Sente ☗' },
@@ -258,6 +265,9 @@ const DICT = {
 
   toast_side_decided: { ja: '先後が決まった。あなたは{side}。', en: 'Side decided. You play {side}.' },
   toast_normal: { ja: '41手目。ここから普通の将棋。', en: 'Move 41. Ordinary shogi from here.' },
+  curtain_normal: { ja: 'ここから将棋', en: 'Shogi from here' },
+  curtain_side: { ja: '先後が決まった', en: 'Side decided' },
+  toast_side_sub: { ja: 'あなたは{side}', en: 'You play {side}' },
 
   // ---- 棋譜の受け渡し ----
   io_title: { ja: '棋譜の受け渡し', en: 'Game record' },

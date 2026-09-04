@@ -11,10 +11,12 @@ import { FusekiPolicy } from './policy.js';
 import { NormalEngine, loadYaneuraOuFactory } from './normal.js';
 import { Game, SENTE, GOTE, positionMoveDests, positionDropDests, promotionConfig, usiDropSquare } from './game.js';
 import { parseSquareName, parseUsi, makeSquareName } from 'shogiops/util';
+import { makeJapaneseSquare } from 'shogiops/notation/util';
 import { makeSfen } from 'shogiops/sfen';
 import { KingTable } from './kings.js';
 import { createBoard, showIdleBoard, showSnapshot, showPosition, setShapes, syncBoard } from './board.js';
 import { Sound, VOICES } from './sound.js';
+import { HomeBoard } from './homeboard.js';
 import { t, LANG } from './i18n.js';
 
 const ASSETS = {
@@ -66,6 +68,9 @@ const ui = {
   showEval: el('opt-show-eval'), evaluation: el('readout-eval'),
   engine: el('engine'), engineHead: el('engine-head'), enginePv: el('engine-pv'),
   gauge: el('eval-gauge'), kingTags: el('king-tags'), toast: el('toast'),
+  toastLine: el('toast-line'), toastSub: el('toast-sub'),
+  banner: el('result-banner'), bannerLine: el('rb-line'), bannerSub: el('rb-sub'),
+  bannerAgain: el('rb-again'), bannerAnalyze: el('rb-analyze'),
   chart: el('eval-chart'), chartSvg: el('eval-chart-svg'),
   resultActions: el('result-actions'), resultNote: el('result-note'),
   again: el('btn-again'), replay: el('btn-replay'), copyKifu: el('btn-copy-kifu'), analyze: el('btn-analyze'),
@@ -385,8 +390,18 @@ function showView(name) {
   if (name === 'play') {
     ensureBoard();
     render();
+    homeBoard.pause();     // 対局の裏で方策を回さない
+  } else {
+    homeBoard.fit();
+    homeBoard.resume();
   }
 }
+// ホームの盤。タブが隠れているあいだも止める。
+const homeBoard = new HomeBoard(el('home-board'));
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) homeBoard.pause();
+  else if (currentView() === 'home') homeBoard.resume();
+});
 
 /** URL に合わせて画面を出す。対局中にホームへ戻ろうとしたら確認する。 */
 function route() {
@@ -480,6 +495,9 @@ async function boot() {
     engines = { fuseki, policy, engine, kingTable };
     ui.newGame.disabled = false;
     setBoot(t('ready'), threads === 1 ? t('ready_single_thread') : '');
+    // ホームの盤に布石を打たせる。自分専用のWASMを起こすので対局の局面には触らない。
+    if (currentView() === 'home') homeBoard.start({ fusekiUrl: ASSETS.fuseki, policy }).catch(e => console.warn(e));
+    else homeBoard.start({ fusekiUrl: ASSETS.fuseki, policy }).then(() => homeBoard.pause()).catch(e => console.warn(e));
   } catch (e) {
     setBoot(t('boot_failed'), e.message, true);
     console.error(e);
@@ -916,6 +934,11 @@ function renderBoard() {
   wrap.classList.toggle('analyzing', !!analysis);
   wrap.classList.toggle('phase-normal', game.phase === 'normal' || (game.phase === 'over' && !!game.position));
   wrap.classList.toggle('kings-only', game.phase === 'kings' && game.isHumanTurn && !reviewing);
+  // 布石フェーズは手番側の陣（置ける四段）を淡く塗る。手前か向こうかは盤の向きで決まる。
+  const zone = !reviewing && !analysis && (game.phase === 'fuseki' || game.phase === 'kings') && game.turnColor
+    ? (game.turnColor === orientation ? 'bottom' : 'top') : null;
+  wrap.classList.toggle('zone-bottom', zone === 'bottom');
+  wrap.classList.toggle('zone-top', zone === 'top');
   if (analysis) {
     // 検討。通常フェーズの局面なら両方の色を動かせる。布石の局面は控えのまま（印だけ）。
     const { pos, row, lastDests } = analysisPosition();
@@ -1030,8 +1053,10 @@ function renderStepper() {
         : state === 'next' ? t('step_kings_sub') : '';
     } else if (s === 'choose') {
       sub = state === 'now' ? t(game.humanRole === 'chooser' ? 'step_turn_you' : 'step_turn_ai')
-        : state === 'done' && game.chosen
-          ? t('step_chosen', { who: who(game.humanRole === 'chooser'), side: sideName(game.chosen) }) : '';
+        : state === 'done' && game.chosen ? sideName(game.chosen) : '';
+      // 誰が選んだかは幅が足りず入らない（「あなた → …」で切れた）。title に回す。
+      if (state === 'done' && game.chosen)
+        li.title = t('step_chosen', { who: who(game.humanRole === 'chooser'), side: sideName(game.chosen) });
     } else if (s === 'fuseki') {
       const placed = game.fusekiMoves.length - (kf ? 2 : 0), total = kf ? 38 : 40;
       if (state === 'now') {
@@ -1079,6 +1104,7 @@ function render() {
     ui.ioSfen.value = '';
     renderNav();
     renderKingTags();
+    renderBanner();
     return;
   }
   if (game.phase !== 'choose') pendingSide = null;
@@ -1165,6 +1191,7 @@ function render() {
     setStatus(line, sub);
   }
   renderKingTags();
+  renderBanner();
   announcePhase();
 }
 
@@ -1174,21 +1201,60 @@ function announcePhase() {
   phaseSeen = game.phase;
   if (prev === null || prev === game.phase) return;
   if (prev === 'choose' && game.phase === 'fuseki' && game.humanColor) {
-    showToast(t('toast_side_decided', { side: sideName(game.humanColor) }));
+    showToast(sideName(game.humanColor), t('curtain_side'));
     sound.play('phase');
   } else if (game.phase === 'normal' && prev !== 'normal') {
-    showToast(t('toast_normal'));
+    showToast(t('curtain_normal'), t('toast_normal'));
     sound.play('phase');
   }
 }
 
-let toastTimer = null;
-function showToast(text) {
-  ui.toast.textContent = text;
+/** 盤の中央の幕。1.6秒出て0.35秒で消える。動きは状態変化にだけ使う（ほかは静かに）。 */
+let toastTimer = null, toastTimer2 = null;
+function showToast(line, sub = '') {
+  ui.toastLine.textContent = line;
+  ui.toastSub.textContent = sub;
+  ui.toast.classList.remove('leaving');
+  ui.toast.hidden = true;
+  void ui.toast.offsetWidth;   // 続けて出したときも入りの動きをやり直す
   ui.toast.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { ui.toast.hidden = true; }, 3200);
+  clearTimeout(toastTimer); clearTimeout(toastTimer2);
+  toastTimer = setTimeout(() => { ui.toast.classList.add('leaving'); }, 1600);
+  toastTimer2 = setTimeout(() => { ui.toast.hidden = true; ui.toast.classList.remove('leaving'); }, 2000);
 }
+
+// ---- 終局の帯 ----
+//
+// 盤の上に結果と行き先（もう一局・検討）を重ねる。1局に一度だけ出て、5秒で消えるか、
+// 盤を押すか、さかのぼるか、検討に入るかで引く。パネルの結果枠は消えないので、
+// 帯を見逃しても行き先は失われない。
+let bannerFor = null, bannerTimer = null, bannerTimer2 = null;
+function hideBanner(now = false) {
+  clearTimeout(bannerTimer); clearTimeout(bannerTimer2);
+  if (ui.banner.hidden) return;
+  if (now) { ui.banner.hidden = true; ui.banner.classList.remove('leaving'); return; }
+  ui.banner.classList.add('leaving');
+  bannerTimer2 = setTimeout(() => { ui.banner.hidden = true; ui.banner.classList.remove('leaving'); }, 400);
+}
+function renderBanner() {
+  const over = !!game && game.phase === 'over' && !analysis && viewPly === null;
+  if (!over) { if (bannerFor !== game) bannerFor = null; hideBanner(true); return; }
+  if (bannerFor === game) return;   // この対局では出した
+  bannerFor = game;
+  const { who, why } = resultLine();
+  ui.bannerLine.textContent = who;
+  ui.bannerSub.textContent = why;
+  // 幕（先後が決まった・41手目）が出ている最中に終局したら、幕は引く。重なると読めない。
+  clearTimeout(toastTimer); clearTimeout(toastTimer2);
+  ui.toast.hidden = true; ui.toast.classList.remove('leaving');
+  ui.banner.classList.remove('leaving');
+  ui.banner.hidden = false;
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => hideBanner(), 5000);
+}
+ui.bannerAgain.addEventListener('click', () => { hideBanner(true); newGameClicked(); });
+ui.bannerAnalyze.addEventListener('click', () => { hideBanner(true); ui.analyze.click(); });
+el('board').addEventListener('pointerdown', () => hideBanner());
 
 /** 先後の2択と確定ボタン。押した玉があれば、そちらに縁を立てて確定を開ける。 */
 function renderChoice() {
@@ -1216,8 +1282,10 @@ function resultNote() {
   const { sente, gote } = game.kingSquares;
   let p = '—';
   try { p = (engines.kingTable.v(sente, gote) * 100).toFixed(1); } catch { /* 表に無ければ出さない */ }
+  // マスは棋譜と同じ表記で（日本語なら「４七」。表のキー 4g をそのまま出すと英字が混じる）。
+  const sq = key => (LANG === 'en' ? key : makeJapaneseSquare(parseSquareName(key)));
   return t('summary_kings', {
-    placer: t(game.humanRole === 'placer' ? 'you' : 'AI'), kb: sente, kw: gote,
+    placer: t(game.humanRole === 'placer' ? 'you' : 'AI'), kb: sq(sente), kw: sq(gote),
     chooser: t(game.humanRole === 'chooser' ? 'You' : 'AI'), side: sideName(game.chosen), p,
   });
 }
@@ -1243,7 +1311,7 @@ function renderEngine() {
   ui.engine.hidden = false;
   ui.evaluation.textContent = formatEval(ev);
   if (ev.kind === 'policy' || ev.kind === 'kings') {
-    ui.engineHead.textContent = `· ${t(ev.kind === 'policy' ? 'engine_policy' : 'engine_table')}`;
+    ui.engineHead.textContent = `· ${t(ev.kind === 'policy' ? 'engine_policy_random' : 'engine_table')}`;
     ui.enginePv.textContent = '';
     return;
   }
@@ -1705,7 +1773,10 @@ function renderChart() {
   const split = i41 >= 0 ? i41 : i40 >= 0 ? i40 + 1 : -1;
   if (split >= 0 && split < n) {
     add('line', { class: 'divider', x1: x(split), x2: x(split), y1: CHART.top, y2: H - CHART.bottom });
-    add('text', { x: x(split) + 3, y: CHART.top + 9 }, t('chart_from41'));
+    // 区切りは棋譜の右寄りに来ることが多い。右に書くと枠の外へはみ出て切れる（実際に切れていた）
+    // ので、右半分では線の左に書く。
+    const left = x(split) > W * .6;
+    add('text', { x: x(split) + (left ? -3 : 3), y: CHART.top + 9, 'text-anchor': left ? 'end' : 'start' }, t('chart_from41'));
   }
   // 布石の区間に評価が無ければ、そう書いておく。最後の布石の行（40手目）は41手目の局面
   // そのものなので評価が付く。見るのはその手前まで。

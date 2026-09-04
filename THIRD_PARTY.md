@@ -50,7 +50,8 @@ Emscripten が無く、CI側で `wasm/build.sh` を回せないため。成果�
   `ui/@build/pieces/assets/standard/kanji_light`（同リポジトリの `COPYING.md`）
 
 CC BY 4.0 は表示のみを求めるので、GPL-3.0-only の配布物に同梱できる。この節が
-その表示にあたる。ファイル名の `0`/`1` は先手/後手で、後手の駒は**回転済みの
+その表示にあたる。共有プレビューの画像 `og/og-*.png`（`scripts/og.mjs` が描く）にも
+この駒が写っているので、画像の縁に表示を入れてある。ファイル名の `0`/`1` は先手/後手で、後手の駒は**回転済みの
 別ファイル**として入っている。CSSで回してはいけない（`src/style.css` の注記を参照）。
 
 **盤の画像は取り込んでいない。** lishogi の `images/boards` は駒セットと違って
