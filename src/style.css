@@ -932,6 +932,18 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   border-radius: 50%;
   background: var(--rule);
 }
+/* 役の札（玉分け将棋）。名前の隣に付け、時計は右端のまま。 */
+.seat-role {
+  flex: 0 0 auto;
+  margin-right: auto;
+  padding: .05rem .4rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font-size: .68rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
 .seat.turn { border-color: var(--accent); }
 /* AIが考えている間。通常フェーズは1手に数秒かかるので、
    何も動かないと固まったように見える。手番の丸印を脈打たせる。 */
@@ -1097,6 +1109,15 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .eval-chart text.tip { fill: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .kifu-box { display: flex; flex-direction: column; min-width: 0; }
+/* 役の見出し行。棋譜の枠の上に一行。 */
+.kifu-head {
+  margin: 0 0 .25rem;
+  padding: 0 .3rem;
+  font-size: .72rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  letter-spacing: .02em;
+}
 .kifu {
   margin: 0;
   padding: .3rem;

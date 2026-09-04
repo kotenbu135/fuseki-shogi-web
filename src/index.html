@@ -189,6 +189,8 @@
            2つの席で挟む。時計は1手ごとの消費ではなく、その色が考えた累計。 -->
       <div class="seat" id="seat-top">
         <span class="seat-name" id="seat-top-name">{{seat_gote}}</span>
+        <!-- 玉分け将棋の役。先後が決まってから終局まで残す（色と役は一致しない）。 -->
+        <span class="seat-role" id="seat-top-role" hidden></span>
         <span class="clock" id="clock-top"></span>
       </div>
 
@@ -241,6 +243,8 @@
       </div>
 
       <div class="kifu-box">
+        <!-- 玉分け将棋の役と、誰がどちらを持ったか。書き出しの見出しと同じ文を対局中も見せる。 -->
+        <p class="kifu-head" id="kifu-head" hidden></p>
         <ol class="kifu" id="kifu" aria-label="{{kifu_heading}}"></ol>
         <!-- 検討で試している変化。本譜の下に1本だけ。 -->
         <ol class="variation" id="variation" aria-label="{{variation_head}}" hidden></ol>
@@ -272,6 +276,7 @@
 
       <div class="seat" id="seat-bottom">
         <span class="seat-name" id="seat-bottom-name">{{seat_sente}}</span>
+        <span class="seat-role" id="seat-bottom-role" hidden></span>
         <span class="clock" id="clock-bottom"></span>
       </div>
     </aside>

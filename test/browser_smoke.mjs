@@ -602,6 +602,9 @@ async function playKingsFirst(page) {
     tags: document.querySelectorAll('#king-tags .king-label').length,
     gote: document.querySelector('.sg-wrap').classList.contains('orientation-gote'),
     steps: [...document.querySelectorAll('#stepper .step')].map(s => s.className.replace('step ', '')),
+    roleTop: document.getElementById('seat-top-role').hidden ? null : document.getElementById('seat-top-role').textContent,
+    roleBottom: document.getElementById('seat-bottom-role').hidden ? null : document.getElementById('seat-bottom-role').textContent,
+    head: document.getElementById('kifu-head').hidden ? null : document.getElementById('kifu-head').textContent,
   })`);
   // ホームに居る。ルールを玉分け将棋、役を選ぶ役にして始める。
   await evaluate(page, `(() => {
@@ -611,12 +614,26 @@ async function playKingsFirst(page) {
   check('ルールを玉分け将棋にすると「手番」が消えて「役」が出る', await evaluate(page,
     'document.getElementById("lbl-color").hidden && !document.getElementById("lbl-role").hidden'
     + ' && getComputedStyle(document.getElementById("lbl-color")).display === "none"'));
+  // AIが両玉を置くのは表引きで一瞬なので、その間の状態欄は後から観測できない。
+  // 状態欄の書き換えを記録しておき、玉を置く段のあいだに何と言ったかを見る。
+  await evaluate(page, `(() => {
+    window.__subs = [];
+    const sub = document.getElementById('status-sub'), panel = document.getElementById('panel');
+    new MutationObserver(() => window.__subs.push([panel.dataset.phase, sub.textContent]))
+      .observe(sub, { childList: true, characterData: true, subtree: true });
+  })()`);
   await click(page, await center(page, '#btn-new'));
   await evalUntil(page, 'document.getElementById("panel").dataset.state', v => v === 'choose', 30000);
   let s = await status();
   check('AIが両玉を置くと先後を選ぶ番になり、両玉に札が付く',
     s.state === 'choose' && s.pieces === 2 && s.tags === 2 && s.phase === 'choose',
     `${s.state} / 盤上${s.pieces}枚 / 札${s.tags} / ${s.line}`);
+  const subsSeen = await evaluate(page, 'window.__subs');
+  check('AIが両玉を置いている間、状態欄が「あなたは選ぶ役」と言う',
+    subsSeen.some(([ph, text]) => ph === 'kings' && text.startsWith('あなたは選ぶ役')),
+    JSON.stringify(subsSeen));
+  check('先後が決まる前は席に役の札が無く、棋譜の見出しは役だけ',
+    s.roleTop === null && s.roleBottom === null && s.head === '置く役 AI・選ぶ役 あなた', `${s.head}`);
   check('フェーズ帯が4段で、先後を選ぶ段が今', s.steps.length === 4 && s.steps[1].includes('now') && s.steps[0].includes('done'),
     s.steps.join(' | '));
   check('選ぶ前は席に「あなた」が無く、確定は押せない',
@@ -653,6 +670,14 @@ async function playKingsFirst(page) {
     `${s.top} / ${s.bottom}`);
   check('選択が棋譜に1行入り、AIの3手目が続く', s.kifu.length === 4 && s.kifu[2] === '△後手を持つ'
     && s.state === 'play' && s.tags === 0, s.kifu.join(' '));
+  check('先後が決まると席に役の札が付く（手前のあなたが選ぶ役、向こうのAIが置く役）',
+    s.roleBottom === '選ぶ役' && s.roleTop === '置く役', `${s.roleTop} / ${s.roleBottom}`);
+  check('棋譜の見出しに役と、誰がどちらを持ったかが出る',
+    s.head === '置く役 AI・選ぶ役 あなた · あなたが後手 ☖を持つ', `${s.head}`);
+  check('役の札が席の1行に収まる', await evaluate(page, `(() => {
+    const seat = document.getElementById('seat-bottom'), chip = document.getElementById('seat-bottom-role');
+    return chip.getBoundingClientRect().height < seat.getBoundingClientRect().height - 4
+      && Math.abs(chip.getBoundingClientRect().top - document.getElementById('seat-bottom-name').getBoundingClientRect().top) < 8; })()`));
   check('帯の「先後を選ぶ」段に結果が残る（副題は側、誰が選んだかは title）', await evaluate(page,
     `(() => { const s = document.querySelectorAll("#stepper .step")[1];
       return s.textContent.includes('後手') && s.title.includes('あなた') && s.title.includes('後手'); })()`));
@@ -727,6 +752,9 @@ async function playKingsFirst(page) {
   check('AIが先後を選ぶと自分の色が決まり、案内にAIの選択が出る',
     s.bottom.startsWith('あなた') && /AIが(先手 ☗|後手 ☖)を持った/.test(s.sub) && s.kifu.length >= 3
     && s.kifu[2].endsWith('を持つ'), `${s.bottom} / ${s.sub} / ${s.kifu.slice(0, 4).join(' ')}`);
+  check('置く役のときは手前の席が置く役、向こうのAIが選ぶ役で、見出しにAIの選択が出る',
+    s.roleBottom === '置く役' && s.roleTop === '選ぶ役'
+    && /^置く役 あなた・選ぶ役 AI · AIが(先手 ☗|後手 ☖)を持つ$/.test(s.head), `${s.roleTop} / ${s.roleBottom} / ${s.head}`);
   check('玉分け将棋で未処理の例外が無い', exceptions().length === errorsAtStart,
     exceptions().slice(errorsAtStart).join(' / '));
   // 次の確認のために終わらせてホームへ。

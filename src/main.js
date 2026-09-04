@@ -82,6 +82,7 @@ const ui = {
   navNext: el('nav-next'), navLast: el('nav-last'),
   seatTop: el('seat-top'), seatBottom: el('seat-bottom'),
   seatTopName: el('seat-top-name'), seatBottomName: el('seat-bottom-name'),
+  seatTopRole: el('seat-top-role'), seatBottomRole: el('seat-bottom-role'), kifuHead: el('kifu-head'),
   clockTop: el('clock-top'), clockBottom: el('clock-bottom'),
 };
 
@@ -1000,6 +1001,15 @@ function renderSeats() {
   };
   ui.seatTopName.textContent = label(top);
   ui.seatBottomName.textContent = label(bottom);
+  // 役の札。先後が決まってから終局まで残す。選んだ側の色が選ぶ役で、もう一方が置く役。
+  // 色と役は一致しないので、席の名前だけでは3手目を過ぎると思い出せない。
+  const roleChip = (node, c) => {
+    const show = game.mode === 'kings-first' && game.chosen !== null;
+    node.hidden = !show;
+    node.textContent = show ? t(c === game.chosen ? 'role_chip_chooser' : 'role_chip_placer') : '';
+  };
+  roleChip(ui.seatTopRole, top);
+  roleChip(ui.seatBottomRole, bottom);
   ui.clockTop.textContent = clockText(top);
   ui.clockBottom.textContent = clockText(bottom);
   // 残り30秒を切ったら色を変える。秒読み中は常に立てる。
@@ -1017,6 +1027,22 @@ function renderSeats() {
   const thinking = busy && turn !== null && turn !== game.humanColor;
   ui.seatTop.classList.toggle('thinking', thinking && turn === top);
   ui.seatBottom.classList.toggle('thinking', thinking && turn === bottom);
+}
+
+/** 棋譜の見出し行（玉分け将棋だけ）。役と、決まっていれば誰がどちらを持ったか。
+ *  書き出しの見出しと同じ文で、対局中も棋譜の上に残す。 */
+function renderKifuHead() {
+  const show = !!game && game.mode === 'kings-first';
+  ui.kifuHead.hidden = !show;
+  if (!show) { ui.kifuHead.textContent = ''; return; }
+  const roles = t(game.spectate ? 'kifu_roles_spectate'
+    : game.humanRole === 'placer' ? 'kifu_roles_you_placer' : 'kifu_roles_you_chooser');
+  const took = game.chosen === null ? ''
+    : ` · ${t('kifu_head_took', {
+      who: t(!game.spectate && game.humanRole === 'chooser' ? 'You' : 'AI'),
+      side: sideName(game.chosen),   // 「後手 ☖」。記号込み
+    })}`;
+  ui.kifuHead.textContent = roles + took;
 }
 
 /** 通常フェーズに入ってから人間が指したか。41手目の案内を引っ込める合図に使う。
@@ -1102,6 +1128,8 @@ function render() {
     ui.undo.hidden = ui.resign.hidden = false;
     ui.pause.hidden = ui.abort.hidden = true;
     ui.ioSfen.value = '';
+    ui.seatTopRole.hidden = ui.seatBottomRole.hidden = true;
+    renderKifuHead();
     renderNav();
     renderKingTags();
     renderBanner();
@@ -1124,6 +1152,7 @@ function render() {
   ui.panel.dataset.phase = game.phase;
   tickClock(game.phase === 'over' ? null : game.turnColor);
   renderSeats();
+  renderKifuHead();
   renderStepper();
   renderKifu();
   renderNav();
@@ -1186,7 +1215,9 @@ function render() {
   } else {
     const line = t(game.phase === 'kings' ? 'status_ai_kings'
       : game.phase === 'choose' ? 'status_ai_choose' : 'status_ai_thinking');
-    const sub = t(game.phase === 'kings' || game.phase === 'choose' ? 'engine_table'
+    // AIが両玉を置いている間は、自分が選ぶ役だと言う。役をランダムにした人が自分の役を知る最初の場面。
+    const sub = t(game.phase === 'kings' ? 'status_ai_kings_sub'
+      : game.phase === 'choose' ? 'engine_table'
       : game.phase === 'fuseki' ? 'engine_policy' : 'engine_yaneuraou');
     setStatus(line, sub);
   }
