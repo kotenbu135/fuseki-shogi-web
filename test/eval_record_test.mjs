@@ -170,7 +170,7 @@ await check('2手目の行に表の値が入る（置いたのが人間でも）
   for (const fb of '123456789') for (const rb of 'fghi')
     for (const fw of '123456789') for (const rw of 'abcd') pairs[`${fb}${rb},${fw}${rw}`] = { v: 0.5 };
   pairs['5i,5a'] = { v: 0.62 };
-  const table = new KingTable({ format: 'king_pair_table/1', model: 'iter171.npz', band: ['9i,1a'], pairs });
+  const table = new KingTable({ format: 'king_pair_table/1', model: 'iter272.npz', band: ['9i,1a'], pairs });
   const g = new Game({ fuseki, policy: null, engine: null, mode: 'kings-first', humanRole: 'placer', kingTable: table });
   g.playFusekiDrop('K*5i');
   eq(g.kifu[0].eval, undefined, '1手目には無い');
