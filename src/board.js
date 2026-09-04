@@ -5,7 +5,8 @@
 // 「盤には映っているがルール上は存在しない駒」が生まれうる）。
 import { Shogiground } from 'shogiground';
 import { handsToSfen } from 'shogiground/sfen';
-import { SENTE, GOTE } from './game.js';
+import { makeSfen } from 'shogiops/sfen';
+import { SENTE, GOTE, positionHands } from './game.js';
 
 // 布石フェーズでは玉も持ち駒から打つ。shogigroundの既定（state.js）は玉を含まないので足す。
 export const HAND_ROLES = ['king', 'rook', 'bishop', 'gold', 'silver', 'knight', 'lance', 'pawn'];
@@ -39,12 +40,36 @@ export function createBoard({ wrapEl, orientation, onDrop, onMove }) {
       draggable: { showGhost: true, deleteOnDropOff: false },
       movable: { free: false, showDests: true, events: { after: onMove } },
       droppable: { free: false, showDests: true, events: { after: onDrop } },
-      // 矢印描画は使わない。visibleを落とさないと、盤の中にSVGが2枚
-      // 通常フローで挿さって盤の高さが正方形でなくなる。
-      drawable: { enabled: false, visible: false },
+      // 利用者の手描きは使わない（enabled: false）。検討の候補手を矢印で出すので
+      // visible は立てる。盤の中に挿さる SVG は style.css が absolute に固定している
+      // （.sg-shapes / .sg-custom-svgs）ので、盤の高さは崩れない。
+      drawable: { enabled: false, visible: true, autoShapes: [] },
     },
     { board: wrapEl },
   );
+}
+
+/** 盤に矢印や印を重ねる（検討の候補手）。空を渡すと消える。 */
+export function setShapes(sg, shapes) {
+  sg.setAutoShapes(shapes);
+}
+
+/**
+ * 検討の局面（shogiops の Position）を盤へ映す。対局の局面とは別に、変化の局面を持てる。
+ * activeColor を 'both' にすると、手番側の駒がどちらの色でも動かせる（movable.dests は手番側だけ）。
+ */
+export function showPosition(sg, position, { lastDests = [], movable, droppable, promotion, active = true, shapes = [] }) {
+  sg.set({
+    sfen: { board: makeSfen(position).split(' ')[0], hands: handsToSfen(positionHands(position), HAND_ROLES) },
+    turnColor: position.turn,
+    activeColor: active ? 'both' : undefined,
+    lastDests,
+    checks: position.isCheck() ? position.turn : false,
+    movable: { dests: active ? movable : new Map() },
+    droppable: { dests: active ? droppable : new Map() },
+    promotion,
+    drawable: { autoShapes: shapes },
+  });
 }
 
 /**
@@ -68,6 +93,7 @@ export function showIdleBoard(sg) {
     checks: false,
     movable: { dests: new Map() },
     droppable: { dests: new Map() },
+    drawable: { autoShapes: [] },
   });
 }
 
@@ -75,7 +101,7 @@ export function showIdleBoard(sg) {
  * 棋譜をさかのぼって表示する。控え（Game._snapshot）をそのまま流し込む。
  * activeColor を空にして触れなくするのは showIdleBoard と同じ理由。
  */
-export function showSnapshot(sg, snap) {
+export function showSnapshot(sg, snap, shapes = []) {
   sg.set({
     sfen: { board: snap.board, hands: handsToSfen(snap.hands, HAND_ROLES) },
     activeColor: undefined,
@@ -83,6 +109,7 @@ export function showSnapshot(sg, snap) {
     checks: false,
     movable: { dests: new Map() },
     droppable: { dests: new Map() },
+    drawable: { autoShapes: shapes },
   });
 }
 
@@ -104,5 +131,6 @@ export function syncBoard(sg, game) {
     movable: { dests: humanTurn ? game.moveDests() : new Map() },
     droppable: { dests: humanTurn ? game.dropDests() : new Map() },
     promotion: game.promotion(),
+    drawable: { autoShapes: [] },
   });
 }

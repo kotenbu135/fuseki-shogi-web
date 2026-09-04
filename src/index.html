@@ -73,15 +73,23 @@
           <input type="radio" name="mode" id="mode-standard" value="standard" checked>
           <span class="mode-name">{{mode_standard}}</span>
           <span class="mode-desc">{{mode_standard_desc}}</span>
-          <span class="mode-steps"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span>
-          <span class="mode-flow">{{mode_standard_steps}}</span>
+          <!-- 1局の流れ。対局画面のフェーズ帯（#stepper）と同じ形にして、ここで見た帯が
+               対局画面にそのまま出るようにする。凡例の要る図にしない。 -->
+          <ol class="stepper mini" aria-label="{{home_flow}}">
+            <li class="step wide"><span class="t">{{step_fuseki}}</span><span class="s">{{step_fuseki_sub_std}}</span></li>
+            <li class="step shogi"><span class="t">{{step_normal}}</span><span class="s">{{step_normal_sub}}</span></li>
+          </ol>
         </label>
         <label class="mode-card" for="mode-kings">
           <input type="radio" name="mode" id="mode-kings" value="kings-first">
           <span class="mode-name">{{mode_kings}}</span>
           <span class="mode-desc">{{mode_kings_desc}}</span>
-          <span class="mode-steps"><i class="on short"></i><i class="on short"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span>
-          <span class="mode-flow">{{mode_kings_steps}}</span>
+          <ol class="stepper mini four" aria-label="{{home_flow}}">
+            <li class="step"><span class="t">{{step_kings}}</span><span class="s">{{step_kings_sub}}</span></li>
+            <li class="step"><span class="t">{{step_choose}}</span><span class="s"></span></li>
+            <li class="step wide"><span class="t">{{step_fuseki}}</span><span class="s">{{step_fuseki_sub_kings}}</span></li>
+            <li class="step shogi"><span class="t">{{step_normal}}</span><span class="s">{{step_normal_sub}}</span></li>
+          </ol>
         </label>
       </fieldset>
 
@@ -91,6 +99,7 @@
             <option value="sente" selected>{{color_sente}}</option>
             <option value="gote">{{color_gote}}</option>
             <option value="random">{{color_random}}</option>
+            <option value="spectate">{{opt_spectate}}</option>
           </select>
         </label>
         <label id="lbl-role" hidden>{{opt_role}}
@@ -98,6 +107,7 @@
             <option value="placer" selected>{{role_placer}}</option>
             <option value="chooser">{{role_chooser}}</option>
             <option value="random">{{role_random}}</option>
+            <option value="spectate">{{opt_spectate}}</option>
           </select>
         </label>
         <label title="{{opt_level_title}}">{{opt_level}}
@@ -172,6 +182,9 @@
         <div class="actions-play" data-for="play">
           <button type="button" id="btn-undo" disabled title="{{btn_undo_title}}">{{btn_undo}}</button>
           <button type="button" id="btn-resign" disabled>{{btn_resign}}</button>
+          <!-- 観戦のときは待った・投了の代わりに一時停止と中断。 -->
+          <button type="button" id="btn-pause" hidden>{{btn_pause}}</button>
+          <button type="button" id="btn-abort" hidden>{{btn_abort}}</button>
           <button type="button" id="btn-flip" title="{{btn_flip}}">{{btn_flip}}</button>
         </div>
         <div class="actions-choose" data-for="choose">
@@ -183,17 +196,31 @@
         </div>
         <div class="actions-over" data-for="over">
           <p class="result-note" id="result-note"></p>
+          <!-- ホームへはロゴとメニューの「対局」から戻れるので、ここには置かない。 -->
           <div class="result-actions" id="result-actions">
             <button type="button" id="btn-again" class="primary">{{btn_again}}</button>
+            <button type="button" id="btn-analyze">{{btn_analyze}}</button>
             <button type="button" id="btn-replay">{{btn_replay}}</button>
             <button type="button" id="btn-copy-kifu">{{btn_copy_kifu}}</button>
-            <button type="button" id="btn-home">{{btn_home}}</button>
+          </div>
+        </div>
+        <!-- 検討。終局後だけ。見ている局面をやねうら王が読み続け、盤の駒を動かして変化を試せる。 -->
+        <div class="actions-analyze" data-for="analyze">
+          <div class="analyze-row">
+            <button type="button" id="btn-var-back" disabled>{{btn_var_back}}</button>
+            <button type="button" id="btn-analyze-all">{{btn_analyze_all}}</button>
+          </div>
+          <div class="analyze-row">
+            <button type="button" id="btn-flip-analyze" title="{{btn_flip}}">{{btn_flip}}</button>
+            <button type="button" id="btn-analyze-end">{{btn_analyze_end}}</button>
           </div>
         </div>
       </div>
 
       <div class="kifu-box">
         <ol class="kifu" id="kifu" aria-label="{{kifu_heading}}"></ol>
+        <!-- 検討で試している変化。本譜の下に1本だけ。 -->
+        <ol class="variation" id="variation" aria-label="{{variation_head}}" hidden></ol>
         <!-- 棋譜をさかのぼる。lishogiと同じ並び（最初・1手戻る・1手進む・最新）。 -->
         <div class="kifu-nav">
           <button type="button" id="nav-first" title="{{nav_first}}" aria-label="{{nav_first}}" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7 6h2.2v12H7z"/><path d="M18 6v12l-8-6z"/></svg></button>
@@ -203,11 +230,21 @@
         </div>
       </div>
 
+      <!-- 評価グラフ。縦軸は先手の勝率（ゲージと同じ換算）、横軸は棋譜の行。
+           布石の手は評価できないので空白のまま。押すとその手へ。エンジン枠と同じ条件で出す。
+           棋譜の**後ろ**に置くこと。前に置くと、hidden のあいだ grid の行がずれて棋譜の行が
+           余りを取れなくなる（1fr の行に下の席が落ちる）。 -->
+      <div class="eval-chart" id="eval-chart" hidden>
+        <svg id="eval-chart-svg" role="img" aria-label="{{chart_label}}"></svg>
+      </div>
+
       <!-- 誰がその数字を言っているか。通常フェーズはやねうら王の深さ・NPS・読み筋。
            対局中は既定で隠す（表示の設定）。 -->
       <div class="engine" id="engine" hidden>
         <p class="engine-head"><span id="readout-eval"></span> <span id="engine-head"></span></p>
         <p class="engine-pv" id="engine-pv"></p>
+        <!-- 検討の候補手（3本）。押すとその手を変化として指す。 -->
+        <ol class="candidates" id="candidates" hidden></ol>
       </div>
 
       <div class="seat" id="seat-bottom">

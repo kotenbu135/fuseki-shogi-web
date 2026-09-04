@@ -7,6 +7,7 @@
 //   node build.mjs && node test/browser_smoke.mjs [dist ディレクトリ]
 //   --full           布石40手→41手目の裁定→通常フェーズまで実際に指して通す
 //   --kings-first    玉分け将棋を両方の役で始め、盤の玉を押して先後を選ぶところまで
+//   --watch          観戦（AI同士）をレベル1で終局まで流し、一時停止・中断・評価グラフを見る
 //   --shots <dir>    要所の画面を PNG に残す（目で見るため）
 //
 // Chrome を --headless で起こして CDP で叩く（Node 26 の組み込み WebSocket を使うので
@@ -26,6 +27,7 @@ const SHOTS = flagValue('--shots');
 const args = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--shots');
 const FULL = argv.includes('--full');
 const KINGS = argv.includes('--kings-first');
+const WATCH = argv.includes('--watch');
 const DIST = args[0] ? path.resolve(args[0]) : path.join(ROOT, 'dist');
 const NORMAL_PLIES = Number(args[1] ?? 4);
 const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
@@ -513,6 +515,7 @@ try {
     + ' && document.getElementById("panel").dataset.state === "idle" && location.hash !== "#play"'));
 
   if (KINGS) await playKingsFirst(page);
+  if (WATCH) await watchGame(page);
 
   await checkPages(page);
   await checkEnglish(page);
@@ -673,7 +676,7 @@ async function playKingsFirst(page) {
   check('終局後に置く役・両玉・誰が先手を持ったか・表の値が出る',
     /置く役 AI/.test(note) && /両玉 \d[a-i]\/\d[a-i]/.test(note) && /表の先手勝率 \d+\.\d%/.test(note), note);
   await shot('07-kings-over');
-  await click(page, await center(page, '#btn-home'));
+  await evaluate(page, 'document.getElementById("logo").click()');   // 終局後なので確認は出ない
   await evalUntil(page, 'document.getElementById("view-home").hidden', v => v === false, 5000);
   await evaluate(page, `(() => { document.getElementById('opt-role').value = 'placer'; })()`);
   await click(page, await center(page, '#btn-new'));
@@ -708,8 +711,220 @@ async function playKingsFirst(page) {
   // 次の確認のために終わらせてホームへ。
   await evaluate(page, `(() => { const b = document.getElementById('btn-resign'); b.click(); b.click(); })()`);
   await evalUntil(page, 'document.getElementById("panel").dataset.phase', v => v === 'over', 10000);
-  await click(page, await center(page, '#btn-home'));
+  await evaluate(page, 'document.getElementById("logo").click()');   // 終局後なので確認は出ない
   await evalUntil(page, 'document.getElementById("view-home").hidden', v => v === false, 5000);
+}
+
+// ---- 観戦（--watch） ----
+
+/**
+ * AI同士の対局をレベル1で終局まで流す。game.js 側は test/spectate_test.mjs が見ているので、
+ * ここで見るのは画面にしか無いもの: 開始ボタンの文言、席の名前、一時停止と中断、
+ * 布石の間（1手0.7秒）、終局後の評価グラフ（面が描かれ、押すとその手へ移る）。
+ */
+async function watchGame(page) {
+  console.log('\n--- 観戦（--watch）---');
+  const errorsAtStart = exceptions().length;
+  const rows = () => evaluate(page, 'document.querySelectorAll("#kifu li").length');
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  await evaluate(page, `(() => {
+    const m = document.getElementById('mode-standard'); m.checked = true; m.dispatchEvent(new Event('change'));
+    const c = document.getElementById('opt-color'); c.value = 'spectate'; c.dispatchEvent(new Event('change'));
+    document.getElementById('opt-level').value = '1';
+  })()`);
+  check('観戦を選ぶと開始ボタンの文言が変わり、持ち時間が触れなくなる', await evaluate(page,
+    'document.getElementById("btn-new").textContent === "AI同士の対局を観戦する" && document.getElementById("opt-time").disabled'));
+  await click(page, await center(page, '#btn-new'));
+  await evalUntil(page, 'document.querySelectorAll("#kifu li").length', v => v >= 3, 30000);
+  const s1 = await evaluate(page, `({
+    status: document.getElementById('status-line').textContent,
+    top: document.getElementById('seat-top-name').textContent,
+    bottom: document.getElementById('seat-bottom-name').textContent,
+    undoHidden: document.getElementById('btn-undo').hidden,
+    resignHidden: document.getElementById('btn-resign').hidden,
+    pauseVisible: document.getElementById('btn-pause').getBoundingClientRect().width > 0,
+    clock: document.getElementById('clock-bottom').textContent,
+  })`);
+  check('観戦中は席が両方AI、待った・投了の代わりに一時停止・中断、時計は無し',
+    s1.status === 'AI同士の対局を観戦中' && s1.top.startsWith('AI') && s1.bottom.startsWith('AI')
+      && s1.undoHidden && s1.resignHidden && s1.pauseVisible && s1.clock === '', JSON.stringify(s1));
+  const n0 = await rows();
+  await wait(1500);
+  const n1 = await rows();
+  check('布石が目で追える速さ（1.5秒で1〜3手）', n1 - n0 >= 1 && n1 - n0 <= 3, `${n1 - n0}手`);
+  await evaluate(page, 'document.getElementById("btn-pause").click()');
+  await wait(1200);   // 指しかけの1手は入る
+  const nP = await rows();
+  await wait(1500);
+  const nQ = await rows();
+  const pausedText = await evaluate(page,
+    'document.getElementById("status-line").textContent + "|" + document.getElementById("btn-pause").textContent');
+  check('一時停止で止まる', nP === nQ && pausedText === '一時停止中|再開', `${nP}→${nQ} ${pausedText}`);
+  await evaluate(page, 'document.getElementById("btn-pause").click()');
+  const resumed = await evalUntil(page, 'document.querySelectorAll("#kifu li").length', v => v > nQ, 10000);
+  check('再開で進む', resumed > nQ, `${nQ}→${resumed}`);
+  await shot('11-watch');
+
+  // 終局まで。41手目の裁定で布石のまま終わる局もある（AIの指し手しだい）。その局には
+  // 通常フェーズの評価が無く、この先の確認ができないので、もう一局流して引き当てる。
+  let s2;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await evalUntil(page, 'document.getElementById("panel").dataset.phase', v => v === 'over', 300000);
+    await wait(300);
+    s2 = await evaluate(page, `({
+      kifu: document.querySelectorAll('#kifu li').length,
+      status: document.getElementById('status-line').textContent,
+      chartVisible: document.getElementById('eval-chart').getBoundingClientRect().height > 40,
+      areas: document.querySelectorAll('#eval-chart-svg .area-sente').length,
+      engineVisible: !document.getElementById('engine').hidden,
+      evalText: document.getElementById('readout-eval').textContent,
+      kifuHeight: document.getElementById('kifu').getBoundingClientRect().height,
+    })`);
+    if (s2.kifu > 40) break;
+    console.log(`  .. 布石のまま終局（${s2.kifu}手・${s2.status}）。もう一局流す`);
+    await click(page, await center(page, '#btn-again'));
+    await evalUntil(page, 'document.querySelectorAll("#kifu li").length', v => v >= 1, 30000);
+  }
+  check('終局まで進み、評価グラフに面が描かれ、評価が出る',
+    s2.kifu > 40 && s2.chartVisible && s2.areas >= 1 && s2.engineVisible && /深さ|手詰/.test(s2.evalText),
+    JSON.stringify(s2));
+  check('棋譜の枠が潰れていない（グラフの行が棋譜の行を奪っていない）', s2.kifuHeight > 100, `${s2.kifuHeight}px`);
+  // グラフを押すとその手へ。左端寄りを押せば布石の途中の手になる。
+  const b = JSON.parse(await evaluate(page, 'JSON.stringify(document.getElementById("eval-chart-svg").getBoundingClientRect())'));
+  await click(page, { x: b.x + b.width * .25, y: b.y + b.height / 2 });
+  await wait(400);
+  const s3 = await evaluate(page, `({
+    reviewing: document.getElementById('board').classList.contains('reviewing'),
+    current: document.querySelector('#kifu li.current')?.querySelector('.n')?.textContent,
+    labels: [...document.querySelectorAll('#eval-chart-svg text')].map(e => e.textContent),
+  })`);
+  check('グラフを押すとその手の局面へ', s3.reviewing && Number(s3.current) > 0 && Number(s3.current) < s2.kifu, JSON.stringify(s3));
+  check('グラフに「布石（評価なし）」と「41手目〜」の文字がある',
+    s3.labels.includes('布石（評価なし）') && s3.labels.includes('41手目〜'), JSON.stringify(s3.labels));
+  await evaluate(page, 'document.getElementById("nav-last").click()');
+  await layoutCheck('観戦の終局');
+  await shot('12-watch-over');
+  check('観戦で未処理の例外が無い', exceptions().length === errorsAtStart,
+    exceptions().slice(errorsAtStart).join(' / '));
+
+  // ---- 検討 ----
+  await analyzeGame(page, s2.kifu);
+  check('検討で未処理の例外が無い', exceptions().length === errorsAtStart,
+    exceptions().slice(errorsAtStart).join(' / '));
+
+  // 中断。もう一局を観戦で始めて、数手で止める。
+  await click(page, await center(page, '#btn-again'));
+  await evalUntil(page, 'document.querySelectorAll("#kifu li").length', v => v >= 2, 30000);
+  await evaluate(page, 'document.getElementById("btn-abort").click()');
+  await evalUntil(page, 'document.getElementById("panel").dataset.phase', v => v === 'over', 10000);
+  const s4 = await evaluate(page, `({
+    status: document.getElementById('status-line').textContent,
+    state: document.getElementById('panel').dataset.state,
+  })`);
+  check('中断すると勝敗なしで結果画面になる', s4.status === '中断' && s4.state === 'over', JSON.stringify(s4));
+  // 終局後なので確認は出ずにホームへ。
+  await evaluate(page, 'document.getElementById("logo").click()');
+  await evalUntil(page, 'document.getElementById("view-home").hidden', v => v === false, 5000);
+  await evaluate(page, `(() => { const c = document.getElementById('opt-color'); c.value = 'sente'; c.dispatchEvent(new Event('change')); })()`);
+}
+
+// ---- 検討 ----
+
+/**
+ * 終局した対局を検討する。候補手が出ること、候補手を押すと変化として指せること、
+ * 盤の駒を動かして変化が伸びること、本譜へ戻れること、全手の解析でグラフが埋まること、
+ * 検討を終えると結果画面に戻ること。
+ */
+async function analyzeGame(page, kifuRows) {
+  console.log('\n--- 検討 ---');
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  await evaluate(page, 'document.getElementById("nav-last").click()');
+  await click(page, await center(page, '#btn-analyze'));
+  const cands = await evalUntil(page, 'document.querySelectorAll("#candidates li").length', v => v >= 1, 8000);
+  const a1 = await evaluate(page, `({
+    state: document.getElementById('panel').dataset.state,
+    analyzing: document.getElementById('board').classList.contains('analyzing'),
+  })`);
+  // 終局図は詰みで候補手が出ないことがあり、その直前も候補手が詰ましてしまう手で、
+  // 変化に入った先で駒が動かせない。4手戻った局面で試す。
+  if (!cands) await wait(200);
+  for (let i = 0; i < 4; i++) await evaluate(page, 'document.getElementById("nav-prev").click()');
+  await evalUntil(page, 'document.querySelectorAll("#candidates li").length', v => v >= 1, 8000);
+  const a2 = await evaluate(page, `({
+    n: document.querySelectorAll('#candidates li').length,
+    ev: document.querySelector('#candidates li .ev')?.textContent,
+    mv: document.querySelector('#candidates li .mv')?.textContent,
+    arrows: document.querySelectorAll('.sg-shapes g.primary line, .sg-shapes g.primary ellipse').length,
+    status: document.getElementById('status-line').textContent,
+  })`);
+  check('検討に入ると候補手（最大3本）と矢印が出る',
+    a1.state === 'analyze' && a1.analyzing && a2.n >= 1 && a2.n <= 3 && /^[+-]?\d|手詰/.test(a2.ev ?? '')
+      && (a2.mv ?? '').length >= 2 && a2.arrows >= 1 && a2.status.startsWith('検討中'),
+    JSON.stringify({ a1, a2 }));
+  // 候補手を押すと、その手が変化として入る。
+  await click(page, await center(page, '#candidates li'));
+  await wait(300);
+  const v1 = await evaluate(page, `({
+    rows: document.querySelectorAll('#variation li').length,
+    hidden: document.getElementById('variation').hidden,
+    status: document.getElementById('status-line').textContent,
+    backEnabled: !document.getElementById('btn-var-back').disabled,
+  })`);
+  check('候補手を押すと変化が1手入る', v1.rows === 1 && !v1.hidden && /変化/.test(v1.status) && v1.backEnabled, JSON.stringify(v1));
+  // 盤の駒を動かして変化を伸ばす。手番の色の駒を探す（どちらの色でも動かせる）。
+  let moved = false;
+  for (const color of ['sente', 'gote']) {
+    const sel = `sg-pieces piece.${color}`;
+    const total = await evaluate(page, `document.querySelectorAll(${JSON.stringify(sel)}).length`);
+    for (let i = 0; i < total && !moved; i++) {
+      const at = await centerOfNth(page, sel, i);
+      if (!at) break;
+      await click(page, at);
+      const dests = await evalUntil(page, 'document.querySelectorAll("sq.dest").length', v => v > 0, 800);
+      if (!dests) continue;
+      await click(page, await center(page, 'sg-squares sq.dest'));
+      const choices = await evalUntil(page, 'document.querySelectorAll("sg-promotion piece").length', v => v > 0, 600);
+      if (choices > 0) await click(page, await center(page, 'sg-promotion piece'));
+      moved = true;
+    }
+    if (moved) break;
+  }
+  await wait(300);
+  const v2 = await evaluate(page, 'document.querySelectorAll("#variation li").length');
+  check('盤の駒を動かすと変化が伸びる', moved && v2 === 2, `動かせた=${moved} 変化=${v2}手`);
+  // 変化の中を戻る・進む。
+  await evaluate(page, 'document.getElementById("nav-prev").click()');
+  await wait(200);
+  const v3 = await evaluate(page, '[...document.querySelectorAll("#variation li")].findIndex(li => li.classList.contains("current"))');
+  check('1手戻ると変化の1手目が現在になる', v3 === 0, `current=${v3}`);
+  await evaluate(page, 'document.getElementById("btn-var-back").click()');
+  await wait(200);
+  const v4 = await evaluate(page, `({
+    hidden: document.getElementById('variation').hidden,
+    status: document.getElementById('status-line').textContent,
+  })`);
+  check('本譜へ戻ると変化が消える', v4.hidden && !/変化/.test(v4.status), JSON.stringify(v4));
+  await shot('13-analyze');
+
+  // 全手を解析。終わるとボタンの文言が戻り、グラフの線が通常フェーズの行の数だけ点を持つ。
+  await evaluate(page, 'document.getElementById("btn-analyze-all").click()');
+  await evalUntil(page, 'document.getElementById("btn-analyze-all").textContent', v => v === '解析を止める', 3000);
+  const done = await evalUntil(page, 'document.getElementById("btn-analyze-all").textContent', v => v === '全手を解析', 180000);
+  const pts = await evaluate(page, `[...document.querySelectorAll('#eval-chart-svg .line')]
+    .reduce((n, p) => n + p.getAttribute('d').trim().split(/[ML]/).filter(Boolean).length, 0)`);
+  check('全手を解析するとグラフが通常フェーズの全行で埋まる', done === '全手を解析' && pts >= kifuRows - 41,
+    `点 ${pts} / 行 ${kifuRows}`);
+  await evalUntil(page, 'document.querySelectorAll("#candidates li").length', v => v >= 1, 8000);
+  check('解析が終わると検討に戻る', await evaluate(page, 'document.getElementById("status-line").textContent.startsWith("検討中")'));
+  await layoutCheck('検討');
+  await evaluate(page, 'document.getElementById("btn-analyze-end").click()');
+  await wait(200);
+  const e1 = await evaluate(page, `({
+    state: document.getElementById('panel').dataset.state,
+    shapes: document.querySelectorAll('.sg-shapes line, .sg-shapes ellipse').length,
+    status: document.getElementById('status-line').textContent,
+  })`);
+  check('検討を終えると結果画面に戻り、矢印が消える', e1.state === 'over' && e1.shapes === 0 && !e1.status.startsWith('検討中'), JSON.stringify(e1));
 }
 
 // ---- 文章のページと英語版 ----

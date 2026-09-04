@@ -9,9 +9,11 @@
 import { Fuseki } from './fuseki.js';
 import { FusekiPolicy } from './policy.js';
 import { NormalEngine, loadYaneuraOuFactory } from './normal.js';
-import { Game, SENTE, GOTE } from './game.js';
+import { Game, SENTE, GOTE, positionMoveDests, positionDropDests, promotionConfig, usiDropSquare } from './game.js';
+import { parseSquareName, parseUsi, makeSquareName } from 'shogiops/util';
+import { makeSfen } from 'shogiops/sfen';
 import { KingTable } from './kings.js';
-import { createBoard, showIdleBoard, showSnapshot, syncBoard } from './board.js';
+import { createBoard, showIdleBoard, showSnapshot, showPosition, setShapes, syncBoard } from './board.js';
 import { Sound, VOICES } from './sound.js';
 import { t, LANG } from './i18n.js';
 
@@ -64,9 +66,13 @@ const ui = {
   showEval: el('opt-show-eval'), evaluation: el('readout-eval'),
   engine: el('engine'), engineHead: el('engine-head'), enginePv: el('engine-pv'),
   gauge: el('eval-gauge'), kingTags: el('king-tags'), toast: el('toast'),
+  chart: el('eval-chart'), chartSvg: el('eval-chart-svg'),
   resultActions: el('result-actions'), resultNote: el('result-note'),
-  again: el('btn-again'), replay: el('btn-replay'), copyKifu: el('btn-copy-kifu'), home: el('btn-home'),
+  again: el('btn-again'), replay: el('btn-replay'), copyKifu: el('btn-copy-kifu'), analyze: el('btn-analyze'),
+  varBack: el('btn-var-back'), analyzeAll: el('btn-analyze-all'), flipAnalyze: el('btn-flip-analyze'),
+  analyzeEnd: el('btn-analyze-end'), candidates: el('candidates'), variation: el('variation'),
   newGame: el('btn-new'), resign: el('btn-resign'), flip: el('btn-flip'), undo: el('btn-undo'),
+  pause: el('btn-pause'), abort: el('btn-abort'),
   navFirst: el('nav-first'), navPrev: el('nav-prev'),
   navNext: el('nav-next'), navLast: el('nav-last'),
   seatTop: el('seat-top'), seatBottom: el('seat-bottom'),
@@ -112,9 +118,9 @@ let showEvalInPlay = false;
   });
 }
 
-/** いま評価を出してよいか。対局中は設定しだい、終局後は常に出す。 */
+/** いま評価を出してよいか。対局中は設定しだい、終局後と観戦は常に出す（隠す理由が無い）。 */
 function evalVisible() {
-  return !!game && (game.phase === 'over' || showEvalInPlay);
+  return !!game && (game.phase === 'over' || game.spectate || showEvalInPlay);
 }
 
 // 表示の設定は歯車の中。対局中も触れる（対局の設定は対局前だけ）。
@@ -328,6 +334,14 @@ let busy = false;     // AIが考えている間の二重駆動を防ぐ
 let pendingSide = null;
 // 段の境目の知らせ（トーストと音）のために、直前に描いたフェーズを覚えておく。
 let phaseSeen = null;
+// 観戦の一時停止。drive() のループが次の手を指す前に見る。
+let paused = false;
+// 検討（終局後）。中身は「検討」の節。render() が起動時から参照するので、宣言はここに置く。
+let analysis = null;
+// { variation: { moves: [{usi, text, capture}], at }, candidates: [], hover: null,
+//   pass: null | { i, n, cancel }, live: null }
+let analysisFuseki = null;   // 布石の局面を作り直すための2つ目のWASM。最初に要るときに読む
+let infoGen = 0;             // 読んでいる局面の世代。古い info と古い候補手の計算を捨てる
 
 /** 盤を1枚だけ作る。対局前から出しておきたいので、起動時にも呼ぶ。 */
 function ensureBoard() {
@@ -391,7 +405,10 @@ function abandonGame() {
   viewPly = null;
   pendingSide = null;
   phaseSeen = null;
+  paused = false;
   disarmResign();
+  endAnalysis();
+  engines?.engine.stopSearch();   // 考えている最中なら切り上げる。busy がそのぶん早く解ける
   render();   // パネルを idle に戻し、盤を空にする
 }
 
@@ -401,7 +418,6 @@ function goHome() {
 }
 ui.logo.addEventListener('click', e => { e.preventDefault(); goHome(); });
 ui.navPlay.addEventListener('click', e => { e.preventDefault(); goHome(); });
-ui.home.addEventListener('click', goHome);
 ui.leaveCancel.addEventListener('click', () => {
   ui.leaveDialog.close();
   // 戻るボタンで #/ に来ていたら、対局の URL へ戻す。
@@ -526,6 +542,25 @@ ui.resign.addEventListener('click', () => {
   game.resign();
   render();
 });
+// 観戦の一時停止と中断。一時停止は drive() のループが手を指す前に見る。
+ui.pause.addEventListener('click', () => {
+  if (!game || !game.spectate || game.phase === 'over') return;
+  paused = !paused;
+  render();
+});
+ui.abort.addEventListener('click', () => {
+  if (!game || !game.spectate || game.phase === 'over') return;
+  game.abort();
+  paused = false;
+  engines?.engine.stopSearch();   // 探索中なら切り上げる。結果は phase を見て捨てられる
+  render();
+});
+
+/** ホームの「手番」（玉分け将棋では「役」）で観戦が選ばれているか。 */
+function spectateChosen() {
+  return (modeValue() === 'kings-first' ? ui.role.value : ui.color.value) === 'spectate';
+}
+
 /** 対局開始時の人間の色。振り駒はここで決まる。 */
 function chosenColor() {
   if (ui.color.value === 'random') return Math.random() < .5 ? SENTE : GOTE;
@@ -543,9 +578,12 @@ function renderModeControls() {
   const kf = modeValue() === 'kings-first';
   ui.colorLabel.hidden = kf;
   ui.roleLabel.hidden = !kf;
-  ui.newGame.textContent = t(kf ? 'btn_start_kings' : 'btn_start_standard');
+  const watch = spectateChosen();
+  // 持ち時間は人間側だけのもの。観戦では効かないので触れなくする。
+  ui.time.disabled = watch;
+  ui.newGame.textContent = t(watch ? 'btn_start_watch' : kf ? 'btn_start_kings' : 'btn_start_standard');
 }
-for (const r of [ui.modeKings, ui.modeStandard]) r.addEventListener('change', renderModeControls);
+for (const r of [ui.modeKings, ui.modeStandard, ui.color, ui.role]) r.addEventListener('change', renderModeControls);
 
 // ---- 先後の選択（玉分け将棋） ----
 
@@ -649,9 +687,20 @@ addEventListener('beforeunload', e => {
   e.returnValue = '';   // 古いブラウザはこちらを見る
 });
 
+/** 1手戻る・1手進む。検討で変化を試しているあいだは、その変化の中を動く。 */
+function navPrev() {
+  if (analysis?.variation.at > 0) return varStep(-1);
+  goToPly((viewPly === null ? game?.kifu.length ?? 0 : viewPly) - 1);
+}
+function navNext() {
+  const v = analysis?.variation;
+  if (v && v.at < v.moves.length) return varStep(1);
+  if (viewPly === null) return;   // 最新より先は無い
+  goToPly(viewPly + 1);
+}
 ui.navFirst.addEventListener('click', () => goToPly(0));
-ui.navPrev.addEventListener('click', () => goToPly((viewPly === null ? game?.kifu.length ?? 0 : viewPly) - 1));
-ui.navNext.addEventListener('click', () => goToPly((viewPly ?? 0) + 1));
+ui.navPrev.addEventListener('click', navPrev);
+ui.navNext.addEventListener('click', navNext);
 ui.navLast.addEventListener('click', () => goToPly(null));
 
 // 棋譜の行を押したらその局面へ。lishogiと同じ。
@@ -664,17 +713,15 @@ ui.kifu.addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if (e.target.closest('input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
   if (ui.viewPlay.hidden) return;
-  const n = game?.kifu.length ?? 0;
-  const at = viewPly === null ? n : viewPly;
-  if (e.key === 'ArrowLeft') goToPly(at - 1);
-  else if (e.key === 'ArrowRight') goToPly(at + 1);
+  if (e.key === 'ArrowLeft') navPrev();
+  else if (e.key === 'ArrowRight') navNext();
   else if (e.key === 'Home') goToPly(0);
   else if (e.key === 'End') goToPly(null);
   else return;
   e.preventDefault();
 });
 
-ui.flip.addEventListener('click', () => {
+function flipBoard() {
   if (!sg) return;
   // set({orientation}) では駄目。向きはマスのsgKeyと駒台の色に焼き込まれていて、
   // 変更には再ラップが要る。それをやるのが toggleOrientation。
@@ -683,25 +730,31 @@ ui.flip.addEventListener('click', () => {
   renderSeats();
   // 帯の向きは orientation で決まる。ここで描き直さないと反転のあいだ裏返ったまま。
   if (game) { renderGauge(); renderKingTags(); }
-});
+}
+ui.flip.addEventListener('click', flipBoard);
+ui.flipAnalyze.addEventListener('click', flipBoard);
 
 function startGame() {
   if (busy || !engines) return;
+  endAnalysis();   // 前の対局の検討が開いていれば閉じる（MultiPV も戻す）
   // 玉分け将棋は価値表が読めたときだけ。無ければ radio が無効になっている。
   const mode = modeValue() === 'kings-first' && engines.kingTable ? 'kings-first' : 'standard';
+  // 観戦（AI同士）。人間の色も役も無い。盤は先手側から見る。
+  const spectate = spectateChosen();
   // 玉分け将棋の色は選択まで未定。盤は先手側から始め、決まった時点で回す（render）。
-  const humanColor = mode === 'standard' ? chosenColor() : SENTE;
-  const humanRole = mode === 'kings-first' ? chosenRole() : null;
+  const humanColor = spectate || mode !== 'standard' ? SENTE : chosenColor();
+  const humanRole = mode === 'kings-first' && !spectate ? chosenRole() : null;
   orientation = humanColor;
   orientedGame = null;
   pendingSide = null;
   phaseSeen = null;
+  paused = false;
   // レベルは select を真とする（値を直接入れてから対局開始を押されても効くように）。
   const n = Number(ui.level.value);
   if (LEVELS[n]) aiLevel = n;
   const lv = LEVELS[aiLevel] ?? LEVELS[3];
   game = new Game({
-    ...engines, humanColor, mode, humanRole,
+    ...engines, humanColor, mode, humanRole, spectate,
     movetimeMs: lv.movetimeMs, temperature: lv.temperature, notation: LANG,
   });
   soundedKifu = 0;
@@ -709,7 +762,7 @@ function startGame() {
   viewPly = null;
   clock.sente = clock.gote = 0;
   clock.running = null;
-  timeCtl = TIME_CONTROLS[ui.time.value] ?? null;
+  timeCtl = spectate ? null : (TIME_CONTROLS[ui.time.value] ?? null);
   humanClock = timeCtl ? { mainMs: timeCtl.initialMs } : null;
   ui.ioNote.textContent = '';
   // 時計は手番が変わったときにしか進まないので、表示だけ別に回す。
@@ -741,6 +794,7 @@ function onClockTick() {
 
 /** 人間の駒打ち。布石フェーズと通常フェーズで指し手の意味が違う。 */
 function handleDrop(piece, key) {
+  if (analysis) return playVariation(`${USI_LETTER[piece.role]}*${key}`);
   if (!game || !game.isHumanTurn || viewPly !== null) return render();
   try {
     if (game.phase === 'kings' || game.phase === 'fuseki') game.playFusekiDrop(`${USI_LETTER[piece.role]}*${key}`);
@@ -754,6 +808,7 @@ function handleDrop(piece, key) {
 
 /** 人間の移動（通常フェーズのみ）。 */
 function handleMove(orig, dest, prom) {
+  if (analysis) return playVariation(`${orig}${dest}${prom ? '+' : ''}`);
   if (!game || !game.isHumanTurn || viewPly !== null) return render();
   try {
     game.playNormalMove(`${orig}${dest}${prom ? '+' : ''}`);
@@ -782,12 +837,38 @@ async function analyzeForHuman() {
     .analyze({ sfen: g.finalSfen, moves: g.normalMoves, movetimeMs: 800 })
     .catch(() => null);
   if (!info || game !== g || g.kifu.length !== at || g.epoch !== epoch) return;
-  // lastEval は表示用の置き場。人間の手番ぶんはここから入れる。
-  g.lastEval = { kind: 'search', ...info, side: g.humanColor };
+  // 根はAIの手を指した後の局面＝棋譜の最後の行。読み筋から写した値（pv）をこれで置き換える。
+  const ev = g.recordEval(at - 1, info, g.humanColor, 'analysis');
+  if (ev) g.lastEval = ev;
   render();
 }
 
-/** 人間の手番になるか終局するまでAIに指させる。 */
+/**
+ * 画面に出す評価。さかのぼって見ているときはその手の行の評価、対局中の局面なら直近の評価。
+ * 行の評価は「その手を指した後の局面」の値で、0手目（空の盤）には無い。
+ */
+function shownEval() {
+  if (!game) return null;
+  // 検討中は読み続けている局面の主変化の値（変化の局面なら行の評価は無いのでこれしか無い）。
+  if (analysis) return analysis.live ?? (analysis.variation.at > 0 ? null : rowEval(viewedRow()));
+  if (viewPly === null) return game.lastEval;
+  return rowEval(viewPly);
+}
+/** 棋譜の行 row（1〜n）を指した後の評価。0 は空の盤で無い。 */
+function rowEval(row) {
+  return row === 0 ? null : (game.kifu[row - 1]?.eval ?? null);
+}
+/** いま盤に出している本譜の行（0 = 空の盤、n = 最新）。 */
+function viewedRow() {
+  return viewPly === null ? game.kifu.length : viewPly;
+}
+
+// 観戦で1手にかける下限。布石はNN1回で10msほどしかかからず、40手が1秒で終わって
+// 目で追えない。通常フェーズは思考時間（レベル）で自然に間が空く。
+const WATCH_MIN_MS = 700;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/** 人間の手番になるか終局するまでAIに指させる。観戦なら終局まで。 */
 async function drive() {
   if (busy || !game) return;
   busy = true;
@@ -795,9 +876,16 @@ async function drive() {
   try {
     // ホームへ戻って対局が捨てられたら、そこで止まる（game が別物になる）。
     while (game === g && g.phase !== 'over' && !g.isHumanTurn) {
+      while (paused && game === g && g.phase !== 'over') await sleep(100);
+      if (game !== g || g.phase === 'over') break;
       render();
+      const started = performance.now();
       await g.playAiMove();
       render();
+      if (g.spectate) {
+        const wait = WATCH_MIN_MS - (performance.now() - started);
+        if (wait > 0) await sleep(wait);
+      }
     }
   } catch (e) {
     setStatus(t('status_engine_error'), e.message);
@@ -818,26 +906,47 @@ function renderBoard() {
   // .sg-wrap は shogiground が #board に足したクラス。内部を覗かず自分の要素を触る。
   const wrap = el('board');
   wrap.classList.toggle('reviewing', reviewing);
+  wrap.classList.toggle('analyzing', !!analysis);
   wrap.classList.toggle('phase-normal', game.phase === 'normal' || (game.phase === 'over' && !!game.position));
   wrap.classList.toggle('kings-only', game.phase === 'kings' && game.isHumanTurn && !reviewing);
+  if (analysis) {
+    // 検討。通常フェーズの局面なら両方の色を動かせる。布石の局面は控えのまま（印だけ）。
+    const { pos, row, lastDests } = analysisPosition();
+    const shapes = analysisShapes();
+    if (pos) {
+      showPosition(sg, pos, {
+        lastDests, movable: positionMoveDests(pos), droppable: positionDropDests(pos),
+        promotion: promotionConfig(() => analysisPosition().pos), active: !pos.outcome(), shapes,
+      });
+    } else if (row === 0) {
+      showIdleBoard(sg);
+      setShapes(sg, shapes);
+    } else showSnapshot(sg, game.kifu[row - 1].snapshot, shapes);
+    return;
+  }
   if (!reviewing) return void syncBoard(sg, game);
   if (viewPly === 0) return void showIdleBoard(sg);
   showSnapshot(sg, game.kifu[viewPly - 1].snapshot);
 }
 
-/** さかのぼる操作。対局中の局面へ戻るまで盤は触れない。 */
+/** さかのぼる操作。対局中の局面へ戻るまで盤は触れない。検討中は読む局面が変わる。 */
 function goToPly(ply) {
   if (!game || !game.kifu.length) return;
   const last = game.kifu.length;
   viewPly = ply === null || ply >= last ? null : Math.max(0, ply);
+  if (analysis) dropVariation();
   render();
+  if (analysis) restartInfinite();
 }
 
 function renderNav() {
   const n = game ? game.kifu.length : 0;
   const at = viewPly === null ? n : viewPly;
-  ui.navFirst.disabled = ui.navPrev.disabled = n === 0 || at === 0;
-  ui.navNext.disabled = ui.navLast.disabled = n === 0 || viewPly === null;
+  const v = analysis?.variation;
+  ui.navFirst.disabled = n === 0 || at === 0;
+  ui.navPrev.disabled = n === 0 || (at === 0 && !(v?.at > 0));
+  ui.navNext.disabled = n === 0 || (viewPly === null && !(v && v.at < v.moves.length));
+  ui.navLast.disabled = n === 0 || (viewPly === null && !v?.moves.length);
 }
 
 const SYMBOL = { [SENTE]: '☗', [GOTE]: '☖' };
@@ -851,11 +960,12 @@ function renderSeats() {
   const top = bottom === SENTE ? GOTE : SENTE;
   // 誰が座っているか。玉分け将棋で選ぶ前は色しか無い。押した（仮の）玉があれば仮の席にする。
   const label = c => {
-    const who = game.humanColor !== null
-      ? (c === game.humanColor ? t('seat_you') : t('seat_ai', { n: aiLevel }))
-      : pendingSide !== null
-        ? (c === pendingSide ? t('seat_you_pending') : t('seat_ai', { n: aiLevel }))
-        : null;
+    const who = game.spectate ? t('seat_ai', { n: aiLevel })
+      : game.humanColor !== null
+        ? (c === game.humanColor ? t('seat_you') : t('seat_ai', { n: aiLevel }))
+        : pendingSide !== null
+          ? (c === pendingSide ? t('seat_you_pending') : t('seat_ai', { n: aiLevel }))
+          : null;
     return who === null ? sideName(c) : `${who} ${SYMBOL[c]}`;
   };
   ui.seatTopName.textContent = label(top);
@@ -943,6 +1053,7 @@ function renderStepper() {
 /** パネルの操作枠の中身を決める。 */
 function panelState() {
   if (!game) return 'idle';
+  if (analysis) return 'analyze';
   if (game.phase === 'over') return 'over';
   if (game.phase === 'choose' && game.isHumanTurn && viewPly === null) return 'choose';
   return 'play';
@@ -954,8 +1065,10 @@ function render() {
     ui.panel.dataset.state = 'idle';
     ui.stepper.replaceChildren();
     ui.kifu.replaceChildren();
-    ui.engine.hidden = ui.gauge.hidden = true;
+    ui.engine.hidden = ui.gauge.hidden = ui.chart.hidden = ui.variation.hidden = true;
     ui.undo.disabled = true;
+    ui.undo.hidden = ui.resign.hidden = false;
+    ui.pause.hidden = ui.abort.hidden = true;
     ui.ioSfen.value = '';
     renderNav();
     renderKingTags();
@@ -983,12 +1096,32 @@ function render() {
   renderNav();
   renderEngine();
   renderGauge();
+  renderChart();
   renderChoice();
+  renderVariation();
+  ui.varBack.disabled = !analysis?.variation.moves.length;
+  ui.analyzeAll.textContent = t(analysis?.pass ? 'btn_analyze_stop' : 'btn_analyze_all');
   ui.ioSfen.value = game.sfen();
   ui.undo.disabled = busy || viewPly !== null || game.phase === 'over' || undoTarget() < 0;
+  // 観戦では待った・投了の代わりに一時停止・中断。
+  ui.undo.hidden = ui.resign.hidden = game.spectate;
+  ui.pause.hidden = ui.abort.hidden = !game.spectate;
+  ui.pause.textContent = t(paused ? 'btn_resume' : 'btn_pause');
+  ui.pause.disabled = ui.abort.disabled = game.phase === 'over';
   playMoveSounds();
 
-  if (game.phase === 'over') {
+  if (analysis) {
+    clearInterval(clockTimer);
+    clockTimer = null;
+    if (analysis.pass) {
+      setStatus(t('status_analyze_all', { i: analysis.pass.i, n: analysis.pass.n }), t('status_analyze_all_sub'));
+    } else {
+      const { pos, row, inVariation } = analysisPosition();
+      const line = inVariation ? t('status_analyze_var', { n: variationPly(analysis.variation.at) })
+        : row === 0 ? t('status_analyze_start') : t('status_analyze', { n: game.kifu[row - 1].ply ?? row });
+      setStatus(line, pos ? t('status_analyze_sub') : t('status_analyze_fuseki_sub'));
+    }
+  } else if (game.phase === 'over') {
     clearInterval(clockTimer);
     clockTimer = null;
     const { who, why } = resultLine();
@@ -997,7 +1130,10 @@ function render() {
     ui.resign.disabled = true;
     disarmResign();
   } else if (viewPly !== null) {
-    setStatus(t('status_reviewing', { n: viewPly }), t('status_reviewing_sub'));
+    setStatus(t('status_reviewing', { n: viewPly }), game.spectate ? '' : t('status_reviewing_sub'));
+  } else if (game.spectate) {
+    if (paused) setStatus(t('status_paused'), t('status_paused_sub'));
+    else setStatus(t('status_watching'), t('status_watching_sub'));
   } else if (game.isHumanTurn) {
     // 41手目でルールが変わる。フェーズの表示が切り替わるだけでは気づけないので、
     // 通常フェーズで自分がまだ1手も指していないあいだは言い続ける。
@@ -1083,7 +1219,8 @@ function resultNote() {
 function resultLine() {
   const { winner, reason, winnerIs } = game.result;
   // 玉分け将棋で先後を選ぶ前に投了すると、勝った色が無い。人間とAIのどちらかだけ言う。
-  const who = winner === null ? t(winnerIs === 'ai' ? 'result_ai_wins' : 'result_draw')
+  const who = reason === 'aborted' ? t('result_aborted')
+    : winner === null ? t(winnerIs === 'ai' ? 'result_ai_wins' : 'result_draw')
     : t('result_color_wins', { side: sideName(winner) }) + (winnerIs === 'human' ? t('result_you') : '');
   const key = `reason_${reason}`;
   const why = t(key);
@@ -1092,7 +1229,9 @@ function resultLine() {
 
 /** エンジンの言い分。数字が誰のものかを画面に出す。 */
 function renderEngine() {
-  const ev = game.lastEval;
+  if (analysis) return renderCandidates();
+  ui.candidates.hidden = true;
+  const ev = shownEval();
   if (!ev || !evalVisible()) { ui.engine.hidden = true; return; }
   ui.engine.hidden = false;
   ui.evaluation.textContent = formatEval(ev);
@@ -1103,15 +1242,39 @@ function renderEngine() {
   }
   const bits = [t('engine_yaneuraou')];
   if (ev.depth != null) bits.push(t('engine_depth', { d: ev.depth }));
-  if (ev.nps != null) bits.push(formatNps(ev.nps));
+  if (ev.nps != null && viewPly === null) bits.push(formatNps(ev.nps));
   ui.engineHead.textContent = `· ${bits.join(' · ')}`;
   // 読み筋は8手まで。全部出すと狭いパネルで3行になり、棋譜に回せる高さを食う。
-  const pv = game.pvText(ev.pv?.slice(0, 8));
+  // さかのぼって見ているときは、その行の局面から並べる（いまの局面では非合法手で途切れる）。
+  const at = viewPly === null ? null : viewPly - 1;
+  const pv = at === null
+    ? game.pvText(ev.pv?.slice(0, 8))
+    : game.pvText(ev.pv?.slice(0, 8), { position: game.positionAt(at), lastDest: lastDestOf(at) });
   ui.enginePv.textContent = pv ? t('engine_pv', { pv }) : '';
+}
+
+/** 棋譜の行の着手先（「同」の判定用）。通常フェーズの行だけ。 */
+function lastDestOf(index) {
+  const usi = game.kifu[index]?.usi;
+  if (!usi || usi.startsWith('choose:')) return undefined;
+  return parseSquareName(usi.includes('*') ? usi.slice(2) : usi.slice(2, 4));
 }
 
 function formatNps(n) {
   return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M NPS` : `${Math.round(n / 1000)}k NPS`;
+}
+
+/**
+ * 評価 → 先手の勝率（0〜1）。ゲージとグラフが同じ換算を使う。
+ * 評価値（先手から見た値）は 1/(1+e^(-cp/400))、詰みは端に張り付ける。
+ * 表の値（kings）は勝率そのもの。布石の「採用手の確率」は勝率ではないので null。
+ */
+function winRateOf(ev) {
+  if (!ev) return null;
+  if (ev.kind === 'kings') return ev.winRate;
+  if (ev.kind !== 'search' || ev.score == null) return null;
+  const cp = ev.scoreKind === 'mate' ? (ev.score > 0 ? 1e5 : -1e5) : ev.score;
+  return 1 / (1 + Math.exp(-cp / 400));
 }
 
 /**
@@ -1121,15 +1284,11 @@ function formatNps(n) {
  * 優劣ではない。両側に振れる帯に載せると「先手が良い」と読めてしまうので載せない。
  */
 function renderGauge() {
-  const ev = game.lastEval;
+  const ev = shownEval();
   const show = ev && ev.kind === 'search' && ev.score != null && evalVisible();
   ui.gauge.hidden = !show;
   if (!show) return;
-  // USIの評価値は探索した側から見た値。AIが指した手のときはAIの側、
-  // 人間の手番に画面が聞いたときは人間の側。先手から見た値に直す。
-  const cp = ev.scoreKind === 'mate' ? (ev.score > 0 ? 1e5 : -1e5) : ev.score;
-  const fromSente = (ev.side ?? game.aiColor) === SENTE ? cp : -cp;
-  const p = 1 / (1 + Math.exp(-fromSente / 400));
+  const p = winRateOf(ev);
   // 帯は手前（盤の下側）から伸びる。後手を持つと手前は後手なので、そのままでは
   // 自分が押しているときに相手側から伸びて見える。盤の向きに合わせて裏返す。
   // 見ているのは humanColor ではなく orientation。盤を反転したら帯も付いてくる。
@@ -1137,16 +1296,471 @@ function renderGauge() {
   ui.gauge.style.setProperty('--eval-p', String(bottom));
 }
 
+// ---- 検討 ----
+//
+// 終局後だけ。見ている局面（本譜の1行、または盤で試した変化の先）をやねうら王が
+// 読み続け（go infinite・MultiPV 3）、候補手を出す。盤の駒はどちらの色も動かせて、
+// 指した手は本譜の下に変化として1本だけ並ぶ（木は作らない）。
+// 布石の局面はやねうら王で評価できない（持ち駒に玉、打ち場所の制限）ので、
+// 布石エンジンの候補手（確率）だけを出す。そのための局面は2つ目のWASMで作り直す
+// （対局の局面を持つ1つ目は触らない）。状態（analysis / analysisFuseki / infoGen）の宣言は
+// 「対局の状態」の節にある。
+
+function startAnalysis() {
+  if (!game || game.phase !== 'over' || !engines || analysis) return;
+  analysis = { variation: { moves: [], at: 0 }, candidates: [], hover: null, pass: null, live: null };
+  engines.engine.setMultiPv(3);
+  render();
+  restartInfinite();
+}
+
+function endAnalysis() {
+  if (!analysis) return;
+  if (analysis.pass) analysis.pass.cancel = true;
+  analysis = null;
+  infoGen++;
+  engines?.engine.stopInfinite();
+  engines?.engine.setMultiPv(1);
+  if (sg) setShapes(sg, []);
+  render();
+}
+ui.analyze.addEventListener('click', startAnalysis);
+ui.analyzeEnd.addEventListener('click', endAnalysis);
+ui.varBack.addEventListener('click', () => {
+  if (!analysis) return;
+  dropVariation();
+  render();
+  restartInfinite();
+});
+ui.analyzeAll.addEventListener('click', () => {
+  if (!analysis) return;
+  if (analysis.pass) analysis.pass.cancel = true;
+  else runPass();
+});
+
+/** 検討で盤に出している局面。本譜の行 row の局面から、変化を at 手だけ進めたもの。 */
+function analysisPosition() {
+  const row = viewedRow();
+  const v = analysis.variation;
+  const pos = row === 0 ? null : game.positionAt(row - 1);   // 布石の行なら null
+  if (!pos) return { pos: null, row, lastDest: undefined, lastDests: [], inVariation: false };
+  let lastDest = lastDestOf(row - 1);
+  let lastDests = game.kifu[row - 1].snapshot?.lastDests ?? [];
+  for (const m of v.moves.slice(0, v.at)) {
+    const md = parseUsi(m.usi);
+    pos.play(md);   // positionAt は毎回作り直すので、そのまま進めてよい
+    lastDest = md.to;
+    lastDests = 'from' in md ? [makeSquareName(md.from), makeSquareName(md.to)] : [makeSquareName(md.to)];
+  }
+  return { pos, row, lastDest, lastDests, inVariation: v.at > 0 };
+}
+
+/** 変化の k 手目の手数（本譜の行の手数の続き）。 */
+function variationPly(k) {
+  const row = viewedRow();
+  return (row === 0 ? 0 : game.kifu[row - 1].ply ?? 40) + k;
+}
+
+function dropVariation() {
+  if (!analysis) return;
+  analysis.variation.moves.length = 0;
+  analysis.variation.at = 0;
+}
+
+/** 変化の中を進む・戻る。 */
+function varStep(delta) {
+  const v = analysis.variation;
+  v.at = Math.max(0, Math.min(v.moves.length, v.at + delta));
+  render();
+  restartInfinite();
+}
+
+/** 盤で指した手（または候補手）を変化として1手足す。見ている変化の先を切り捨てる。 */
+function playVariation(usi) {
+  if (!analysis) return;
+  const { pos, lastDest } = analysisPosition();
+  if (!pos) return render();
+  const md = parseUsi(usi);
+  if (!md || !pos.isLegal(md)) { setStatus(t('status_illegal'), usi); return; }
+  const v = analysis.variation;
+  v.moves.length = v.at;
+  v.moves.push({ usi, text: game.moveText(pos, md, lastDest), capture: pos.board.get(md.to) !== undefined });
+  v.at = v.moves.length;
+  sound.play(v.moves[v.at - 1].capture ? 'capture' : 'move');
+  render();
+  restartInfinite();
+}
+
+/** 見ている局面を読み直す。通常フェーズの局面はやねうら王、布石の局面は布石エンジンの候補手。 */
+function restartInfinite() {
+  if (!analysis || analysis.pass) return;
+  const gen = ++infoGen;
+  analysis.candidates = [];
+  analysis.live = null;
+  analysis.hover = null;
+  const { pos, row, inVariation } = analysisPosition();
+  if (!pos) {
+    engines.engine.stopInfinite();
+    fusekiCandidates(row, gen);
+    return;
+  }
+  // 詰んでいる局面は読めない（合法手が無い）。
+  if (pos.outcome()) { engines.engine.stopInfinite(); renderAnalysis(); return; }
+  const turn = pos.turn;
+  const g = game;
+  let queued = false;
+  engines.engine.startInfinite({
+    sfen: makeSfen(pos),
+    onInfo: info => {
+      if (gen !== infoGen || game !== g || info.score == null) return;
+      const ev = {
+        kind: 'search', scoreKind: info.scoreKind, score: turn === SENTE ? info.score : -info.score,
+        depth: info.depth, nps: info.nps, pv: info.pv, source: 'analysis',
+      };
+      analysis.candidates[info.multipv - 1] = ev;
+      if (info.multipv === 1) {
+        analysis.live = ev;
+        // 本譜の行なら、その行の評価も更新する（グラフとゲージに効く）。浅い値で深い値を潰さない。
+        if (!inVariation && row > 0) {
+          const old = g.kifu[row - 1].eval;
+          if (!old || old.kind !== 'search' || old.source !== 'analysis' || (ev.depth ?? 0) >= (old.depth ?? 0)) {
+            g.kifu[row - 1].eval = { ...ev };
+            if (row === g.kifu.length) g.lastEval = g.kifu[row - 1].eval;
+          }
+        }
+      }
+      // info は1秒に何十行も来る。描き直しは1フレームに1回にまとめる。
+      if (!queued) {
+        queued = true;
+        requestAnimationFrame(() => { queued = false; if (gen === infoGen) renderAnalysis(); });
+      }
+    },
+  }).catch(() => {});
+}
+
+/** 検討の表示だけ描き直す（候補手・ゲージ・グラフ・矢印）。棋譜は触らない。 */
+function renderAnalysis() {
+  if (!analysis || !game) return;
+  renderEngine();
+  renderGauge();
+  renderChart();
+  if (sg) setShapes(sg, analysisShapes());
+}
+
+/** 布石の局面の候補手。2つ目のWASMに手順を入れ直して方策を1回通す。 */
+async function fusekiCandidates(row, gen) {
+  const g = game;
+  // 玉分け将棋の選択の行（局面は変わらない）と、1・2手目の玉の置き場所は候補を出さない
+  // （方策は玉以外も混ぜて返す。置く役の指針は価値表のほうで、ここには載せない）。
+  if (g.mode === 'kings-first' && row < 3) return renderAnalysis();
+  if (!analysisFuseki) analysisFuseki = await Fuseki.load(ASSETS.fuseki);
+  if (gen !== infoGen || game !== g) return;
+  analysisFuseki.reset();
+  for (const e of g.kifu.slice(0, row)) if (!e.usi.startsWith('choose:')) analysisFuseki.drop(e.usi);
+  if (analysisFuseki.isPlacementDone) return renderAnalysis();
+  const { logits } = await engines.policy.evaluate(analysisFuseki);
+  if (gen !== infoGen || game !== g) return;
+  const legal = analysisFuseki.legalDrops();
+  const color = analysisFuseki.turn;
+  const labelFn = engines.policy.labelFn;
+  let max = -Infinity;
+  const raw = legal.map(d => { const v = logits[analysisFuseki[labelFn](d.pt, d.sq, color)]; if (v > max) max = v; return v; });
+  const exps = raw.map(v => Math.exp(v - max));
+  const total = exps.reduce((a, b) => a + b, 0);
+  analysis.candidates = legal
+    .map((d, i) => ({ kind: 'policy', usi: d.usi, role: d.role, color: color === 0 ? SENTE : GOTE, probability: exps[i] / total }))
+    .sort((a, b) => b.probability - a.probability)
+    .slice(0, 5);
+  renderAnalysis();
+}
+
+/** 盤に重ねる矢印と印。候補手（なぞっている1本、無ければ最善）の最初の手。布石は上位5つのマス。 */
+function analysisShapes() {
+  if (!analysis) return [];
+  const c = analysis.candidates.filter(Boolean);
+  if (!c.length) return [];
+  if (c[0].kind === 'policy') {
+    return c.map((k, i) => {
+      const sq = usiDropSquare(k.usi);
+      return { orig: sq, dest: sq, brush: i === 0 ? 'primary' : 'alt', description: `${Math.round(k.probability * 100)}%` };
+    });
+  }
+  const ev = c[Math.min(analysis.hover ?? 0, c.length - 1)];
+  const md = ev?.pv?.[0] ? parseUsi(ev.pv[0]) : null;
+  if (!md) return [];
+  if ('from' in md) return [{ orig: makeSquareName(md.from), dest: makeSquareName(md.to), brush: 'primary' }];
+  const pos = analysisPosition().pos;
+  if (!pos) return [];
+  return [{ orig: { color: pos.turn, role: md.role }, dest: makeSquareName(md.to), brush: 'primary' }];
+}
+
+/** 候補手の一覧（エンジン枠の中）。 */
+function renderCandidates() {
+  ui.engine.hidden = false;
+  ui.candidates.hidden = false;
+  ui.enginePv.textContent = '';
+  const list = analysis.candidates.filter(Boolean);
+  const { pos, lastDest } = analysisPosition();
+  const live = analysis.live;
+  if (!pos) {
+    ui.evaluation.textContent = '—';
+    ui.engineHead.textContent = `· ${t('engine_policy')}`;
+  } else {
+    // 詰んでいる局面は読まない（合法手が無い）。読み込み中と言い続けない。
+    ui.evaluation.textContent = live ? formatEval(live) : pos.outcome() ? '—' : t('engine_analyzing');
+    const bits = [t('engine_yaneuraou')];
+    if (live?.depth != null) bits.push(t('engine_depth', { d: live.depth }));
+    if (live?.nps != null) bits.push(formatNps(live.nps));
+    ui.engineHead.textContent = `· ${bits.join(' · ')}`;
+  }
+  // 行の要素は作り直さず、あるものを書き換える。info は毎フレーム来るので、作り直すと
+  // 押している最中に要素が替わって click が成立しない（mousedown と mouseup の的が別物になる）。
+  while (ui.candidates.childElementCount > list.length) ui.candidates.lastElementChild.remove();
+  while (ui.candidates.childElementCount < list.length) {
+    const li = document.createElement('li');
+    for (const cls of ['ev', 'mv', 'pv']) { const s = document.createElement('span'); s.className = cls; li.appendChild(s); }
+    ui.candidates.appendChild(li);
+  }
+  list.forEach((c, i) => {
+    const li = ui.candidates.children[i];
+    li.dataset.i = String(i);
+    li.classList.toggle('hover', c.kind === 'search' && i === (analysis.hover ?? 0));
+    const [ev, mv, pv] = li.children;
+    if (c.kind === 'policy') {
+      ev.textContent = t('cand_prob', { p: (c.probability * 100).toFixed(1) });
+      mv.textContent = game.fusekiMoveText(c.usi, c.role, c.color);
+      pv.textContent = '';
+    } else {
+      ev.textContent = formatScore(c);
+      const md = c.pv?.[0] ? parseUsi(c.pv[0]) : null;
+      if (md && pos && pos.isLegal(md)) {
+        mv.textContent = game.moveText(pos, md, lastDest);
+        const next = pos.clone();
+        next.play(md);
+        // 読み筋は最初の手の続きを6手。
+        pv.textContent = game.pvText(c.pv.slice(1, 7), { position: next, lastDest: md.to });
+      } else { mv.textContent = c.pv?.[0] ?? ''; pv.textContent = ''; }
+    }
+  });
+}
+
+/** 評価値だけの短い形（候補手の行）。先手から見た値。 */
+function formatScore(ev) {
+  if (ev.scoreKind === 'mate') return t('eval_mate', { n: `${ev.score > 0 ? '' : '-'}${Math.abs(ev.score)}` });
+  if (ev.scoreKind === 'cp') return `${ev.score > 0 ? '+' : ''}${ev.score}`;
+  return '—';
+}
+
+// 候補手をなぞると矢印がその手に替わり、押すとその手を変化として指す。
+ui.candidates.addEventListener('pointerover', e => {
+  const li = e.target.closest('li');
+  if (!li || !analysis) return;
+  const i = Number(li.dataset.i);
+  if (analysis.hover === i) return;
+  analysis.hover = i;
+  renderAnalysis();
+});
+ui.candidates.addEventListener('pointerleave', () => {
+  if (!analysis || analysis.hover === null) return;
+  analysis.hover = null;
+  renderAnalysis();
+});
+ui.candidates.addEventListener('click', e => {
+  const li = e.target.closest('li');
+  if (!li || !analysis) return;
+  const c = analysis.candidates.filter(Boolean)[Number(li.dataset.i)];
+  if (c?.kind === 'search' && c.pv?.[0]) playVariation(c.pv[0]);
+});
+
+/** 本譜の下の変化の行。 */
+function renderVariation() {
+  const v = analysis?.variation;
+  if (!v || !v.moves.length) { ui.variation.hidden = true; ui.variation.replaceChildren(); return; }
+  ui.variation.hidden = false;
+  ui.variation.dataset.head = t('variation_head');
+  const frag = document.createDocumentFragment();
+  v.moves.forEach((m, k) => {
+    const li = document.createElement('li');
+    if (k + 1 === v.at) li.classList.add('current');
+    const n = document.createElement('span'); n.className = 'n'; n.textContent = String(variationPly(k + 1));
+    const t2 = document.createElement('span'); t2.className = 'm'; t2.textContent = m.text;
+    li.append(n, t2);
+    frag.appendChild(li);
+  });
+  ui.variation.replaceChildren(frag);
+}
+ui.variation.addEventListener('click', e => {
+  const li = e.target.closest('li');
+  if (!li || !analysis) return;
+  analysis.variation.at = [...ui.variation.children].indexOf(li) + 1;
+  render();
+  restartInfinite();
+});
+
+/**
+ * 全手を解析。評価の無い行（と、対局中の探索から写しただけの行）を1手0.3秒で順に埋める。
+ * 読み続けている検討は止め、終わったら見ている局面の検討に戻る。同じエンジンを使うので
+ * 並走はできない。
+ */
+async function runPass() {
+  if (!analysis || analysis.pass || !engines) return;
+  const g = game;
+  const rows = g.kifu.map((e, i) => i).filter(i => {
+    const e = g.kifu[i];
+    if (e.ply === null || e.ply < 40 || !g.positionAt(i)) return false;
+    return !(e.eval?.kind === 'search' && e.eval.source === 'analysis');
+  });
+  if (!rows.length) return;
+  const pass = analysis.pass = { i: 0, n: rows.length, cancel: false };
+  infoGen++;
+  const eng = engines.engine;
+  eng.stopInfinite();
+  await eng.setMultiPv(1);
+  render();
+  for (const i of rows) {
+    if (pass.cancel || game !== g || !analysis) break;
+    const pos = g.positionAt(i);
+    if (!pos.outcome()) {
+      const info = await eng.analyze({ sfen: makeSfen(pos), movetimeMs: 300 }).catch(() => null);
+      if (pass.cancel || game !== g || !analysis) break;
+      if (info) g.recordEval(i, info, pos.turn, 'analysis');
+    }
+    pass.i++;
+    renderChart();
+    setStatus(t('status_analyze_all', { i: pass.i, n: pass.n }), t('status_analyze_all_sub'));
+  }
+  if (analysis && analysis.pass === pass) {
+    analysis.pass = null;
+    g.lastEval = g.kifu[g.kifu.length - 1]?.eval ?? g.lastEval;
+    await eng.setMultiPv(3);
+    render();
+    restartInfinite();
+  }
+}
+
+// ---- 評価グラフ ----
+
+// 横軸は棋譜の行（0 = 空の盤、i = i行目を指した後）、縦軸は先手の勝率。
+// 布石の手には評価が無いので左側は空白のまま。玉分け将棋の2手目だけ表の値を点で打つ。
+const CHART = { top: 4, bottom: 4, left: 2, right: 2 };
+let chartHover = null;   // なぞっている行（0〜n）。null なら出さない
+
+function renderChart() {
+  const show = !!game && evalVisible() && (!!game.finalSfen || game.kifu.some(e => e.eval));
+  ui.chart.hidden = !show;
+  if (!show) return;
+  const svg = ui.chartSvg;
+  const rows = game.kifu;
+  const n = Math.max(rows.length, 1);
+  const W = svg.clientWidth || 280, H = svg.clientHeight || 72;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const x = i => CHART.left + (W - CHART.left - CHART.right) * (i / n);
+  const y = p => CHART.top + (H - CHART.top - CHART.bottom) * (1 - p);
+  const mid = y(.5);
+  const ns = 'http://www.w3.org/2000/svg';
+  const frag = document.createDocumentFragment();
+  const add = (tag, attrs, text) => {
+    const e = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (text != null) e.textContent = text;
+    frag.appendChild(e);
+    return e;
+  };
+  for (const p of [.25, .75]) add('line', { class: 'grid', x1: x(0), x2: x(n), y1: y(p), y2: y(p), 'stroke-dasharray': '2 3' });
+  add('line', { class: 'mid', x1: x(0), x2: x(n), y1: mid, y2: mid });
+
+  // 値の並び。連続した区間ごとに面と線を描く。
+  const vals = rows.map(e => (e.eval?.kind === 'search' ? winRateOf(e.eval) : null));
+  let run = [];
+  const flush = () => {
+    if (run.length < 1) { run = []; return; }
+    // 1点だけでも見えるように、直前の行（評価なし）から 0.5 で始める。
+    const pts = run.map(([i, p]) => [x(i + 1), y(p)]);
+    const x0 = run[0][0] > 0 && vals[run[0][0] - 1] == null ? x(run[0][0]) : pts[0][0];
+    let top = `M${x0},${mid}`, bot = `M${x0},${mid}`, line = '';
+    pts.forEach(([px, py], k) => {
+      top += ` L${px},${Math.min(py, mid)}`;
+      bot += ` L${px},${Math.max(py, mid)}`;
+      line += `${k ? 'L' : 'M'}${px},${py} `;
+    });
+    const xe = pts[pts.length - 1][0];
+    add('path', { class: 'area-sente', d: `${top} L${xe},${mid} Z` });
+    add('path', { class: 'area-gote', d: `${bot} L${xe},${mid} Z` });
+    add('path', { class: 'line', d: line });
+    run = [];
+  };
+  vals.forEach((p, i) => { if (p == null) flush(); else run.push([i, p]); });
+  flush();
+
+  // 41手目の区切り。行の添字は玉分け将棋の選択の行ぶんずれるので ply で探す。
+  const i41 = rows.findIndex(e => e.ply === 41);
+  const i40 = rows.findIndex(e => e.ply === 40);
+  const split = i41 >= 0 ? i41 : i40 >= 0 ? i40 + 1 : -1;
+  if (split >= 0 && split < n) {
+    add('line', { class: 'divider', x1: x(split), x2: x(split), y1: CHART.top, y2: H - CHART.bottom });
+    add('text', { x: x(split) + 3, y: CHART.top + 9 }, t('chart_from41'));
+  }
+  // 布石の区間に評価が無ければ、そう書いておく。最後の布石の行（40手目）は41手目の局面
+  // そのものなので評価が付く。見るのはその手前まで。
+  const blankEnd = split < 0 ? n : Math.max(0, split - 1);
+  if (blankEnd > 0 && !vals.slice(0, blankEnd).some(p => p != null))
+    add('text', { x: x(blankEnd / 2), y: mid - 3, 'text-anchor': 'middle' }, t('chart_no_eval'));
+  // 玉分け将棋の2手目。表の値を点で。
+  rows.forEach((e, i) => {
+    if (e.eval?.kind === 'kings') add('circle', { class: 'kings', cx: x(i + 1), cy: y(e.eval.winRate), r: 2.5 });
+  });
+
+  // 見ている手（なぞっていればその行）。
+  const at = chartHover ?? (viewPly === null ? n : viewPly);
+  add('line', { class: 'cursor', x1: x(at), x2: x(at), y1: CHART.top, y2: H - CHART.bottom });
+  const ev = at > 0 ? rows[at - 1]?.eval : null;
+  const p = winRateOf(ev);
+  if (p != null) add('circle', { class: 'dot', cx: x(at), cy: y(p), r: 3 });
+  if (chartHover !== null && at > 0) {
+    const v = ev ? formatEval(ev) : '—';
+    const label = t('chart_tip', { n: rows[at - 1]?.ply ?? '', v });
+    const anchor = at / n > .6 ? 'end' : 'start';
+    add('text', { class: 'tip', x: x(at) + (anchor === 'end' ? -4 : 4), y: H - CHART.bottom - 4, 'text-anchor': anchor }, label);
+  }
+  svg.replaceChildren(frag);
+}
+
+/** グラフの横位置 → 棋譜の行（0〜n）。 */
+function chartRowAt(clientX) {
+  const b = ui.chartSvg.getBoundingClientRect();
+  const n = game.kifu.length;
+  const f = (clientX - b.left - CHART.left) / Math.max(1, b.width - CHART.left - CHART.right);
+  return Math.max(0, Math.min(n, Math.round(f * n)));
+}
+ui.chart.addEventListener('pointermove', e => {
+  if (!game) return;
+  const row = chartRowAt(e.clientX);
+  if (e.buttons & 1) { chartHover = null; goToPly(row); return; }   // なぞってその手へ
+  if (row !== chartHover) { chartHover = row; renderChart(); }
+});
+ui.chart.addEventListener('pointerleave', () => { chartHover = null; if (game) renderChart(); });
+ui.chart.addEventListener('pointerdown', e => {
+  if (!game) return;
+  chartHover = null;
+  const row = chartRowAt(e.clientX);
+  // 最後の行は「最新」（null）。同じ行なら描き直さない（検討の読み直しを起こさない）。
+  if (row === viewedRow() && !analysis?.variation.moves.length) return;
+  goToPly(row);
+});
+addEventListener('resize', () => { if (game) renderChart(); });
+
 /**
  * 棋譜の書き出し。KIFとは呼ばない。KIFには「空の盤＋持ち駒20枚」を表す書き方が無く、
  * KIFと名乗って どのKIFリーダーも読めないのは、素のテキストより悪い。
  */
 function kifuText() {
-  const seats = game.humanColor === null ? t('kifu_seats_undecided')
+  const seats = game.spectate ? t('kifu_seats_spectate')
+    : game.humanColor === null ? t('kifu_seats_undecided')
     : t(game.humanColor === SENTE ? 'kifu_seats_you_sente' : 'kifu_seats_you_gote');
   // 玉分け将棋は役も残す。色と役は一致するとは限らないので、両方書く。
   const roles = game.mode !== 'kings-first' ? ''
-    : `${t(game.humanRole === 'placer' ? 'kifu_roles_you_placer' : 'kifu_roles_you_chooser')} / `;
+    : `${t(game.spectate ? 'kifu_roles_spectate'
+      : game.humanRole === 'placer' ? 'kifu_roles_you_placer' : 'kifu_roles_you_chooser')} / `;
   const rule = t(game.mode === 'kings-first' ? 'kifu_rule_kings' : 'kifu_rule_standard');
   const lines = [`${rule} / ${t('kifu_level', { n: aiLevel })} / ${roles}${seats}`];
   for (const e of game.kifu) {
@@ -1249,7 +1863,8 @@ function playMoveSounds() {
   if (game.phase === 'over' && !soundedOver) {
     soundedOver = true;
     const { winnerIs } = game.result;
-    sound.play(winnerIs === null ? 'draw' : winnerIs === 'human' ? 'win' : 'lose');
+    // 観戦は勝ちも負けも無い。段の境目と同じ知らせの音にする。
+    sound.play(game.spectate ? 'phase' : winnerIs === null ? 'draw' : winnerIs === 'human' ? 'win' : 'lose');
   }
 }
 

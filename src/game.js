@@ -38,10 +38,11 @@ export class Game {
    * @param {'placer'|'chooser'|null} [humanRole] 玉分け将棋での人間の役
    * @param {import('./kings.js').KingTable|null} [kingTable] 置く役・選ぶ役のAIが引く価値表
    * @param {'ja'|'en'} [notation] 棋譜の表記。ja は「▲７六歩」、en は西洋式「☗P-7f」
+   * @param {boolean} [spectate] 観戦（AI同士）。人間はおらず、色も役も持たない
    */
   constructor({ fuseki, policy, engine, humanColor = SENTE, movetimeMs = 1000, temperature = 1,
                 mode = 'standard', humanRole = null, kingTable = null, rng = Math.random,
-                notation = 'ja' }) {
+                notation = 'ja', spectate = false }) {
     this.notation = notation === 'en' ? 'en' : 'ja';
     this.MARK = MARKS[this.notation];
     this.fuseki = fuseki;
@@ -50,7 +51,13 @@ export class Game {
     this.mode = mode;
     this.kingTable = kingTable;
     this.rng = rng;
-    if (mode === 'kings-first') {
+    // 観戦。両方の色をAIが持つ。人間の色（humanColor）も役（humanRole）も無く、
+    // isHumanTurn は常に偽なので、main.js の drive() が終局まで回る。
+    this.spectate = spectate;
+    if (spectate) {
+      this.humanRole = null;
+      this.humanColor = null;
+    } else if (mode === 'kings-first') {
       if (humanRole !== 'placer' && humanRole !== 'chooser')
         throw new Error(`玉分け将棋の人間の役は placer か chooser: ${humanRole}`);
       this.humanRole = humanRole;
@@ -79,8 +86,13 @@ export class Game {
     this.finalSfen = null;           // 41手目局面のSFEN
     this.result = null;              // { winner: 'sente'|'gote'|null, reason: string }
     this.lastDests = [];             // 直前の着手のマス（表示用）
-    this.lastEval = null;            // 直近のAIの評価（表示用）
-    this.kifu = [];                  // { ply, color, text, usi } 表示用の棋譜
+    // 直近の評価（表示用）。kind は 'search'（やねうら王）／'policy'（布石方策の採用手の確率）／
+    // 'kings'（両玉の価値表）。search の score は**常に先手から見た値**に直して持つ
+    // （USIの score は探索した側から見た値なので、recordEval() が裏返す）。
+    this.lastEval = null;
+    // 表示用の棋譜 { ply, color, text, usi, actor, snapshot, eval }。
+    // eval は「その手を指した後の局面」の評価で、無い行もある（布石の手・解析前の手）。
+    this.kifu = [];
     this._lastDestSquare = undefined;// 「同」の判定に使う直前の着手先
 
     this.fuseki.reset();
@@ -97,6 +109,7 @@ export class Game {
 
   /** 人間が動く番か。玉分け将棋の冒頭は役で決まり、色では決まらない。 */
   get isHumanTurn() {
+    if (this.spectate) return false;
     if (this.phase === 'kings') return this.humanRole === 'placer';
     if (this.phase === 'choose') return this.humanRole === 'chooser';
     return this.phase !== 'over' && this.turnColor === this.humanColor;
@@ -154,8 +167,7 @@ export class Game {
   hands() {
     if (!this.position)
       return new Map([[SENTE, this.fuseki.remaining(BLACK)], [GOTE, this.fuseki.remaining(WHITE)]]);
-    const toMap = color => new Map([...this.position.hands[color]].filter(([, n]) => n > 0));
-    return new Map([[SENTE, toMap(SENTE)], [GOTE, toMap(GOTE)]]);
+    return positionHands(this.position);
   }
 
   /** shogiground の droppable.dests。手番側の駒打ちのみを入れる。 */
@@ -173,44 +185,20 @@ export class Game {
         dests.get(name).push(usiDropSquare(d.usi));
       }
     } else {
-      for (const [name, squares] of this.position.allDropDests())
-        if (name.startsWith(color)) dests.set(name, [...squares].map(makeSquareName));
+      return positionDropDests(this.position);
     }
     return dests;
   }
 
   /** shogiground の movable.dests。布石フェーズは移動できないので空。 */
   moveDests() {
-    const dests = new Map();
-    if (this.phase !== 'normal') return dests;
-    for (const [from, tos] of this.position.allMoveDests())
-      if (tos.nonEmpty()) dests.set(makeSquareName(from), [...tos].map(makeSquareName));
-    return dests;
+    if (this.phase !== 'normal') return new Map();
+    return positionMoveDests(this.position);
   }
 
   /** shogiground の成り判定。通常フェーズのルールをshogiopsから引く。 */
   promotion() {
-    const pieceAt = key => this.position?.board.get(parseSquareName(key));
-    return {
-      movePromotionDialog: (orig, dest) => {
-        if (this.phase !== 'normal') return false;
-        const piece = pieceAt(orig);
-        if (!piece) return false;
-        const from = parseSquareName(orig), to = parseSquareName(dest);
-        return canPromote(piece, from, to, this.position.board.get(to)) && !forcePromote(piece, to);
-      },
-      forceMovePromotion: (orig, dest) => {
-        if (this.phase !== 'normal') return false;
-        const piece = pieceAt(orig);
-        return !!piece && forcePromote(piece, parseSquareName(dest));
-      },
-      dropPromotionDialog: () => false,
-      forceDropPromotion: () => false,
-      // shogigroundの既定は promotesTo: () => undefined で、これを渡さないと
-      // basePromotionDialog() が常に false を返し、成りのダイアログが開かない。
-      promotesTo: promoteRole,
-      unpromotesTo: unpromoteRole,
-    };
+    return promotionConfig(() => (this.phase === 'normal' ? this.position : null));
   }
 
   checks() {
@@ -234,7 +222,8 @@ export class Game {
     if (side !== SENTE && side !== GOTE) throw new Error(`選べるのは先手側か後手側: ${side}`);
     const actor = this.humanRole === 'chooser' ? 'human' : 'ai';
     this.chosen = side;
-    this.humanColor = this.humanRole === 'chooser' ? side : (side === SENTE ? GOTE : SENTE);
+    // 観戦では誰も人間でないので色は付かない。
+    if (!this.spectate) this.humanColor = this.humanRole === 'chooser' ? side : (side === SENTE ? GOTE : SENTE);
     this.phase = 'fuseki';
     // 棋譜には1行として残す。手数は持たない（3手目は次の駒打ち）。
     const sideName = this.notation === 'en'
@@ -327,6 +316,7 @@ export class Game {
     // 変わり、評価には布石の「採用手の確率」が出たままになる。
     if (this.phase !== 'fuseki') return null;
     this.lastEval = { kind: 'policy', winRate: picked.value, probability: picked.probability, candidates: picked.candidates };
+    this.kifu[this.kifu.length - 1].eval = this.lastEval;
     return this.lastEval;
   }
 
@@ -338,17 +328,58 @@ export class Game {
     // 待ったで戻されていたら捨てる。ここを見ないと、古い局面の手が isLegal で
     // 弾かれて「エンジンが非合法手を返した」負けに化ける。
     if (this.epoch !== epoch || this.phase !== 'normal') return null;
-    if (usi === 'resign') { this._end(this.humanColor, 'ai_resign'); return null; }
-    if (usi === 'win') { this._end(this.aiColor, 'ai_nyugyoku_declaration'); return null; }
+    const mover = this.position.turn;
+    // 探索の根はいまの局面＝直前の手を指した後の局面。その行の評価として残す。
+    // AIの手を指した後の局面の評価は、根の値と同じ（bestmove は読み筋の先頭で、
+    // 根の値はその手を指した先の値）。探索1回で2行ぶん埋まる。
+    const root = this.recordEval(this.kifu.length - 1, info, mover, 'root');
+    if (usi === 'resign') { this._end(this.opponentOf(mover), 'ai_resign'); return null; }
+    if (usi === 'win') { this._end(mover, 'ai_nyugyoku_declaration'); return null; }
     const md = parseUsi(usi);
     // やねうら王のbestmoveをそのまま信じない。非合法手を適用すると盤が静かに壊れる。
-    if (!md || !this.position.isLegal(md)) { this._end(this.humanColor, 'engine_illegal_move'); return null; }
-    const mover = this.aiColor;
+    if (!md || !this.position.isLegal(md)) { this._end(this.opponentOf(mover), 'engine_illegal_move'); return null; }
     this._applyNormalMove(usi, md);
-    // side は「この評価値が誰から見た値か」。USIの score は探索した側から見た値で、
-    // ここではAI。人間の手番に画面が聞いたぶんは main.js が humanColor を入れる。
-    this.lastEval = { kind: 'search', ...info, side: mover };
+    if (root) {
+      this.lastEval = { ...root, pv: root.pv?.slice(1), source: 'pv' };
+      this.kifu[this.kifu.length - 1].eval = this.lastEval;
+    }
     return this.lastEval;
+  }
+
+  /**
+   * やねうら王の探索結果を棋譜の行の評価として残す。
+   *
+   * @param {number} index 棋譜の行（その手を指した後の局面が探索の根）
+   * @param {object|null} info normal.js の parseInfo（score は探索した側から見た値）
+   * @param {'sente'|'gote'} side 探索した側（根の手番）
+   * @param {'root'|'pv'|'analysis'} source 出所。analysis は検討・人間の手番の解析
+   * @returns 残した評価（先手から見た値）。score が無ければ null
+   */
+  recordEval(index, info, side, source) {
+    if (!info || info.score == null || index < 0 || index >= this.kifu.length) return null;
+    const flip = side === SENTE ? 1 : -1;
+    const ev = {
+      kind: 'search', scoreKind: info.scoreKind, score: info.score * flip,
+      depth: info.depth, nps: info.nps, pv: info.pv, source,
+    };
+    this.kifu[index].eval = ev;
+    return ev;
+  }
+
+  opponentOf(color) { return color === SENTE ? GOTE : SENTE; }
+
+  /**
+   * 棋譜の行 index の手を指した後の局面（shogiops の Position）。通常フェーズの行と、
+   * 41手目の局面そのものである40手目の行だけが持つ。布石の途中は null。
+   * 検討モードと、さかのぼって読み筋を並べるのに使う。作り直すので呼び出し側で使い回すこと。
+   */
+  positionAt(index) {
+    if (!this.finalSfen) return null;
+    const e = this.kifu[index];
+    if (!e || e.ply === null || e.ply < 40) return null;
+    const pos = parseSfen('standard', this.finalSfen, false).unwrap();
+    for (const usi of this.normalMoves.slice(0, e.ply - 40)) pos.play(parseUsi(usi));
+    return pos;
   }
 
   // ---- 内部 ----
@@ -384,6 +415,12 @@ export class Game {
     // 両玉が置かれたら選択へ。盤も手番も変えない（3手目は先手番のまま）。
     if (this.phase === 'kings' && this.fusekiMoves.length === 2) {
       this.phase = 'choose';
+      // 2手目の行の評価は表の値。置いたのが誰でも同じ表を引く。
+      if (this.kingTable) {
+        const { sente, gote } = this.kingSquares;
+        try { this.kifu[1].eval = { kind: 'kings', winRate: this.kingTable.v(sente, gote) }; }
+        catch { /* 表に無い組は評価なしのまま */ }
+      }
       return;
     }
     if (this.fuseki.isPlacementDone) this._transitionToNormal();
@@ -457,12 +494,17 @@ export class Game {
   _end(winner, reason, winnerIs) {
     this.phase = 'over';
     if (winnerIs === undefined)
-      winnerIs = winner === null ? null : winner === this.humanColor ? 'human' : 'ai';
+      winnerIs = winner === null || this.spectate ? null : winner === this.humanColor ? 'human' : 'ai';
     this.result = { winner, reason, winnerIs };
   }
 
   resign() {
     if (this.phase !== 'over') this._end(this.aiColor, 'human_resign', 'ai');
+  }
+
+  /** 観戦を途中でやめる。勝敗は付かない。 */
+  abort() {
+    if (this.phase !== 'over') this._end(null, 'aborted', null);
   }
 
   /**
@@ -478,10 +520,9 @@ export class Game {
    * 別の局面の読み筋が遅れて届くことがあるので、非合法手に当たったらそこで止める
    * （途中まででも読める。例外にすると表示だけのために対局が止まる）。
    */
-  pvText(pv) {
-    if (!this.position || !pv?.length) return '';
-    const pos = this.position.clone();
-    let lastDest = this._lastDestSquare;
+  pvText(pv, { position = this.position, lastDest = this._lastDestSquare } = {}) {
+    if (!position || !pv?.length) return '';
+    const pos = position.clone();
     const out = [];
     for (const usi of pv) {
       const md = parseUsi(usi);
@@ -498,6 +539,19 @@ export class Game {
   /** 通常フェーズの指し手の文字。日本語は「７六歩」、英語版は西洋式「P-7f」。 */
   _moveText(pos, md, lastDest) {
     return this.notation === 'en' ? makeWesternMoveOrDrop(pos, md) : makeJapaneseMoveOrDrop(pos, md, lastDest);
+  }
+
+  /** 手番の印つきの指し手の文字（検討の変化と候補手の表示用）。指す前の局面を渡す。 */
+  moveText(pos, md, lastDest) {
+    return `${this.MARK[pos.turn]}${this._moveText(pos, md, lastDest) ?? ''}`;
+  }
+
+  /** 布石の駒打ちの文字（棋譜の行と同じ形）。検討の候補手の表示用。 */
+  fusekiMoveText(usi, role, color) {
+    const key = usiDropSquare(usi);
+    return this.notation === 'en'
+      ? `${this.MARK[color]}${westernOf(role)}*${key}`
+      : `${this.MARK[color]}${fusekiDropText(usi, role)}打`;
   }
 
   /**
@@ -530,10 +584,15 @@ export class Game {
    */
   undoTo(n) {
     const tokens = this.tokens().slice(0, Math.max(0, n));
+    // 残る行の評価は取っておく。再生は同じ手順なので局面も同じで、評価もそのまま使える。
+    // 捨てると、待ったのたびに評価グラフが空になる。
+    const evals = this.kifu.slice(0, Math.max(0, n)).map(e => e.eval);
     // 先に上げる。これを見てAIが自分の考えた手を捨てる。
     this.epoch++;
     this._reset();
     for (const t of tokens) this.play(t);
+    evals.forEach((ev, i) => { if (ev && this.kifu[i]) this.kifu[i].eval = ev; });
+    this.lastEval = this.kifu[this.kifu.length - 1]?.eval ?? null;
   }
 
   _reset() {
@@ -547,7 +606,7 @@ export class Game {
     this.phase = this.mode === 'kings-first' ? 'kings' : 'fuseki';
     this.chosen = null;
     this._aiKingsPlan = null;
-    if (this.mode === 'kings-first') this.humanColor = null;
+    if (this.mode === 'kings-first' || this.spectate) this.humanColor = null;
     this.result = null;
     this.lastDests = [];
     this.lastEval = null;
@@ -571,6 +630,57 @@ function handsSfen(hands) {
     }
   }
   return out || '-';
+}
+
+// ---- shogiops の Position から shogiground 向けの値を作る（対局と検討で共有） ----
+
+/** 持ち駒。色 → (駒種 → 枚数)。0枚の駒種は入れない。 */
+export function positionHands(position) {
+  const toMap = color => new Map([...position.hands[color]].filter(([, n]) => n > 0));
+  return new Map([[SENTE, toMap(SENTE)], [GOTE, toMap(GOTE)]]);
+}
+
+/** shogiground の movable.dests（手番側）。 */
+export function positionMoveDests(position) {
+  const dests = new Map();
+  for (const [from, tos] of position.allMoveDests())
+    if (tos.nonEmpty()) dests.set(makeSquareName(from), [...tos].map(makeSquareName));
+  return dests;
+}
+
+/** shogiground の droppable.dests（手番側）。 */
+export function positionDropDests(position) {
+  const dests = new Map();
+  for (const [name, squares] of position.allDropDests())
+    if (name.startsWith(position.turn)) dests.set(name, [...squares].map(makeSquareName));
+  return dests;
+}
+
+/**
+ * shogiground の成り判定。getPosition() が null を返すあいだは成りを聞かない。
+ * 対局（通常フェーズだけ）と検討（変化の局面）で同じものを使う。
+ */
+export function promotionConfig(getPosition) {
+  const pieceAt = (pos, key) => pos?.board.get(parseSquareName(key));
+  return {
+    movePromotionDialog: (orig, dest) => {
+      const pos = getPosition();
+      const piece = pieceAt(pos, orig);
+      if (!piece) return false;
+      const from = parseSquareName(orig), to = parseSquareName(dest);
+      return canPromote(piece, from, to, pos.board.get(to)) && !forcePromote(piece, to);
+    },
+    forceMovePromotion: (orig, dest) => {
+      const piece = pieceAt(getPosition(), orig);
+      return !!piece && forcePromote(piece, parseSquareName(dest));
+    },
+    dropPromotionDialog: () => false,
+    forceDropPromotion: () => false,
+    // shogigroundの既定は promotesTo: () => undefined で、これを渡さないと
+    // basePromotionDialog() が常に false を返し、成りのダイアログが開かない。
+    promotesTo: promoteRole,
+    unpromotesTo: unpromoteRole,
+  };
 }
 
 /** 布石の駒打ちの日本語表記（手番の印は付けない）。棋譜と候補手の表示で共有する。 */

@@ -48,10 +48,18 @@ export class NormalEngine {
     // 対局の指し手と重なりうる。
     this._chain = Promise.resolve();
     this._searching = false;
+    this._onInfo = null;    // 検討（go infinite）のあいだ、info 行を渡す先
+    this._infGen = 0;       // 検討の世代。古い go infinite が chain の中で始まらないようにする
+    this.multiPv = 1;
   }
 
   _onLine(line) {
-    if (line.startsWith('info') && line.includes(' score ')) this.lastInfo = parseInfo(line);
+    if (line.startsWith('info') && line.includes(' score ')) {
+      const info = parseInfo(line);
+      // lastInfo は主変化だけ。MultiPV の2本目以降で上書きすると bestMove の評価が別の手のものになる。
+      if (info.multipv === 1) this.lastInfo = info;
+      this._onInfo?.(info);
+    }
     for (const w of this._waiters.slice()) {
       if (w.match(line)) {
         this._waiters.splice(this._waiters.indexOf(w), 1);
@@ -121,6 +129,65 @@ export class NormalEngine {
     return (await this._go(opts)).info;
   }
 
+  /**
+   * オプションを設定する。探索の合間（chain の順番）に送る。探索中に setoption を
+   * 投げるとエンジンが捨てるか、次の探索から効くかが版によって違うので、走っている
+   * 探索が終わるのを待ってから送る。
+   */
+  setOption(name, value) {
+    const run = async () => { this.module.postMessage(`setoption name ${name} value ${value}`); };
+    const p = this._chain.then(run, run);
+    this._chain = p.then(() => {}, () => {});
+    return p;
+  }
+
+  /** 候補手の本数（MultiPV）。検討で3、対局では1。同じ値なら送らない。 */
+  setMultiPv(n) {
+    if (this.multiPv === n) return Promise.resolve();
+    this.multiPv = n;
+    return this.setOption('MultiPV', n);
+  }
+
+  /**
+   * 検討。局面を読み続け、info が来るたびに onInfo を呼ぶ（MultiPV ぶん、multipv 番号つき）。
+   * 止めるのは stopSearch()。止めるまで chain を塞ぐので、次の探索（対局の手・全手の解析）は
+   * 必ず stopSearch() の後に積むこと。
+   *
+   * 走っている検討を止めてから積むのが要点で、それでも chain に古い検討が残りうる
+   * （止めた時点でまだ始まっていなかったもの）。世代（_infGen）で見分けて、始まる前に捨てる。
+   * 返る promise は bestmove（stop の応答）で解ける。
+   */
+  startInfinite({ sfen, moves = [], onInfo }) {
+    const gen = ++this._infGen;
+    this.stopSearch();
+    const run = async () => {
+      if (gen !== this._infGen) return null;
+      this._searching = true;
+      this.lastInfo = null;
+      this._onInfo = onInfo;
+      const position = `position sfen ${sfen}` + (moves.length ? ` moves ${moves.join(' ')}` : '');
+      this.module.postMessage(position);
+      this.module.postMessage('go infinite');
+      try {
+        // stop が来るまで返らない。既定の2分では足りないので時間切れを置かない（丸1日）。
+        const line = await this._waitFor(l => l.startsWith('bestmove'), 86400000);
+        return { usi: line.split(' ')[1], info: this.lastInfo };
+      } finally {
+        this._searching = false;
+        this._onInfo = null;
+      }
+    };
+    const p = this._chain.then(run, run);
+    this._chain = p.then(() => {}, () => {});
+    return p;
+  }
+
+  /** 検討を止める。積んであってまだ始まっていない検討も捨てる。 */
+  stopInfinite() {
+    this._infGen++;
+    this.stopSearch();
+  }
+
   terminate() { this.module.terminate(); }
 }
 
@@ -128,6 +195,7 @@ function parseInfo(line) {
   const depth = line.match(/depth (\d+)/);
   const score = line.match(/score (cp|mate) (-?\d+)/);
   const nps = line.match(/nps (\d+)/);
+  const multipv = line.match(/multipv (\d+)/);
   // pv は行末まで取る。USIの規約上 pv の後ろに別のトークンは来ない。
   const pv = line.match(/ pv (.+)$/);
   return {
@@ -135,6 +203,7 @@ function parseInfo(line) {
     scoreKind: score ? score[1] : undefined,
     score: score ? Number(score[2]) : undefined,
     nps: nps ? Number(nps[1]) : undefined,
+    multipv: multipv ? Number(multipv[1]) : 1,
     pv: pv ? pv[1].trim().split(/\s+/) : undefined,
   };
 }

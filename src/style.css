@@ -236,11 +236,16 @@ body {
 .mode-card input { position: absolute; width: 1px; height: 1px; margin: -1px; opacity: 0; }
 .mode-name { font-family: var(--serif); font-size: 1.2rem; font-weight: 700; }
 .mode-desc { font-size: .84rem; color: var(--ink-soft); line-height: 1.5; }
-.mode-steps { display: flex; gap: 3px; margin-top: .2rem; }
-.mode-steps i { flex: 1 1 0; height: 5px; border-radius: 2px; background: var(--rule); }
-.mode-steps i.on { background: var(--ink-soft); }
-.mode-steps i.short { flex: .5 1 0; }
-.mode-flow { font-size: .74rem; color: var(--ink-soft); }
+/* カードの中の1局の流れ。対局画面のフェーズ帯（.stepper / .step）と同じ部品で、
+   この将棋だけの段は塗り、普通の将棋の段は破線。段の本体の見た目は「右のパネル」の節。 */
+.stepper.mini { margin-top: .3rem; }
+.stepper.mini .step { cursor: inherit; text-align: center; padding: .15rem .25rem; font-size: .68rem;
+                      color: var(--ink-soft); background: color-mix(in srgb, var(--rule) 35%, transparent); }
+.stepper.mini .step.shogi { border-style: dashed; background: transparent; }
+.stepper.mini .step .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 英語は段の名前が長い（Place kings / Choose side）。切らずに折り返し、4段の副題は省く。 */
+:lang(en) .stepper.mini .step .t { white-space: normal; overflow-wrap: anywhere; line-height: 1.2; }
+:lang(en) .stepper.mini.four .step .s { display: none; }
 .setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem .8rem; }
 @media (max-width: 34rem) { .setup-grid { grid-template-columns: 1fr; } }
 .setup-grid label {
@@ -393,8 +398,9 @@ body {
   .status         { order: 4; }
   .actions        { order: 5; }
   .kifu-box       { order: 6; }
-  .engine         { order: 7; }
-  #seat-bottom    { order: 8; }
+  .eval-chart     { order: 7; }
+  .engine         { order: 8; }
+  #seat-bottom    { order: 9; }
 }
 
 /* 盤と駒台の配置。lishogi と同じで、狭いときは盤の上下、広いときは盤の左右に
@@ -505,10 +511,12 @@ sq.last-dest.dest.oc:not(.hover) {
 }
 
 sg-pieces { position: absolute; inset: 0; display: block; }
-/* 矢印描画は切ってあるが、有効にした場合に盤の高さを壊さないよう位置を固定しておく。 */
+/* 矢印と印の層（検討の候補手）。盤の高さを壊さないよう位置を固定し、**クリックを通す**。
+   通さないと、駒台の駒を選んだ後の盤のマスへのクリックがこの層に取られて打てなくなる
+   （実際に起きた。駒の選択は駒台側なので効き、置く側だけが黙って落ちる）。 */
 sg-board > .sg-shapes,
 sg-board > .sg-custom-svgs,
-sg-board > sg-free-pieces { position: absolute; inset: 0; width: 100%; height: 100%; }
+sg-board > sg-free-pieces { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
 /* 成りの選択ダイアログ。着手先のマスの上に2択（成/不成）を積む。
    ここも絶対配置にしないと、開いた瞬間に盤の高さが崩れる。 */
@@ -926,6 +934,8 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .panel[data-state="idle"] .actions-play { display: flex; gap: .4rem; }
 .panel[data-state="choose"] .actions-choose { display: grid; gap: .4rem; }
 .panel[data-state="over"] .actions-over { display: grid; gap: .4rem; }
+.panel[data-state="analyze"] .actions-analyze { display: grid; gap: .4rem; }
+.analyze-row { display: flex; gap: .4rem; }
 .actions button {
   flex: 1 1 0;
   min-width: 0;
@@ -962,6 +972,30 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 
 /* 過去の局面を見ている間は盤の縁を変えて、対局中の局面でないことを示す。 */
 .sg-wrap.reviewing sg-board { border-color: var(--accent); }
+
+/* 評価グラフ。lishogi の解析画面と同じ「先手が良いと上、面で塗る」形。
+   縦軸は先手の勝率で、ゲージと同じ換算（main.js の winRateOf）。 */
+.eval-chart {
+  height: 4.5rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: none;   /* なぞってその手へ。縦スクロールに取られない */
+}
+.eval-chart svg { display: block; width: 100%; height: 100%; }
+.eval-chart .grid { stroke: var(--rule); stroke-width: 1; }
+.eval-chart .mid { stroke: var(--ink-soft); stroke-width: 1; opacity: .6; }
+.eval-chart .divider { stroke: var(--ink-soft); stroke-width: 1; stroke-dasharray: 3 3; }
+.eval-chart .area-sente { fill: var(--ink); opacity: .75; }
+.eval-chart .area-gote { fill: var(--rule); }
+.eval-chart .line { fill: none; stroke: var(--ink); stroke-width: 1; opacity: .5; }
+.eval-chart .cursor { stroke: var(--accent); stroke-width: 1.5; }
+.eval-chart .dot { fill: var(--accent); }
+.eval-chart .kings { fill: var(--ink-soft); }
+.eval-chart text { fill: var(--ink-soft); font-size: 9px; font-family: var(--sans); }
+.eval-chart text.tip { fill: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .kifu-box { display: flex; flex-direction: column; min-width: 0; }
 .kifu {
@@ -1001,6 +1035,66 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 }
 .kifu li.choice .m { font-family: var(--sans); font-weight: 600; }
 
+/* 検討で試している変化。本譜の下に1本だけ、縁を立てて別物だと分かるようにする。 */
+.variation {
+  margin: .3rem 0 0;
+  padding: .25rem .3rem;
+  max-height: 6rem;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--paper-raised);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-size: .8125rem;
+}
+.variation::before {
+  content: attr(data-head);
+  display: block;
+  margin: 0 .3rem .1rem;
+  color: var(--accent);
+  font-size: .7rem;
+  letter-spacing: .06em;
+}
+.variation li { display: flex; gap: .5rem; padding: .1rem .3rem; cursor: pointer; }
+.variation li:hover { background: color-mix(in srgb, var(--ink-soft) 18%, transparent); }
+.variation .n { flex: 0 0 auto; width: 2.2em; text-align: right; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.variation .m { font-family: var(--serif); }
+:lang(en) .variation .m { font-family: var(--sans); font-variant-numeric: tabular-nums; }
+.variation li.current { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.variation li.current .m { font-weight: 600; }
+
+/* 検討の候補手。評価・指し手・読み筋を1行ずつ。押すとその手を指し、なぞると矢印が出る。 */
+.candidates { margin: .15rem 0 0; padding: 0; list-style: none; display: grid; gap: .1rem; }
+.candidates li {
+  display: grid;
+  grid-template-columns: 4.2em 1fr;
+  gap: .1rem .5rem;
+  padding: .15rem .4rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--paper-raised);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.candidates li:hover, .candidates li.hover { border-color: var(--accent); }
+.candidates .ev { font-weight: 700; color: var(--ink); white-space: nowrap; }
+.candidates .mv { color: var(--ink); font-family: var(--serif); font-weight: 600; }
+.candidates .pv { grid-column: 1 / -1; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .72rem; }
+.candidates .pv:empty { display: none; }
+:lang(en) .candidates .mv { font-family: var(--sans); }
+
+/* 検討で盤に出す矢印と印（shogiground の drawable）。ブラシ名がそのままクラスになる。 */
+.sg-shapes { pointer-events: none; overflow: visible; z-index: 2; }
+.sg-shapes g { fill: none; }
+.sg-shapes g.primary { stroke: var(--accent); stroke-opacity: .8; }
+.sg-shapes g.alt { stroke: #3b6db3; stroke-opacity: .55; }
+.sg-shapes marker#arrowhead-primary path { fill: var(--accent); fill-opacity: .8; }
+.sg-shapes marker#arrowhead-alt path { fill: #3b6db3; fill-opacity: .55; }
+.sg-shapes g.description ellipse { fill: var(--paper-raised); stroke: var(--accent); stroke-width: .2; }
+.sg-shapes g.description text { fill: var(--ink); font-size: 3px; font-weight: 700; stroke: none; }
+/* 検討中は盤の縁を変える（さかのぼり中と同じ色）。 */
+.sg-wrap.analyzing sg-board { border-color: var(--accent); }
+
 /* 棋譜をさかのぼるボタン。lishogiと同じ4つ。 */
 .kifu-nav { display: flex; gap: 1px; margin-top: .4rem; }
 .kifu-nav button {
@@ -1027,15 +1121,17 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .kifu-nav button:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-soft); }
 .kifu-nav button:disabled { opacity: .3; cursor: default; }
 
-/* 広い画面では、パネルは固定スロットの grid。席・帯・状態・操作・棋譜・エンジン・席の
-   7行で、棋譜の行だけが余りを取り、内側でスクロールする。ほかの行は中身で決まるので、
+/* 広い画面では、パネルは固定スロットの grid。席・帯・状態・操作・棋譜・グラフ・エンジン・席の
+   8行で、棋譜の行だけが余りを取り、内側でスクロールする。ほかの行は中身で決まるので、
    状態が変わっても動くのは棋譜の高さだけになる。
+   hidden の要素は grid から抜けて後ろの行が繰り上がるので、hidden になりうるもの
+   （グラフ・エンジン枠）は 1fr の棋譜より**後ろ**に置く。前に置くと棋譜が auto の行に落ちる。
    .layout > .panel と書くのは詳細度のため。上の .panel { display: flex } と同じ詳細度だと
    後に書いたほうが勝つので、こちらを上げておく（.kifu の max-height も同じ）。 */
 @media (min-width: 56rem) {
   .layout > .panel {
     display: grid;
-    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto;
+    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto;
     gap: .55rem;
     min-height: 0;
   }
