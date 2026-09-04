@@ -666,7 +666,7 @@ async function playKingsFirst(page) {
     v => v && v.startsWith('あなたの番'), 30000);
   s = await status();
   check('後手を持って始めると自分が後手になり、盤が回って手前が後手',
-    s.bottom === 'あなた ☖' && s.top.startsWith('AI レベル') && s.top.endsWith('☗') && s.gote,
+    s.bottom === 'あなた · 後手 ☖' && s.top.startsWith('AI レベル') && s.top.endsWith('☗') && s.gote,
     `${s.top} / ${s.bottom}`);
   check('選択が棋譜に1行入り、AIの3手目が続く', s.kifu.length === 4 && s.kifu[2] === '△後手を持つ'
     && s.state === 'play' && s.tags === 0, s.kifu.join(' '));
@@ -705,7 +705,7 @@ async function playKingsFirst(page) {
   await evalUntil(page, 'document.getElementById("status-line").textContent',
     v => v && v.startsWith('あなたの番'), 30000);
   s = await status();
-  check('ボタンで先手を持つと自分が先手で、3手目は自分の番', s.bottom === 'あなた ☗'
+  check('ボタンで先手を持つと自分が先手で、3手目は自分の番', s.bottom === 'あなた · 先手 ☗'
     && s.kifu.length === 3 && s.kifu[2] === '▲先手を持つ', `${s.bottom} / ${s.kifu.join(' ')}`);
   const sfen3 = await evaluate(page, `(() => {
     document.getElementById('btn-io-open').click();
@@ -1023,7 +1023,7 @@ async function checkEnglish(page) {
   check('英語版の棋譜は西洋式（☗P*7f）', /^☗P\*\d[a-i]$/.test(kifu[0] ?? '') && /^☖[PLNSGBRK]\*\d[a-i]$/.test(kifu[1] ?? ''),
     kifu.join(' '));
   check('席の名前が英語', await evaluate(page,
-    'document.getElementById("seat-bottom-name").textContent') === 'You ☗');
+    'document.getElementById("seat-bottom-name").textContent') === 'You · Sente ☗');
   await layoutCheck('英語版');
   await shot('09-en-play');
   check('英語版で未処理の例外が無い', exceptions().length === errorsAtStart,

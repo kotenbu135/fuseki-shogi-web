@@ -262,6 +262,10 @@ const DICT = {
   },
   side_sente: { ja: '先手 ☗', en: 'Sente ☗' },
   side_gote: { ja: '後手 ☖', en: 'Gote ☖' },
+  // 記号なし。墨地のトースト・朱地の札やボタンで使う。記号は文字色で塗られるので、
+  // 周りと地が逆の場所に置くと先手が白駒に見える（ABEMAの候補手欄と同じ）。記号は紙地の上だけ。
+  side_sente_plain: { ja: '先手', en: 'Sente' },
+  side_gote_plain: { ja: '後手', en: 'Gote' },
   you: { ja: 'あなた', en: 'you' },
   You: { ja: 'あなた', en: 'You' },
   ai: { ja: 'AI', en: 'the AI' },

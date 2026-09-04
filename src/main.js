@@ -667,7 +667,7 @@ function squareCenter(key, b) {
   return { x: (col + .5) * sq, y: (row + .5) * sq, sq };
 }
 
-/** 先後を選ぶあいだ、両玉に札（先手 ☗／後手 ☖）と輪を重ねる。 */
+/** 先後を選ぶあいだ、両玉に札（先手／後手）と輪を重ねる。押した玉の札は朱地なので記号は付けない。 */
 function renderKingTags() {
   const show = !!game && game.phase === 'choose' && viewPly === null && !ui.viewPlay.hidden;
   const wrap = el('board');
@@ -691,7 +691,7 @@ function renderKingTags() {
     ring.style.cssText = `left:${cx - r}px;top:${cy - r}px;width:${2 * r}px;height:${2 * r}px`;
     const label = document.createElement('div');
     label.className = `king-label ${state}`;
-    label.textContent = t(color === SENTE ? 'side_sente' : 'side_gote');
+    label.textContent = sidePlain(color);
     // 上半分の玉には札を下に、下半分の玉には上に。盤の外へは出さない。
     const upper = y < b.height / 2;
     label.style.cssText = upper
@@ -980,8 +980,9 @@ function renderNav() {
   ui.navLast.disabled = n === 0 || (viewPly === null && !v?.moves.length);
 }
 
-const SYMBOL = { [SENTE]: '☗', [GOTE]: '☖' };
 function sideName(color) { return t(color === SENTE ? 'side_sente' : 'side_gote'); }
+/** 記号なしの先後。地が紙でない場所（トースト・朱のボタン・押した玉の札）はこちら。 */
+function sidePlain(color) { return t(color === SENTE ? 'side_sente_plain' : 'side_gote_plain'); }
 
 /** 席の名前・手番の印・時計。 */
 function renderSeats() {
@@ -997,7 +998,8 @@ function renderSeats() {
         : pendingSide !== null
           ? (c === pendingSide ? t('seat_you_pending') : t('seat_ai', { n: aiLevel }))
           : null;
-    return who === null ? sideName(c) : `${who} ${SYMBOL[c]}`;
+    // 誰かが決まっても先後は語で言う（81Dojoと同じ）。玉分け将棋は色と役が一致しないので、記号だけでは足りない。
+    return who === null ? sideName(c) : `${who} · ${sideName(c)}`;
   };
   ui.seatTopName.textContent = label(top);
   ui.seatBottomName.textContent = label(bottom);
@@ -1232,7 +1234,7 @@ function announcePhase() {
   phaseSeen = game.phase;
   if (prev === null || prev === game.phase) return;
   if (prev === 'choose' && game.phase === 'fuseki' && game.humanColor) {
-    showToast(sideName(game.humanColor), t('curtain_side'));
+    showToast(t('toast_side_sub', { side: sidePlain(game.humanColor) }), t('curtain_side'));
     sound.play('phase');
   } else if (game.phase === 'normal' && prev !== 'normal') {
     showToast(t('curtain_normal'), t('toast_normal'));
@@ -1293,7 +1295,7 @@ function renderChoice() {
   ui.chooseGote.classList.toggle('selected', pendingSide === GOTE);
   ui.chooseConfirm.disabled = pendingSide === null;
   ui.chooseConfirm.textContent = pendingSide === null
-    ? t('btn_confirm_side_idle') : t('btn_confirm_side', { side: sideName(pendingSide) });
+    ? t('btn_confirm_side_idle') : t('btn_confirm_side', { side: sidePlain(pendingSide) });
 }
 
 /** 玉分け将棋で先後が決まった直後だけ、誰がどちらを持ったかを言う。3手目の案内に添える。 */
