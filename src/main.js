@@ -417,6 +417,14 @@ function route() {
   if (live) { ui.leaveDialog.showModal(); return; }
   abandonGame();
   showView('home');
+  openKifuIfAsked();
+}
+
+/** 文章のページのメニュー「棋譜」は #kifu でホームへ来る。ダイアログを開いて URL は戻す。 */
+function openKifuIfAsked() {
+  if (location.hash.replace(/^#\/?/, '') !== 'kifu') return;
+  history.replaceState(null, '', '#/');
+  if (!ui.ioDialog.open) ui.ioDialog.showModal();
 }
 addEventListener('hashchange', route);
 
@@ -464,6 +472,7 @@ async function boot() {
   renderModeControls();
   showView('home');
   if (currentView() === 'play') history.replaceState(null, '', '#/');
+  openKifuIfAsked();
   try {
     setBoot(t('loading_rules'));
     const fuseki = await Fuseki.load(ASSETS.fuseki);

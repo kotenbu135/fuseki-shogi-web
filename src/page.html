@@ -7,6 +7,9 @@
 <meta name="description" content="{{page_desc}}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/style.css">
+<!-- 保存した配色を描画前に当てる。app.js を持たないページでも、ホームで選んだ配色が続く。
+     index.html の head にも同じ4行がある（片方を変えたら両方直す）。 -->
+<script>try{const v=localStorage.getItem('fuseki-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v)}catch{}</script>
 <link rel="alternate" hreflang="ja" href="https://fusekishogi.com/{{page_path}}">
 <link rel="alternate" hreflang="en" href="https://fusekishogi.com/en/{{page_path}}">
 <link rel="alternate" hreflang="x-default" href="https://fusekishogi.com/{{page_path}}">
@@ -31,8 +34,25 @@
       <a href="{{self_href}}">{{nav_play}}</a>
       <a href="{{self_href}}rules/" data-page="rules">{{nav_rules}}</a>
       <a href="{{self_href}}story/" data-page="story" class="menu-story">{{nav_story}}</a>
+      <!-- 棋譜の受け渡しはホームのダイアログ。#kifu で開いた状態のホームへ。 -->
+      <a href="{{self_href}}#kifu">{{nav_kifu}}</a>
       <a href="{{alt_href}}{{page_path}}" class="lang" lang="{{alt_lang}}" hreflang="{{alt_lang}}" title="{{nav_lang_title}}">{{nav_lang}}</a>
+      <!-- 表示の設定。ここで効くのは配色だけなので、盤の大きさと音量は出さない。 -->
+      <button type="button" class="gear" id="btn-settings" title="{{display_settings}}"
+              aria-expanded="false" aria-controls="display-settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.14 12.94a7.07 7.07 0 000-1.88l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.6-.22l-2.39.96a7.03 7.03 0 00-1.62-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.5.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 00-.6.22L2.7 8.84a.5.5 0 00.12.64l2.03 1.58a7.07 7.07 0 000 1.88L2.82 14.5a.5.5 0 00-.12.64l1.92 3.32c.12.22.39.3.6.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.04.24.25.42.5.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.59-.24 1.12-.56 1.62-.94l2.39.96c.22.08.48 0 .6-.22l1.92-3.32a.5.5 0 00-.12-.64l-2.03-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg>
+        <span class="sr-only">{{display_settings}}</span>
+      </button>
     </nav>
+    <div class="settings-pop" id="display-settings" hidden>
+      <label>{{opt_theme}}
+        <select id="opt-theme">
+          <option value="auto" selected>{{theme_auto}}</option>
+          <option value="light">{{theme_light}}</option>
+          <option value="dark">{{theme_dark}}</option>
+        </select>
+      </label>
+    </div>
   </header>
 
   <main class="page">
@@ -47,6 +67,31 @@
 <script>
   // 今いるページのメニュー項目に印を付ける。
   document.querySelector('.menu a[data-page="{{nav_current}}"]')?.classList.add('current');
+
+  // 歯車と配色。main.js の applyTheme と同じ鍵・同じ3段（auto / light / dark）。
+  const gear = document.getElementById('btn-settings');
+  const pop = document.getElementById('display-settings');
+  const theme = document.getElementById('opt-theme');
+  const close = () => { pop.hidden = true; gear.setAttribute('aria-expanded', 'false'); };
+  gear.addEventListener('click', () => {
+    const open = pop.hidden;
+    pop.hidden = !open;
+    gear.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', e => {
+    if (pop.hidden || e.target.closest('#display-settings, #btn-settings')) return;
+    close();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !pop.hidden) { close(); gear.focus(); }
+  });
+  theme.value = document.documentElement.getAttribute('data-theme') ?? 'auto';
+  theme.addEventListener('change', () => {
+    const v = theme.value;
+    if (v === 'light' || v === 'dark') document.documentElement.setAttribute('data-theme', v);
+    else document.documentElement.removeAttribute('data-theme');
+    try { localStorage.setItem('fuseki-theme', v); } catch { /* 残せなくても効く */ }
+  });
 </script>
 </body>
 </html>

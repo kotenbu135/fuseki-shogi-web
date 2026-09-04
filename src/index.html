@@ -7,6 +7,9 @@
 <meta name="description" content="{{meta_description}}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/style.css">
+<!-- 保存した配色を描画前に当てる。main.js の applyTheme はモジュールの読み込み後なので、
+     暗い配色を選んでいると一瞬明るく出る。page.html の head にも同じ行がある。 -->
+<script>try{const v=localStorage.getItem('fuseki-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v)}catch{}</script>
 <link rel="alternate" hreflang="ja" href="https://fusekishogi.com/">
 <link rel="alternate" hreflang="en" href="https://fusekishogi.com/en/">
 <link rel="alternate" hreflang="x-default" href="https://fusekishogi.com/">
