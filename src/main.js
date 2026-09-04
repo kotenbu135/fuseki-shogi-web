@@ -504,7 +504,9 @@ async function boot() {
 
     engines = { fuseki, policy, engine, kingTable };
     ui.newGame.disabled = false;
-    setBoot(t('ready'), threads === 1 ? t('ready_single_thread') : '');
+    // 起動が終わったら何も言わない（「準備できた」は要らない。開始ボタンが押せるようになるのが合図）。
+    // 行は残す（.boot は min-height を持つ）ので、消えても開始ボタンは動かない。1スレッドに落ちたときだけ注記。
+    setBoot('', threads === 1 ? t('ready_single_thread') : '');
     // ホームの盤に布石を打たせる。自分専用のWASMを起こすので対局の局面には触らない。
     if (currentView() === 'home') homeBoard.start({ fusekiUrl: ASSETS.fuseki, policy }).catch(e => console.warn(e));
     else homeBoard.start({ fusekiUrl: ASSETS.fuseki, policy }).then(() => homeBoard.pause()).catch(e => console.warn(e));

@@ -206,6 +206,11 @@ body {
   .home > .setup, .home > .intro { grid-column: 1; }
   .home > .home-board { grid-column: 2; grid-row: 3 / span 2; position: sticky; top: 1rem; }
 }
+/* 狭い画面では設定の後ろに回す（DOMでは設定より前にある。広い画面の2列目に置くため）。
+   広い画面では下の grid-row の明示配置が効くので order は関係しない。 */
+.home > .setup { order: 1; }
+.home > .home-board { order: 2; }
+.home > .intro { order: 3; }
 .home-board { display: grid; gap: .5rem; justify-items: center; margin: 1.6rem auto 0; max-width: 20rem; width: 100%; }
 @media (min-width: 56rem) { .home-board { margin: 0; max-width: none; } }
 .home-board canvas { display: block; width: 100%; aspect-ratio: 1; }
@@ -247,8 +252,10 @@ body {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  /* 名前・説明・帯の3行。説明の行が余りを取るので、2枚の札の帯が同じ高さに揃う
+     （説明の長さが違っても、片方の札の下だけ空かない）。 */
+  grid-template-rows: auto 1fr auto;
   gap: .3rem .8rem;
-  align-content: start;
   padding: .9rem 1rem;
   background: var(--paper-raised);
   border: 1px solid var(--rule);
@@ -261,7 +268,7 @@ body {
 .mode-card:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .mode-card input { position: absolute; width: 1px; height: 1px; margin: -1px; opacity: 0; }
 .mode-name { font-family: var(--serif); font-size: 1.2rem; font-weight: 700; }
-.mode-desc { font-size: .84rem; color: var(--ink-soft); line-height: 1.5; }
+.mode-desc { font-size: .84rem; color: var(--ink-soft); line-height: 1.5; text-wrap: pretty; }
 /* カードの中の1局の流れ。対局画面のフェーズ帯（.stepper / .step）と同じ部品で、
    この将棋だけの段は塗り、普通の将棋の段は破線。段の本体の見た目は「右のパネル」の節。 */
 .stepper.mini { margin-top: .3rem; grid-column: 1 / -1; }
@@ -270,8 +277,10 @@ body {
 .stepper.mini .step.shogi { border-style: dashed; background: transparent; }
 .stepper.mini .step .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 英語は段の名前が長い（Place kings / Choose side）。切らずに折り返し、4段の副題は省く。 */
-:lang(en) .stepper.mini .step .t { white-space: normal; overflow-wrap: anywhere; line-height: 1.2; }
+:lang(en) .stepper.mini .step .t { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: normal; hyphens: auto; line-height: 1.2; }
 :lang(en) .stepper.mini.four .step .s { display: none; }
+/* 英語の4段は「Placement」が等幅の段に入りきらない。段の幅を語に合わせる（他の段は2行に折れる）。 */
+:lang(en) .stepper.mini.four .step { flex: 1 1 auto; }
 .setup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem .8rem; }
 @media (max-width: 34rem) { .setup-grid { grid-template-columns: 1fr; } }
 .setup-grid label {
@@ -299,7 +308,6 @@ body {
 }
 .boot { margin: 0; min-height: 1.4em; font-size: .8rem; color: var(--ink-soft); }
 .boot.error { color: var(--accent); }
-.boot:empty { display: none; }
 .buttons { display: flex; flex-wrap: wrap; gap: .5rem; }
 .buttons button {
   flex: 1 1 auto;

@@ -99,7 +99,6 @@ const DICT = {
   loading_policy_sub: { ja: '約{mb}MB', en: 'about {mb} MB' },
   loading_engine: { ja: '本将棋のエンジンを起こしている…', en: 'Starting the shogi engine…' },
   loading_engine_sub: { ja: '{n}スレッド', en: '{n} threads' },
-  ready: { ja: '準備できた', en: 'Ready' },
   ready_single_thread: {
     ja: 'SharedArrayBufferが無いため本将棋は1スレッドで動く',
     en: 'No SharedArrayBuffer, so the shogi engine runs on one thread',
