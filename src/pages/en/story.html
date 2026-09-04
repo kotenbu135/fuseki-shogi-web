@@ -22,6 +22,7 @@
 
 <h2>4. A fixed rule cannot follow strength</h2>
 <p>Chess also favours White, but at the top the draw rate rises and absorbs the advantage. Shogi has pieces in hand and almost no draws. So even if I found a rule that measured 50% in my environment (YaneuraOu with an older evaluation), it would not hold for the newest engines. I stopped looking for a number.</p>
+<p>Awkwardly, going deeper with the same engine pushed ordinary shogi <b>down</b>: Sente scored 54.0% at 200k nodes and 50.1% at 1M. That suggests the rising tournament figures owe more to opening books and modern evaluations than to depth alone. Either way, a rule calibrated here carries no guarantee over there.</p>
 
 <h2>5. Cut and choose</h2>
 <p>Only one mechanism is known to stay balanced regardless of strength: <b>one player cuts, the other chooses</b>. It is how two people share a cake, and it is standard in Hex and in Gomoku. Gomoku’s Swap2 opening — the first player puts down two black stones and one white, the second player picks a colour — brought the first player’s 67% down to about 52%.</p>
@@ -35,14 +36,15 @@
 <p>The cutter is neutral because they do not know their side; the chooser cannot sandbag because they have not built anything. Whatever advantage Sente still has is cancelled every game by the cutter putting the Sente king on a slightly worse square.</p>
 
 <h2>6. Why the kings</h2>
-<p>Is cutting with the kings alone enough? Do king squares carry enough value to cancel the first-move advantage? That can be measured. For every pair of squares (36 for the Sente king × 36 for the Gote king) I let the placement network finish the placement from that position and had YaneuraOu score the move-41 position — 256 rollouts per pair, about 40 minutes in total.</p>
+<p>Is cutting with the kings alone enough? Do king squares carry enough value to cancel the first-move advantage? That can be measured. For every pair of squares (36 for the Sente king × 36 for the Gote king) I let the placement network finish the placement from that position and had YaneuraOu score the move-41 position — 128 rollouts per pair for the published table, about 14 minutes in total.</p>
 <div class="stat" id="stat">
-  <div><b>91 pt</b><span>range between the best and the worst pair</span></div>
-  <div><b>104 pairs</b><span>in the balanced band (50% ± error)</span></div>
-  <div><b>7.5%</b><span>Sente’s score with the worst pair, 5f·1a (real games)</span></div>
-  <div><b>99.0%</b><span>Sente’s score with the best pair, 1i·5d (real games)</span></div>
+  <div><b>95 pt</b><span>range between the best and the worst pair</span></div>
+  <div><b>156 pairs</b><span>in the balanced band (50% ± error)</span></div>
+  <div><b>9.5%</b><span>Sente’s score with the worst pair, 4f·2a (400 real games)</span></div>
+  <div><b>99.5%</b><span>Sente’s score with the best pair, 5i·1d (400 real games)</span></div>
 </div>
-<p>The range is 91 percentage points — far more than the first-move advantage in this environment (about 12 points). Checked against real games (6 pairs × 400 games) the table was off by 2.5 points on average.</p>
+<p>The range is 95 percentage points — far more than the first-move advantage in this environment (about 12 points). Checked against real games (6 pairs × 400 games) the table was off by 2.2 points on average.</p>
+<p>But <b>the number of pairs in the band reflects our measurement precision, not the board.</b> The band is defined as “|V − 0.5| within the error (2·SE)”, so halving the rollouts widens the error by about 1.4× and widens the band with it. The earlier table, built with 256 rollouts per pair, had 104 pairs in its band. The jump to 156 is not the game changing. That distinction matters in the next section.</p>
 <figure>
   <div class="heat" id="heat"></div>
   <figcaption>Value of each king square in winning-rate points from Sente’s point of view. Left: the Sente king; right: the Gote king. Positive favours Sente, negative favours Gote. For both kings the front rank is the worst and the back-rank corners are the best. Drawn from the published table <code>{{king_table}}</code>.</figcaption>
@@ -50,23 +52,28 @@
 <p>A king on the front rank (closest to the opponent) loses a lot; a back-rank corner is best. This table is exactly what the AI’s placer and chooser consult.</p>
 
 <h2>7. Does it actually balance?</h2>
-<p>800 games between AIs that both use the table.</p>
+<p>Games between AIs that both consult the same table, with YaneuraOu at 200k nodes from move 41 on both sides.</p>
 <div class="scroll"><table>
-  <tr><th>Placer / chooser</th><th class="n">Sente wins</th><th class="n">Placer wins</th></tr>
-  <tr><td>table / table</td><td class="n">50.9%</td><td class="n">47.4%</td></tr>
-  <tr><td>random / table</td><td class="n">60.9%</td><td class="n">24.4%</td></tr>
-  <tr><td>table / random</td><td class="n">50.9%</td><td class="n">48.0%</td></tr>
+  <tr><th>How the placer picks</th><th class="n">Games</th><th class="n">Sente wins</th><th class="n">Placer wins</th></tr>
+  <tr><td>at random (36×36)</td><td class="n">800</td><td class="n">64.5%</td><td class="n">23.8% ± 1.5</td></tr>
+  <tr><td>uniformly from the 156-pair band</td><td class="n">4,000</td><td class="n">49.9%</td><td class="n">46.3% ± 0.8</td></tr>
+  <tr><td>from the 21 most balanced pairs</td><td class="n">4,200</td><td class="n">50.2%</td><td class="n">49.2% ± 0.8</td></tr>
 </table></div>
-<p>With the table on both sides Sente lands near 50% and the chooser’s edge is 2–3 points. A placer who does not think about the kings loses three games in four. The design goal — the only way for the placer not to lose out is to balance the kings — shows up directly in the numbers.</p>
+<p>A placer who does not think about the kings loses three games in four. The design goal — the only way for the placer not to lose out is to balance the kings — shows up directly in the numbers.</p>
+<p>But <b>drawing uniformly from the band scored only 46.3% over 4,000 games.</b> That is 3.7 points to the chooser, 4.6 times the standard error: too large to be chance.</p>
+<p>The cause was the width of the band. As the previous section notes, most of that width is our own measurement error — ±4.4 points in the published table. Draw uniformly from it and you hand over a pair that is tilted by 3 points on average, and <b>the chooser only has to read the sign.</b> What was unbalanced was neither the rule nor the geometry of the kings, but the way the placer drew. There is no reason for the placer to use room that measurement error opened up.</p>
+<p>So the placer now draws from the <b>21 pairs inside the design tolerance (±1 point)</b> rather than the whole 156-pair band. Over 4,200 games the placer scored 49.2% ± 0.8 — 1.0σ from the null point, no longer distinguishable. With 21 pairs across 11 classes, the kings still differ from game to game.</p>
+<p>It is not perfect. The table calls all 21 of those pairs “50.0%”, yet real games spread them from 43.0% to 56.5%. Subtracting sampling error leaves about 1.6 points of genuine error in the table. <b>Part of why this looks balanced is that the placer and the chooser read the same table.</b> A chooser with a better table could exploit that residue. The precision of the table is the ceiling on fairness.</p>
 
 <h2>8. The name</h2>
 <p>One player splits by placing both kings, the other chooses. The kings replace the coin toss. Hence <b>King Split</b> — in Japanese <em>tamawake</em> (玉分け), “dividing the kings”.</p>
 
 <h2>9. What comes next</h2>
 <ul>
+  <li><b>The placement network has now been retrained under King Split.</b> Around a hundred generations made the policy clearly stronger, yet the width of the balanced band barely moved: 90.7 → 86.9 points. The structure of the balance does not seem to follow the strength of the policy. The table and the network are still updated as a pair.</li>
+  <li>Making the table more precise. Most of the band’s width comes from the rollout count, and so does the ceiling on fairness (about 1.6 points).</li>
   <li>The newest engines have a much larger first-move advantage. If the kings alone stop being enough, the cut widens to “king and rook”.</li>
   <li>A third option in the style of Gomoku’s Swap2: instead of choosing, add one piece to each camp and hand the choice back. Then a cutter cannot impose a placement only they have studied.</li>
-  <li>Retraining the placement network under King Split and watching how the balanced band moves. The table and the network are updated as a pair.</li>
 </ul>
 
 <h2>Sources</h2>

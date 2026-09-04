@@ -77,6 +77,26 @@ check('形式の違う表は落とす', () => {
   throws(() => new KingTable({ format: 'x', pairs: {}, band: [] }), '形式違い');
 });
 
+check('置く役は帯のうち最も釣り合う組に絞る', () => {
+  // 帯には band_floor 以内の組と、測定誤差ぶんだけ外れた組が混ざる。置く役は前者だけを
+  // 引かなければならない（帯全体から一様に引くと、平均 |V-0.5| ぶんを選ぶ役に取られる）。
+  const pairs = {};
+  for (const fb of '123456789') for (const rb of 'fghi')
+    for (const fw of '123456789') for (const rw of 'abcd')
+      pairs[`${fb}${rb},${fw}${rw}`] = { v: 0.5 };
+  const near = ['9i,1a', '1i,9a', '8i,2a', '2i,8a', '7i,3a', '3i,7a', '6i,4a', '4i,6a'];
+  const far = ['5i,5a', '5h,5b', '5g,5c'];
+  for (const k of near) pairs[k] = { v: 0.5 + 0.004 };
+  for (const k of far) pairs[k] = { v: 0.5 + 0.03 };   // band_floor(0.01) の外
+  const t = new KingTable({ format: 'king_pair_table/1', model: 'iter171.npz',
+                            band_floor: 0.01, band: [...near, ...far], pairs });
+  eq(t.balancedPool().sort().join(' '), [...near].sort().join(' '), '誤差ぶんの組を落とす');
+  const seen = new Set();
+  for (let i = 0; i < 300; i++) seen.add(t.placerPick().join(','));
+  eq(seen.size, near.length, '絞った集合の中では一様に引く（多様性は残す）');
+  for (const k of far) if (seen.has(k)) throw new Error(`外れた組を引いた: ${k}`);
+});
+
 check('置く役は帯から引き、選ぶ役は V で決める', () => {
   const seen = new Set();
   for (let i = 0; i < 50; i++) seen.add(table.placerPick().join(','));
