@@ -26,10 +26,10 @@ const ASSETS = {
   // esbuildを通さずに素で読み込んだときのために既定値を持たせる。ここだけは
   // build.mjs の PUBLIC_MODEL と二重に持つことになるので、片方を変えたら両方直す。
   model: new URL(`./models/${typeof __MODEL_FILE__ === 'undefined'
-    ? 'fuseki_degct_b3_iter122.onnx' : __MODEL_FILE__}`, import.meta.url).href,
+    ? 'fuseki_degct_b3_iter171.onnx' : __MODEL_FILE__}`, import.meta.url).href,
   // 玉分け将棋の価値表（src/kings.js）。重みと世代が対（build.mjs の KING_TABLE）。
   kingTable: new URL(`./models/${typeof __KING_TABLE_FILE__ === 'undefined'
-    ? 'king_pairs_iter122.json' : __KING_TABLE_FILE__}`, import.meta.url).href,
+    ? 'king_pairs_iter171.json' : __KING_TABLE_FILE__}`, import.meta.url).href,
   yaneuraou: new URL('./vendor/yaneuraou/yaneuraou.k-p.js', import.meta.url).href,
 };
 
@@ -152,8 +152,15 @@ ui.ioOpen.addEventListener('click', () => {
 //
 // 温度は1より下げない。policy.js の冒頭が「argmaxにすると同じ布石ばかりになり
 // 棋風が別物になる」と止めている。強くする側は思考時間だけで作り、弱くする側だけを
-// 温度で作る。したがって布石フェーズの強さが動くのはレベル1〜2で、3〜5の差は
-// 通常フェーズにしか出ない（<option> のラベルにそう書いてある）。
+// 温度で作る。布石フェーズの強さはレベル1〜2で散らし、4〜5では逆に絞る。
+//
+// 4〜5で温度を下げるのは実測に基づく（scripts/temperature_tradeoff.py、iter171・
+// 帯の全組×5・やねうら王200k）。温度1では方策が自分の最善手を捨てており、
+// 41手目で |cp|>=1000 が 48.0%、飛車以上のただ取りが 1.2% 残る。温度0.4では
+// 26.6% / 0.6%、0.2では 25.5% / 0.0%（＝貪欲と同値）まで落ちる。多様性はほとんど
+// 減らない: 同じ玉の組から作った200局は温度0.2でも全て異なり、序盤8手の異なりは
+// 温度0.4で約118万通りある。布石が勝負を決めるゲームなので、強さの梯子は
+// 通常フェーズの持ち時間だけでなく布石にも掛ける。
 //
 // レベル3が既定で、movetime 1000 / 温度1 はレベルを入れる前の挙動と同じ。
 // レベル1は500ms以下にしておくこと（test/browser_smoke.mjs の --full が
@@ -162,8 +169,8 @@ const LEVELS = {
   1: { movetimeMs: 300, temperature: 3.0 },
   2: { movetimeMs: 500, temperature: 1.8 },
   3: { movetimeMs: 1000, temperature: 1.0 },
-  4: { movetimeMs: 3000, temperature: 1.0 },
-  5: { movetimeMs: 10000, temperature: 1.0 },
+  4: { movetimeMs: 3000, temperature: 0.6 },
+  5: { movetimeMs: 10000, temperature: 0.4 },
 };
 let aiLevel = 3;
 {

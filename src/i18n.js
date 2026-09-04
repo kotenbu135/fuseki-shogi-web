@@ -72,8 +72,8 @@ const DICT = {
   level_4: { ja: 'レベル4', en: 'Level 4' },
   level_5: { ja: 'レベル5 手強い', en: 'Level 5 · tough' },
   opt_level_title: {
-    ja: 'レベル1〜2は布石の打ち方が散り、3〜5の差は41手目以降の読みの深さに出る',
-    en: 'Levels 1–2 scatter the placement; levels 3–5 differ in search depth from move 41',
+    ja: 'レベル1〜2は布石の打ち方が散り、4〜5は布石を絞ったうえで41手目以降を深く読む',
+    en: 'Levels 1–2 scatter the placement; levels 4–5 sharpen it and search deeper from move 41',
   },
   opt_time: { ja: 'あなたの持ち時間', en: 'Your time control' },
   opt_time_title: {

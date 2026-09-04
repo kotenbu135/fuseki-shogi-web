@@ -41,7 +41,7 @@ function makeTable() {
   for (const fb of '123456789') for (const rb of 'fghi')
     for (const fw of '123456789') for (const rw of 'abcd') pairs[`${fb}${rb},${fw}${rw}`] = { v: 0.5 };
   pairs['9i,1a'] = { v: 0.7 };
-  return new KingTable({ format: 'king_pair_table/1', model: 'iter122.npz', band: ['9i,1a'], pairs });
+  return new KingTable({ format: 'king_pair_table/1', model: 'iter171.npz', band: ['9i,1a'], pairs });
 }
 /** 表示に使う口を全部叩く（game_terminal_test と同じ）。 */
 function readEverything(g) {
