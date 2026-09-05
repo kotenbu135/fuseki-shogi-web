@@ -161,6 +161,35 @@ try {
   check('ホームの盤に布石エンジンの駒が落ちてくる', homeBoard > 50, `紙色の標本 ${homeBoard}`);
   await shot('01-home');
 
+  // 誰と指すかの3タブ。選んだ相手に要る設定とボタンだけが出る（他は hidden）。
+  const tabs = await evaluate(page, `(() => {
+    const vis = id => !document.getElementById(id).hidden;
+    const pick = id => document.getElementById(id).click();
+    const de = document.documentElement;
+    const snap = () => ({ level: vis('lbl-level'), nick: vis('lbl-nick'), start: vis('btn-new'), invite: vis('btn-invite'),
+      lobby: vis('lobby'), label: document.getElementById('btn-invite').textContent,
+      note: document.getElementById('opp-note').textContent,
+      spectate: document.querySelector('#opt-color option[value="spectate"]').hidden,
+      selected: [...document.querySelectorAll('#opp [role="tab"]')].filter(b => b.getAttribute('aria-selected') === 'true').map(b => b.dataset.opp).join(','),
+      hscroll: de.scrollWidth > de.clientWidth });
+    const r = {};
+    pick('opp-friend'); r.friend = snap();
+    pick('opp-lobby'); r.lobby = snap();
+    pick('opp-ai'); r.ai = snap();
+    return r;
+  })()`);
+  check('友達タブ: AIの強さが消え、名前と「招待リンクを作る」が出る',
+    tabs.friend.selected === 'friend' && tabs.friend.nick && !tabs.friend.level && !tabs.friend.start && tabs.friend.invite
+      && !tabs.friend.lobby && tabs.friend.label === '招待リンクを作る' && tabs.friend.note.length > 0 && tabs.friend.spectate && !tabs.friend.hscroll,
+    JSON.stringify(tabs.friend));
+  check('待合タブ: 募集の一覧と「待合に出す」が出る',
+    tabs.lobby.selected === 'lobby' && tabs.lobby.lobby && tabs.lobby.nick && !tabs.lobby.level && !tabs.lobby.start && tabs.lobby.invite
+      && tabs.lobby.label === '待合に出す' && !tabs.lobby.hscroll,
+    JSON.stringify(tabs.lobby));
+  check('AIタブ: AIの強さと対局開始だけ。名前・待合・観戦以外の注は出ない',
+    tabs.ai.selected === 'ai' && tabs.ai.level && !tabs.ai.nick && tabs.ai.start && !tabs.ai.invite && !tabs.ai.lobby && !tabs.ai.spectate && !tabs.ai.hscroll,
+    JSON.stringify(tabs.ai));
+
   // 1局通すときはレベル1（いちばん思考時間が短い）にする。movetimeMs は Game の
   // コンストラクタで固定されるので、対局開始を押す**前**に変える。
   if (FULL) await evaluate(page, 'document.getElementById("opt-level").value = "1"');
@@ -626,12 +655,13 @@ async function playOnline(cdp, pageA) {
     document.getElementById('opt-color').value = 'sente';
     document.getElementById('opt-time').value = '10m+30s';
     document.getElementById('opt-color').dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('opp-lobby').click();   // 待合タブ＝公開の募集
     const nick = document.getElementById('opt-nick'); nick.value = '太郎'; nick.dispatchEvent(new Event('change', { bubbles: true }));
-    document.getElementById('opt-public').checked = true;
   })()`);
   check('待合は最初は空で、その旨が書いてある', await evaluate(pageA,
     'document.querySelectorAll("#seeks li").length === 0 && document.getElementById("lobby-note").textContent.length > 0'));
-  check('招待のボタンが押せる', await evaluate(pageA, 'document.getElementById("btn-invite").disabled') === false);
+  check('待合タブの「待合に出す」が押せる', await evaluate(pageA,
+    'document.getElementById("btn-invite").disabled === false && document.getElementById("btn-invite").textContent === "待合に出す"'));
   await click(pageA, await center(pageA, '#btn-invite'));
   const link = await evalUntil(pageA, 'document.getElementById("wait-link").value', v => /#room\/[a-z2-9]{8}$/.test(v || ''), 15000);
   let a = await snap(pageA);
@@ -660,6 +690,14 @@ async function playOnline(cdp, pageA) {
   await pageB.send('Runtime.enable');
   await pageB.send('Page.enable');
   await pageB.send('Page.navigate', { url: link.slice(0, link.indexOf('#')) });
+  // 別の人は初めて来た体なので AI タブで開く。待合の札に募集の数が出て、タブを押すと一覧が出る。
+  await evalUntil(pageB, 'document.readyState', v => v === 'complete', 15000);
+  const badge = await evalUntil(pageB, `(() => { const b = document.getElementById('lobby-count'); return b && !b.hidden ? b.textContent : null; })()`, v => v === '1', 20000);
+  check('AIタブに居ても、待合タブの札に募集の数が出る', badge === '1', String(badge));
+  check('#lobby で開くと待合タブになる', await evaluate(pageB, `(() => {
+    location.hash = '#lobby';
+    return new Promise(r => setTimeout(() => r(document.getElementById('opp-lobby').getAttribute('aria-selected') === 'true' && location.hash === '#/'), 200));
+  })()`));
   const seek = await evalUntil(pageB, `(() => {
     const li = document.querySelector('#seeks li');
     return li ? { who: li.querySelector('.seek-who').textContent, info: li.querySelector('.seek-info').textContent, n: document.querySelectorAll('#seeks li').length } : null;
@@ -729,13 +767,17 @@ async function playOnline(cdp, pageA) {
   await shot('11-online-play');
 
   // ---- 読み込み直しで同じ席に戻る ----
+  // 読み込み直しの前の文書に印を付け、新しい文書になるまで待つ。印が残ったまま古い文書を
+  // 見ると、state が play のままで検査が素通りし、次の snap が読み込み中の文書を見る（実際に起きた）。
+  await evaluate(pageB, 'window.__before_reload = true');
   await pageB.send('Page.reload');
+  await evalUntil(pageB, 'window.__before_reload === undefined && document.readyState === "complete"', v => v === true, 30000);
   await evalUntil(pageB, 'document.getElementById("panel")?.dataset.state', v => v === 'play', 120000);
   await evalUntil(pageB, 'document.querySelectorAll("#kifu li").length', v => v >= 2, 15000);
   b = await snap(pageB);
   check('Bを読み込み直しても確認なしに同じ席へ戻り、手順が2手ぶん復元される',
     b.kifu.length === 2 && b.bottom === 'あなた · 後手 ☖' && b.pieces === 2 && b.line === '相手の番。' && !(await evaluate(pageB, 'document.getElementById("join-dialog").open')),
-    `${b.kifu.join(' ')} / ${b.bottom} / ${b.line}`);
+    `${b.kifu.join(' ')} / ${b.bottom} / ${b.line} / ${b.hash} / ${await evaluate(pageB, 'document.getElementById("status-sub").textContent')}`);
 
   await evalUntil(pageA, 'document.getElementById("status-sub").textContent', v => !v.includes('つなぎ直') && !v.includes('切れた'), 10000);
 
@@ -859,6 +901,10 @@ async function playOnline(cdp, pageA) {
   await cdp.send('Target.disposeBrowserContext', { browserContextId }).catch(() => {});
   await click(pageA, await center(pageA, '#btn-again'));
   await evalUntil(pageA, 'document.getElementById("view-home").hidden', v => v === false, 5000);
+  check('ホームへ戻ると最後に使ったタブ（待合）のまま',
+    await evaluate(pageA, 'document.getElementById("opp-lobby").getAttribute("aria-selected")') === 'true');
+  // 後の検査（英語版）は AI タブで始めたいので戻しておく。タブは localStorage に残る。
+  await click(pageA, await center(pageA, '#opp-ai'));
   check('オンライン対局で未処理の例外が無い', exceptions().length === errorsAtStart, exceptions().slice(errorsAtStart).join(' / '));
 }
 
@@ -1295,6 +1341,11 @@ async function checkEnglish(page) {
   if (ready !== false) return;
   check('英語の文言で始まる', await evaluate(page,
     'document.documentElement.lang === "en" && document.getElementById("btn-new").textContent.startsWith("Start")'));
+  check('英語の3タブが1行に収まる', await evaluate(page, `(() => {
+    const tops = [...document.querySelectorAll('#opp [role="tab"]')].map(b => Math.round(b.getBoundingClientRect().top));
+    const t = document.querySelector('#opp-ai .t').textContent;
+    return t === 'Play the AI' && new Set(tops).size === 1 && document.documentElement.scrollWidth <= document.documentElement.clientWidth;
+  })()`));
   // 対局の設定は前回の値を覚える（--kings-first の後は天秤将棋のまま）。ここは布石将棋で。
   await evaluate(page, `(() => { const m = document.getElementById('mode-standard'); m.checked = true; m.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   await click(page, await center(page, '#btn-new'));

@@ -203,18 +203,46 @@ body {
 @media (min-width: 56rem) {
   .home { max-width: 66rem; grid-template-columns: minmax(0, 1fr) minmax(16rem, 24rem); align-items: start; }
   .home > h1, .home > .tagline { grid-column: 1 / -1; }
-  .home > .setup, .home > .intro, .home > .lobby { grid-column: 1; }
-  .home > .home-board { grid-column: 2; grid-row: 3 / span 3; position: sticky; top: 1rem; }
+  .home > .setup, .home > .intro { grid-column: 1; }
+  .home > .home-board { grid-column: 2; grid-row: 3 / span 2; position: sticky; top: 1rem; }
 }
 /* 狭い画面では設定の後ろに回す（DOMでは設定より前にある。広い画面の2列目に置くため）。
    広い画面では下の grid-row の明示配置が効くので order は関係しない。 */
 .home > .setup { order: 1; }
-.home > .lobby { order: 2; }
-.home > .home-board { order: 3; }
-.home > .intro { order: 4; }
-/* 待合。公開で募集中の部屋。1行に名前・何の対局か・参加。 */
-.lobby { margin-top: 1.6rem; }
+.home > .home-board { order: 2; }
+.home > .intro { order: 3; }
+/* 誰と指すか。3つのタブ。選んだものは墨で塗る（主ボタンと同じ色）。 */
+.opp {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--rule); border-radius: 8px; background: var(--paper-raised); overflow: hidden;
+}
+.opp button {
+  position: relative; display: grid; gap: .05rem; justify-items: center; min-width: 0;
+  padding: .65rem .4rem .55rem; background: transparent; color: inherit; border: 0; border-right: 1px solid var(--rule);
+  font: inherit; cursor: pointer;
+}
+.opp button:last-child { border-right: 0; }
+.opp button:hover { background: color-mix(in srgb, var(--rule) 30%, transparent); }
+.opp button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.opp button[aria-selected="true"] { background: var(--ink); color: var(--paper); }
+.opp .t { font-family: var(--serif); font-weight: 700; font-size: 1.05rem; white-space: nowrap; }
+.opp .s { font-size: .72rem; color: var(--ink-soft); white-space: nowrap; }
+.opp button[aria-selected="true"] .s { color: color-mix(in srgb, var(--paper) 70%, transparent); }
+/* 待合の募集の数。他のタブに居ても人が居ることが分かる。 */
+.opp .badge {
+  position: absolute; top: .4rem; right: .45rem; min-width: 1.3rem; padding: 0 .35rem; border-radius: 1rem;
+  background: var(--accent); color: #fff; font-size: .7rem; font-weight: 700; line-height: 1.3rem; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* 狭い画面では副題を省く（3つ並べて折り返さないため）。英語は語が長いので少し早めに省く。 */
+@media (max-width: 30rem) { .opp .s { display: none; } .opp .t { font-size: .95rem; } }
+:lang(en) .opp .t { font-family: var(--sans); font-size: .95rem; }
+@media (max-width: 36rem) { :lang(en) .opp .s { display: none; } }
+/* ボタンの下の一行（友達: リンクを知らない人は入れない／待合: 誰でも入れる）。 */
+.setup-note { margin: -.5rem 0 0; font-size: .8rem; color: var(--ink-soft); }
+/* 待合。公開で募集中の部屋。1行に名前・何の対局か・参加。設定の中にあり、待合タブだけに出る。 */
 .lobby h2 { margin: 0 0 .4rem; font-size: .75rem; font-weight: 600; letter-spacing: .1em; color: var(--ink-soft); }
+.lobby .lobby-seek-head { margin: 1.2rem 0 0; }
 .lobby-note { margin: 0; font-size: .8rem; color: var(--ink-soft); }
 .lobby-note:empty { display: none; }
 .seeks { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
@@ -230,9 +258,6 @@ body {
 }
 .seeks button:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 34rem) { .seeks li { grid-template-columns: minmax(0, 1fr) auto; } .seeks .seek-info { grid-column: 1 / -1; } }
-/* 招待の下の「待合にも載せる」。 */
-.public-row { display: flex; align-items: center; gap: .5rem; margin: -.4rem 0 0; font-size: .8rem; color: var(--ink-soft); cursor: pointer; }
-.public-row input { margin: 0; accent-color: var(--accent); }
 .setup-grid input[type="text"] {
   width: 100%; min-width: 0; padding: .45rem .5rem;
   background: var(--paper-raised); color: var(--ink); border: 1px solid var(--rule); border-radius: 4px;

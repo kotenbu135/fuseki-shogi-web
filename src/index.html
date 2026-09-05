@@ -79,7 +79,24 @@
       <p class="home-board-cap">{{home_board_cap}}</p>
     </aside>
 
-    <form class="setup" id="controls">
+    <form class="setup" id="controls" data-opp="ai">
+      <!-- 誰と指すか。AI／友達（招待リンク、非公開）／待合（誰でも入れる、公開）。
+           選んだ相手に要る設定とボタンだけを出す（data-only 属性、main.js の setOpponent）。 -->
+      <div class="opp" id="opp" role="tablist" aria-label="{{opp_label}}">
+        <button type="button" role="tab" id="opp-ai" aria-selected="true" data-opp="ai"><span class="t">{{opp_ai}}</span><span class="s">{{opp_ai_sub}}</span></button>
+        <button type="button" role="tab" id="opp-friend" aria-selected="false" data-opp="friend"><span class="t">{{opp_friend}}</span><span class="s">{{opp_friend_sub}}</span></button>
+        <button type="button" role="tab" id="opp-lobby" aria-selected="false" data-opp="lobby"><span class="t">{{opp_lobby}}</span><span class="s">{{opp_lobby_sub}}</span><span class="badge" id="lobby-count" hidden></span></button>
+      </div>
+
+      <!-- 待合。公開で募集している部屋（worker/src/lobby.js）。一覧は WebSocket で流れてくる。
+           待合タブだけに出し、その下に「自分で募集する」の設定が続く。 -->
+      <section class="lobby" id="lobby" data-only="lobby" aria-labelledby="lobby-head" hidden>
+        <h2 id="lobby-head">{{lobby_head}}</h2>
+        <p class="lobby-note" id="lobby-note">{{lobby_empty}}</p>
+        <ul class="seeks" id="seeks"></ul>
+        <h2 class="lobby-seek-head">{{lobby_seek_head}}</h2>
+      </section>
+
       <fieldset class="modes">
         <legend>{{home_pick}}</legend>
         <label class="mode-card" for="mode-standard">
@@ -126,7 +143,7 @@
             <option value="spectate">{{opt_spectate}}</option>
           </select>
         </label>
-        <label title="{{opt_level_title}}">{{opt_level}}
+        <label id="lbl-level" title="{{opt_level_title}}" data-only="ai">{{opt_level}}
           <select id="opt-level">
             <option value="1">{{level_1}}</option>
             <option value="2">{{level_2}}</option>
@@ -145,7 +162,7 @@
           </select>
         </label>
         <!-- オンラインで相手に見せる名前。空なら無名。localStorage に残す。 -->
-        <label id="lbl-nick" title="{{opt_nick_title}}">{{opt_nick}}
+        <label id="lbl-nick" title="{{opt_nick_title}}" data-only="friend lobby" hidden>{{opt_nick}}
           <input type="text" id="opt-nick" maxlength="20" autocomplete="nickname" placeholder="{{opt_nick_placeholder}}">
         </label>
       </div>
@@ -153,23 +170,13 @@
       <!-- 読み込みの進捗は対局の状態ではないので、対局画面の状態枠には出さない。ここに出す。 -->
       <p class="boot" id="boot" role="status" aria-live="polite"><span id="boot-line"></span> <span id="boot-sub"></span></p>
       <div class="buttons" id="start-row">
-        <button type="button" id="btn-new" class="primary" disabled>{{btn_start}}</button>
-        <!-- オンライン。部屋を作ってリンクを送る（worker/）。手番・役・持ち時間は上の設定、AIの強さは効かない。 -->
-        <button type="button" id="btn-invite" disabled title="{{btn_invite_title}}">{{btn_invite}}</button>
+        <button type="button" id="btn-new" class="primary" disabled data-only="ai">{{btn_start}}</button>
+        <!-- オンライン。部屋を作る（worker/）。友達タブなら非公開、待合タブなら公開（文言も変わる）。
+             手番・役・持ち時間は上の設定。 -->
+        <button type="button" id="btn-invite" class="primary" disabled data-only="friend lobby" hidden>{{btn_invite}}</button>
       </div>
-      <!-- 待合にも載せる（誰でも入れる）。招待リンクは変わらない。 -->
-      <label class="check public-row" id="lbl-public">
-        <input type="checkbox" id="opt-public">
-        <span>{{opt_public}}</span>
-      </label>
+      <p class="setup-note" id="opp-note" data-only="friend lobby" hidden></p>
     </form>
-
-    <!-- 待合。公開で募集している部屋（worker/src/lobby.js）。一覧は WebSocket で流れてくる。 -->
-    <section class="lobby" id="lobby" aria-labelledby="lobby-head">
-      <h2 id="lobby-head">{{lobby_head}}</h2>
-      <p class="lobby-note" id="lobby-note">{{lobby_empty}}</p>
-      <ul class="seeks" id="seeks"></ul>
-    </section>
 
     <section class="intro">
       <h2>{{home_intro_head}}</h2>

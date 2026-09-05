@@ -95,7 +95,8 @@ const ui = {
   waitLink: el('wait-link'), waitCopy: el('btn-wait-copy'), waitShare: el('btn-wait-share'), waitLeave: el('btn-wait-leave'),
   joinDialog: el('join-dialog'), joinTitle: el('join-title'), joinBody: el('join-body'), joinNote: el('join-note'),
   joinOk: el('btn-join-ok'), joinCancel: el('btn-join-cancel'), leaveBody: el('leave-body'),
-  nick: el('opt-nick'), publicSeek: el('opt-public'), lobby: el('lobby'), seeks: el('seeks'), lobbyNote: el('lobby-note'),
+  nick: el('opt-nick'), lobby: el('lobby'), seeks: el('seeks'), lobbyNote: el('lobby-note'),
+  setup: el('controls'), opp: el('opp'), lobbyCount: el('lobby-count'), oppNote: el('opp-note'),
   takeback: el('btn-takeback'), draw: el('btn-draw'), offerRow: el('offer-row'), offerText: el('offer-text'),
   offerAccept: el('btn-offer-accept'), offerDecline: el('btn-offer-decline'), waitNote: el('wait-note'),
 };
@@ -258,6 +259,46 @@ ui.volume.addEventListener('input', () => {
 });
 let soundedKifu = 0;       // 音を鳴らし終えた手数
 let soundedOver = false;
+
+// ---- 誰と指すか（ホームの3タブ） ----
+
+// 'ai'（ひとりで）／'friend'（招待リンク、非公開）／'lobby'（待合に出す、公開）。
+// 選んだ相手に要る設定とボタンだけを出す。index.html の data-only 属性が「どのタブで出すか」。
+// 最後に使ったタブを localStorage に残す。既定は AI（初めての人に AI を先に見せる）。
+const OPP_KEY = 'fuseki-opponent';
+const OPPONENTS = ['ai', 'friend', 'lobby'];
+let opponent = 'ai';
+function setOpponent(v, { remember = true } = {}) {
+  if (!OPPONENTS.includes(v)) v = 'ai';
+  opponent = v;
+  ui.setup.dataset.opp = v;
+  for (const b of ui.opp.querySelectorAll('[role="tab"]')) b.setAttribute('aria-selected', String(b.dataset.opp === v));
+  for (const e of ui.setup.querySelectorAll('[data-only]')) e.hidden = !e.dataset.only.split(' ').includes(v);
+  if (remember) { try { localStorage.setItem(OPP_KEY, v); } catch { /* 残せなくても動く */ } }
+  renderModeControls();
+}
+function readOpponent() {
+  try { return localStorage.getItem(OPP_KEY) ?? 'ai'; } catch { return 'ai'; }
+}
+ui.opp.addEventListener('click', e => {
+  const b = e.target.closest('[role="tab"]');
+  if (b) setOpponent(b.dataset.opp);
+});
+// 矢印キーでタブを移る（tablist の作法）。
+ui.opp.addEventListener('keydown', e => {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+  const i = OPPONENTS.indexOf(opponent), n = OPPONENTS.length;
+  const next = OPPONENTS[(i + (e.key === 'ArrowRight' ? 1 : n - 1)) % n];
+  setOpponent(next);
+  ui.opp.querySelector(`[data-opp="${next}"]`).focus();
+  e.preventDefault();
+});
+/** 文章のページや共有の「#lobby」は待合タブを開いてホームへ来る。URL は戻す。 */
+function openLobbyIfAsked() {
+  if (location.hash.replace(/^#\/?/, '') !== 'lobby') return;
+  history.replaceState(null, '', '#/');
+  setOpponent('lobby');
+}
 
 // 棋譜のどこを見ているか。null なら対局中の（最新の）局面。
 // 0 は初手より前（空の盤）、n は n手目を指した直後。
@@ -497,6 +538,7 @@ function route() {
   abandonGame();
   showView('home');
   openKifuIfAsked();
+  openLobbyIfAsked();
 }
 
 // ホームへ戻る確認の後に入る部屋（対局中に別の部屋のリンクを開いたとき）。
@@ -554,6 +596,7 @@ ui.leaveOk.addEventListener('click', () => {
   if (room) { enterRoom(room); return; }
   if (currentView() !== 'home') history.replaceState(null, '', '#/');
   showView('home');
+  openLobbyIfAsked();
 });
 ui.leaveCopy.addEventListener('click', () => game && copyText(kifuText(), ui.leaveCopy, t('leave_copy')));
 
@@ -567,10 +610,11 @@ const enginesPromise = new Promise(r => { enginesReady = r; });
 
 async function boot() {
   // エンジン3本のロードには時間がかかる。ホームに進捗を出しておく。
-  renderModeControls();
+  setOpponent(readOpponent(), { remember: false });   // renderModeControls もここで呼ばれる
   showView('home');
   if (location.hash.replace(/^#\/?/, '') === 'play') history.replaceState(null, '', '#/');
   openKifuIfAsked();
+  openLobbyIfAsked();
   // 招待リンク（#room/<id>）。部屋の概要は先に取りに行き、参加はエンジンが起きてから。
   const roomId = roomIdFromHash();
   if (roomId) enterRoom(roomId);
@@ -731,12 +775,21 @@ function renderModeControls() {
   const kf = modeValue() === 'kings-first';
   ui.colorLabel.hidden = kf;
   ui.roleLabel.hidden = !kf;
+  // 「観戦（AI同士）」はAI相手だけの選択肢。オンラインのタブでは隠し、選んであれば先手に戻す。
+  const net = opponent !== 'ai';
+  for (const sel of [ui.color, ui.role]) {
+    const o = sel.querySelector('option[value="spectate"]');
+    o.hidden = net;
+    if (net && sel.value === 'spectate') sel.value = sel === ui.color ? 'sente' : 'placer';
+  }
   const watch = spectateChosen();
   // 持ち時間は人間側だけのもの。観戦では効かないので触れなくする。
   ui.time.disabled = watch;
   ui.newGame.textContent = t(watch ? 'btn_start_watch' : kf ? 'btn_start_kings' : 'btn_start_standard');
-  // 招待（オンライン）は観戦では意味が無い。エンジンが起きるまでも押せない。
-  ui.invite.disabled = !engines || watch;
+  // オンラインのボタン。友達タブは招待リンク、待合タブは募集。エンジンが起きるまでは押せない。
+  ui.invite.textContent = t(opponent === 'lobby' ? 'btn_seek' : 'btn_invite');
+  ui.invite.disabled = !engines;
+  ui.oppNote.textContent = t(opponent === 'lobby' ? 'opp_lobby_note' : 'opp_friend_note');
 }
 ui.invite.addEventListener('click', createAndWait);
 for (const r of [ui.modeKings, ui.modeStandard, ui.color, ui.role]) r.addEventListener('change', renderModeControls);
@@ -1085,7 +1138,7 @@ async function createAndWait() {
     const mode = modeValue() === 'kings-first' && engines.kingTable ? 'kings-first' : 'standard';
     const { id, seat } = await createRoom(ROOMS_URL, {
       mode, time: ui.time.value, side: ui.color.value, role: ui.role.value, lang: LANG,
-      nick: ui.nick.value.trim(), isPublic: ui.publicSeek.checked,
+      nick: ui.nick.value.trim(), isPublic: opponent === 'lobby',
     });
     seatStore.save(id, seat);
     await joinRoom(id, seat);
@@ -1397,6 +1450,9 @@ function onlineSeatsLine() {
 function renderSeeks() {
   const list = lobby.seeks.filter(s => s.id !== online?.id);
   ui.lobbyNote.textContent = list.length ? '' : t('lobby_empty');
+  // タブの札。募集が無ければ出さない。
+  ui.lobbyCount.textContent = String(list.length);
+  ui.lobbyCount.hidden = list.length === 0;
   const frag = document.createDocumentFragment();
   for (const s of list) {
     const li = document.createElement('li');
@@ -2467,8 +2523,12 @@ function renderChart() {
   // 布石の区間に評価が無ければ、そう書いておく。最後の布石の行（40手目）は41手目の局面
   // そのものなので評価が付く。見るのはその手前まで。
   const blankEnd = split < 0 ? n : Math.max(0, split - 1);
-  if (blankEnd > 0 && !vals.slice(0, blankEnd).some(p => p != null))
-    add('text', { x: x(blankEnd / 2), y: mid - 3, 'text-anchor': 'middle' }, t('chart_no_eval'));
+  if (blankEnd > 0 && !vals.slice(0, blankEnd).some(p => p != null)) {
+    // 長い対局では布石の区間が狭く、中央揃えの文字が左端の外へはみ出る（201手で実際に出た）。
+    // 区間が狭ければ左端から書く。
+    const narrow = x(blankEnd) < W * .3;
+    add('text', { x: narrow ? x(0) + 3 : x(blankEnd / 2), y: mid - 3, 'text-anchor': narrow ? 'start' : 'middle' }, t('chart_no_eval'));
+  }
   // 天秤将棋の2手目。表の値を点で。
   rows.forEach((e, i) => {
     if (e.eval?.kind === 'kings') add('circle', { class: 'kings', cx: x(i + 1), cy: y(e.eval.winRate), r: 2.5 });
