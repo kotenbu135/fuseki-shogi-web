@@ -94,7 +94,9 @@ await new Promise(r => server.listen(PORT, r));
 // ---- Chrome を起こす ----
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'fuseki-chrome-'));
 const chrome = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox', '--remote-debugging-port=0',
+  // --mute-audio: 開発機のスピーカーから駒音が鳴らないようにする。AudioContext は
+  // 起きる（state が running になる）ので、音の経路の検査はそのまま通る。
+  '--headless=new', '--disable-gpu', '--no-sandbox', '--mute-audio', '--remote-debugging-port=0',
   '--window-size=1280,1600',
   `--user-data-dir=${profile}`, 'about:blank',
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
