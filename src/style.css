@@ -1054,6 +1054,19 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .panel[data-state="choose"] .actions-choose { display: grid; gap: .4rem; }
 .panel[data-state="over"] .actions-over { display: grid; gap: .4rem; }
 .panel[data-state="analyze"] .actions-analyze { display: grid; gap: .4rem; }
+/* オンラインで相手を待つあいだ。招待リンクとコピー・共有。 */
+.panel[data-state="wait"] .actions-wait { display: grid; gap: .4rem; }
+.wait-link-label { display: flex; flex-direction: column; gap: .2rem; font-size: .72rem; color: var(--ink-soft); }
+.wait-link-label input {
+  width: 100%; min-width: 0; padding: .4rem .5rem;
+  background: var(--paper); color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 4px;
+  font: inherit; font-size: .78rem;
+}
+.join-eyebrow { margin: 0 0 .2rem; font-size: .72rem; letter-spacing: .08em; color: var(--ink-soft); }
+.moves-io-actions button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); font-weight: 600; }
+.moves-io-actions button.primary:hover { color: var(--paper); border-color: var(--ink); }
+.moves-io-actions button:disabled { opacity: .45; cursor: not-allowed; }
 .analyze-row { display: flex; gap: .4rem; }
 .actions button {
   flex: 1 1 0;

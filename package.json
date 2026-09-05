@@ -16,5 +16,9 @@
     "onnxruntime-web": "^1.29.0",
     "shogiground": "^0.10.0",
     "shogiops": "^0.21.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.129.0",
+    "ws": "^8.21.3"
   }
 }

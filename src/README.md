@@ -11,6 +11,7 @@
 | `policy.js` | 布石方策。onnxruntime-web で1手あたりNN前向き1回 |
 | `kings.js` | 天秤将棋で両玉を置く・先後を選ぶ。両玉のマスの組の価値表（`models/king_pairs_*.json`）を引くだけ |
 | `normal.js` | やねうら王WASMとのUSIの往復 |
+| `net.js` | オンライン対局の部屋（`worker/`）との WebSocket。手順のトークンと結果だけを運び、切れたら繋ぎ直す。席のトークンを localStorage に控える |
 | `board.js` | [shogiground](https://github.com/WandererXII/shogiground) の生成とGameからの同期 |
 | `sound.js` | 対局音。音源は持たずWebAudioで合成する |
 | `homeboard.js` | ホームの盤。自分専用の Fuseki（WASMをもう1つ）に方策で40手打たせ、canvas に駒を落として見せる。対局には関わらない |
@@ -70,6 +71,15 @@
 
 **言語は `<html lang>` で決まる**（`i18n.js` の `LANG`）。実行時の文言は `t(key, params)`、
 棋譜の表記は `Game` の `notation` オプション。実行中に言語を切り替える口は無い。
+
+**オンライン対局（友達と対局）**は `Game({ opponent: 'remote' })`。AIは指さず、相手の手は部屋から
+`moved` で届いて `game.play(token)` で入る（`drive()` は remote なら何もしない）。自分の手は手元で先に
+適用してから部屋へ送り、断られたらその手を `undoTo` で戻す。繋ぎ直すたびに `state` が丸ごと来るので
+`syncTokens()` が手順を突き合わせ、足りないぶんを足す（違っていれば `undoTo(0)` から作り直す）。
+時計は部屋が席ごとに持つ値を `onlineRemaining()` が補間して出すだけで、切れの判定は部屋。
+相手を待っているあいだはパネルの状態が `wait`（招待リンク）で、盤は `showIdleBoard` のまま。
+URL は `#room/<id>`。同じリンクで戻ると席のトークン（localStorage）で確認なしに同じ席へ着く。
+相手の呼び名（AI／相手）は `them()` / `Them()` / `themShort()` で引き、辞書の `{them}` に入る。
 
 ## 守っていること
 

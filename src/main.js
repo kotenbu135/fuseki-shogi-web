@@ -18,6 +18,7 @@ import { createBoard, showIdleBoard, showSnapshot, showPosition, setShapes, sync
 import { Sound, VOICES } from './sound.js';
 import { HomeBoard } from './homeboard.js';
 import { t, LANG } from './i18n.js';
+import { RoomClient, createRoom, roomInfo, roomUrl, roomIdFromHash, seatStore } from './net.js';
 
 const ASSETS = {
   fuseki: new URL('./vendor/fuseki/fuseki.mjs', import.meta.url).href,
@@ -38,6 +39,11 @@ const ASSETS = {
 // 起動時に「約15MB」と出す量。内訳は onnxruntime-web の .wasm 13.3MB と重み 1.9MB
 // （dist/ の実測）。build.mjs がこの定数と実物を突き合わせる。
 const LOAD_MB = 15;
+
+// オンライン対局の部屋（worker/）。build.mjs が define で渡す（--rooms で手元の wrangler dev へ向けられる）。
+const ROOMS_URL = typeof __ROOMS_URL__ === 'undefined' ? 'https://ws.fusekishogi.com' : __ROOMS_URL__;
+// 通常フェーズの手数の上限（worker/src/rules.js と同じ値）。ここまで指したら引き分け。
+const MAX_NORMAL_MOVES = 320;
 
 // 布石フェーズの駒打ちのUSI表記（打つ駒の文字は手番に関わらず大文字）。
 const USI_LETTER = {
@@ -84,6 +90,11 @@ const ui = {
   seatTopName: el('seat-top-name'), seatBottomName: el('seat-bottom-name'),
   seatTopRole: el('seat-top-role'), seatBottomRole: el('seat-bottom-role'), kifuHead: el('kifu-head'),
   clockTop: el('clock-top'), clockBottom: el('clock-bottom'),
+  // オンライン対局
+  invite: el('btn-invite'), claim: el('btn-claim'),
+  waitLink: el('wait-link'), waitCopy: el('btn-wait-copy'), waitShare: el('btn-wait-share'), waitLeave: el('btn-wait-leave'),
+  joinDialog: el('join-dialog'), joinTitle: el('join-title'), joinBody: el('join-body'), joinNote: el('join-note'),
+  joinOk: el('btn-join-ok'), joinCancel: el('btn-join-cancel'), leaveBody: el('leave-body'),
 };
 
 // ---- 表示の設定（歯車） ----
@@ -124,9 +135,10 @@ let showEvalInPlay = false;
   });
 }
 
-/** いま評価を出してよいか。対局中は設定しだい、終局後と観戦は常に出す（隠す理由が無い）。 */
+/** いま評価を出してよいか。対局中は設定しだい、終局後と観戦は常に出す（隠す理由が無い）。
+ *  オンラインの対局中は設定に関わらず出さない（相手に対して公平でない。決定）。 */
 function evalVisible() {
-  return !!game && (game.phase === 'over' || game.spectate || showEvalInPlay);
+  return !!game && (game.phase === 'over' || game.spectate || (showEvalInPlay && !online));
 }
 
 // 表示の設定は歯車の中。対局中も触れる（対局の設定は対局前だけ）。
@@ -316,7 +328,9 @@ function tickClock(turn) {
  * 持ち時間があるのは人間側だけ。AI側の予算はレベルが決めていて、席に置く数字が無い。
  */
 function clockText(color) {
-  if (!game || color !== game.humanColor) return '';
+  if (!game) return '';
+  if (online) return onlineClockText(color);
+  if (color !== game.humanColor) return '';
   const tc = timeCtl;
   if (!tc) return t('clock_unlimited');
   const st = humanClockState();
@@ -331,6 +345,49 @@ function formatClock(ms) {
   const mmss = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
   // 10秒未満は小数第1位まで出して、速さがそのまま見えるようにする。
   return total < 10 ? `${mmss}.${Math.floor(ms / 100) % 10}` : mmss;
+}
+
+// オンラインの時計。部屋が席ごと（host / guest）に持ち、着手のたびに残りが届く。
+// 切れる判定は部屋がやる（アラーム）。ここは受け取った時刻からの経過で補間して出すだけ。
+const otherSeat = s => (s === 'host' ? 'guest' : 'host');
+
+/** 色の席。先後が決まる前（天秤将棋）は、手前を自分・向こうを相手として出す。 */
+function onlineSeatOfColor(color) {
+  const seats = online?.seats;
+  if (seats) for (const s of ['host', 'guest']) if (seats[s].side === color) return s;
+  return color === orientation ? online.you : otherSeat(online.you);
+}
+
+/** 席の残り。受け取った値は走っている席の残りを既に引いてあるので、そこからさらに経過ぶんを引く。 */
+function onlineRemaining(seat) {
+  const c = online?.clock;
+  if (!c || !online.timeCtl) return null;
+  const e = c[seat];
+  const elapsed = c.running === seat && game && game.phase !== 'over' ? performance.now() - c.receivedAt : 0;
+  const main = e.mainMs - elapsed;
+  if (main > 0) return { mainMs: main, byMs: e.byMs, inByoyomi: false };
+  return { mainMs: 0, byMs: Math.max(0, e.byMs + main), inByoyomi: true };
+}
+
+function onlineClockText(color) {
+  if (!online.timeCtl) return t('clock_unlimited');
+  const r = onlineRemaining(onlineSeatOfColor(color));
+  if (!r) return '';
+  if (r.inByoyomi && (online.timeCtl.byoyomiMs ?? 0) > 0) return t('clock_byoyomi', { s: (r.byMs / 1000).toFixed(1) });
+  return formatClock(r.mainMs);
+}
+
+/** 残り30秒を切ったか（色を変える）。秒読み中は常に立てる。 */
+function clockLow(color) {
+  if (!game || game.phase === 'over') return false;
+  if (online) {
+    if (!online.timeCtl) return false;
+    const r = onlineRemaining(onlineSeatOfColor(color));
+    return !!r && (r.inByoyomi || r.mainMs < 30000);
+  }
+  if (!timeCtl || color !== game.humanColor) return false;
+  const st = humanClockState();
+  return st.inByoyomi || st.mainMs < 30000;
 }
 
 // ---- 対局の状態 ----
@@ -355,6 +412,10 @@ let analysis = null;
 //   pass: null | { i, n, cancel }, live: null }
 let analysisFuseki = null;   // 布石の局面を作り直すための2つ目のWASM。最初に要るときに読む
 let infoGen = 0;             // 読んでいる局面の世代。古い info と古い候補手の計算を捨てる
+// オンライン対局。net は部屋との接続（net.js）、online は部屋から受けた状態。中身は「オンライン対局」の節。
+let net = null;
+let online = null;
+// { id, you: 'host'|'guest', seats, started, mode, timeCtl, clock, presence, awaySince, abandonMs, skew, game, reported }
 
 /** 盤を1枚だけ作る。対局前から出しておきたいので、起動時にも呼ぶ。 */
 function ensureBoard() {
@@ -380,7 +441,8 @@ function setMode(v) {
 // ---- 画面の切り替え（ホーム／対局） ----
 
 function currentView() {
-  return location.hash.replace(/^#\/?/, '') === 'play' ? 'play' : 'home';
+  const h = location.hash.replace(/^#\/?/, '');
+  return h === 'play' || h.startsWith('room/') ? 'play' : 'home';
 }
 
 function showView(name) {
@@ -406,18 +468,37 @@ document.addEventListener('visibilitychange', () => {
 
 /** URL に合わせて画面を出す。対局中にホームへ戻ろうとしたら確認する。 */
 function route() {
+  // 部屋のリンク（#room/<id>）。いま居る部屋ならそのまま、別の部屋なら入り直す。
+  const roomId = roomIdFromHash();
+  if (roomId) {
+    if (online?.id === roomId) { showView('play'); return; }
+    if (game && game.phase !== 'over' && !online) { pendingRoom = roomId; askLeave(); return; }
+    enterRoom(roomId);
+    return;
+  }
   const want = currentView();
   const live = !!game && game.phase !== 'over';
   if (want === 'play') {
     // 対局が無いのに #play だけ開かれた（共有リンクやリロード）。ホームへ。
     if (!game) { history.replaceState(null, '', '#/'); showView('home'); return; }
+    // オンラインの対局の URL は部屋のもの。
+    if (online) history.replaceState(null, '', `#room/${online.id}`);
     showView('play');
     return;
   }
-  if (live) { ui.leaveDialog.showModal(); return; }
+  if (live) { askLeave(); return; }
   abandonGame();
   showView('home');
   openKifuIfAsked();
+}
+
+// ホームへ戻る確認の後に入る部屋（対局中に別の部屋のリンクを開いたとき）。
+let pendingRoom = null;
+/** 対局中にホームへ戻る（または部屋を出る）確認。文言はオンラインかどうかで変わる。 */
+function askLeave() {
+  ui.leaveBody.textContent = t(online ? 'leave_body_online' : 'leave_body');
+  ui.leaveOk.textContent = t(online ? 'leave_ok_online' : 'leave_ok');
+  ui.leaveDialog.showModal();
 }
 
 /** 文章のページのメニュー「棋譜」は #kifu でホームへ来る。ダイアログを開いて URL は戻す。 */
@@ -428,8 +509,9 @@ function openKifuIfAsked() {
 }
 addEventListener('hashchange', route);
 
-/** 進行中の対局を捨てる。局面はどこにも保存しない（決定）。 */
+/** 進行中の対局を捨てる。局面はどこにも保存しない（決定）。オンラインなら部屋から出る（部屋は残る）。 */
 function abandonGame() {
+  leaveRoom();
   clearInterval(clockTimer);
   clockTimer = null;
   game = null;
@@ -451,13 +533,18 @@ ui.logo.addEventListener('click', e => { e.preventDefault(); goHome(); });
 ui.navPlay.addEventListener('click', e => { e.preventDefault(); goHome(); });
 ui.leaveCancel.addEventListener('click', () => {
   ui.leaveDialog.close();
+  pendingRoom = null;
   // 戻るボタンで #/ に来ていたら、対局の URL へ戻す。
-  if (currentView() !== 'play') history.pushState(null, '', '#play');
+  const want = online ? `#room/${online.id}` : '#play';
+  if (location.hash !== want) history.pushState(null, '', want);
 });
 ui.leaveDialog.addEventListener('cancel', e => { e.preventDefault(); ui.leaveCancel.click(); });
 ui.leaveOk.addEventListener('click', () => {
   ui.leaveDialog.close();
   abandonGame();
+  const room = pendingRoom;
+  pendingRoom = null;
+  if (room) { enterRoom(room); return; }
   if (currentView() !== 'home') history.replaceState(null, '', '#/');
   showView('home');
 });
@@ -467,12 +554,19 @@ ui.leaveCopy.addEventListener('click', () => game && copyText(kifuText(), ui.lea
 
 boot();
 
+// エンジンが揃うまで待つ口。招待リンクから入るときは、エンジンが起きてから部屋に着く。
+let enginesReady;
+const enginesPromise = new Promise(r => { enginesReady = r; });
+
 async function boot() {
   // エンジン3本のロードには時間がかかる。ホームに進捗を出しておく。
   renderModeControls();
   showView('home');
-  if (currentView() === 'play') history.replaceState(null, '', '#/');
+  if (location.hash.replace(/^#\/?/, '') === 'play') history.replaceState(null, '', '#/');
   openKifuIfAsked();
+  // 招待リンク（#room/<id>）。部屋の概要は先に取りに行き、参加はエンジンが起きてから。
+  const roomId = roomIdFromHash();
+  if (roomId) enterRoom(roomId);
   try {
     setBoot(t('loading_rules'));
     const fuseki = await Fuseki.load(ASSETS.fuseki);
@@ -504,6 +598,10 @@ async function boot() {
 
     engines = { fuseki, policy, engine, kingTable };
     ui.newGame.disabled = false;
+    renderModeControls();   // 招待のボタンも開く
+    ui.joinOk.disabled = false;
+    if (ui.joinNote.textContent === t('join_loading')) ui.joinNote.textContent = '';
+    enginesReady();
     // 起動が終わったら何も言わない（「準備できた」は要らない。開始ボタンが押せるようになるのが合図）。
     // 行は残す（.boot は min-height を持つ）ので、消えても開始ボタンは動かない。1スレッドに落ちたときだけ注記。
     setBoot('', threads === 1 ? t('ready_single_thread') : '');
@@ -527,8 +625,15 @@ function newGameClicked() {
   sound.unlock();
   startGame();
 }
+/** 終局後の「もう一局」。オンラインの後は相手が要るので、ホームへ戻す（ボタンの文言もそう変える）。 */
+function againClicked() {
+  if (online) { leaveRoom(); goHome(); return; }
+  newGameClicked();
+}
 ui.newGame.addEventListener('click', newGameClicked);
-ui.again.addEventListener('click', newGameClicked);
+ui.again.addEventListener('click', againClicked);
+// 盤に触るのも利用者の操作。招待リンクから戻ってきたときの最初の機会になる。
+el('board').addEventListener('pointerdown', () => sound.unlock());
 ui.replay.addEventListener('click', () => goToPly(0));
 ui.copyKifu.addEventListener('click', () => game && copyText(kifuText(), ui.copyKifu, t('btn_copy_kifu')));
 ui.ioCopy.addEventListener('click', () => game && copyText(movesText(), ui.ioCopy, t('io_copy')));
@@ -577,8 +682,11 @@ ui.resign.addEventListener('click', () => {
   }
   disarmResign();
   game.resign();
+  net?.resign();   // 部屋にも。相手には ended が届く
   render();
 });
+// オンラインで相手が戻らないとき。部屋が5分を数えていて、早ければ断られる。
+ui.claim.addEventListener('click', () => { if (claimable()) net?.claim(); });
 // 観戦の一時停止と中断。一時停止は drive() のループが手を指す前に見る。
 ui.pause.addEventListener('click', () => {
   if (!game || !game.spectate || game.phase === 'over') return;
@@ -619,7 +727,10 @@ function renderModeControls() {
   // 持ち時間は人間側だけのもの。観戦では効かないので触れなくする。
   ui.time.disabled = watch;
   ui.newGame.textContent = t(watch ? 'btn_start_watch' : kf ? 'btn_start_kings' : 'btn_start_standard');
+  // 招待（オンライン）は観戦では意味が無い。エンジンが起きるまでも押せない。
+  ui.invite.disabled = !engines || watch;
 }
+ui.invite.addEventListener('click', createAndWait);
 for (const r of [ui.modeKings, ui.modeStandard, ui.color, ui.role]) r.addEventListener('change', renderModeControls);
 
 // ---- 先後の選択（天秤将棋） ----
@@ -638,6 +749,7 @@ ui.chooseConfirm.addEventListener('click', () => {
   if (!pendingSide || !game || game.phase !== 'choose' || !game.isHumanTurn || busy || viewPly !== null) return;
   try {
     game.choose(pendingSide);
+    sendLastMove();
   } catch (e) {
     setStatus(t('status_cannot_choose'), e.message);
   }
@@ -719,7 +831,8 @@ addEventListener('resize', renderKingTags);
 // 対局中の離脱を1回止める。局面はどこにも保存していないので、
 // 誤ってリロードすると40手の布石がそのまま消える。取り返しがつかない。
 addEventListener('beforeunload', e => {
-  if (!game || game.phase === 'over') return;
+  // オンラインは部屋が手順を持っていて、同じリンクで戻れる。止めない。
+  if (!game || game.phase === 'over' || online) return;
   e.preventDefault();
   e.returnValue = '';   // 古いブラウザはこちらを見る
 });
@@ -773,6 +886,7 @@ ui.flipAnalyze.addEventListener('click', flipBoard);
 
 function startGame() {
   if (busy || !engines) return;
+  leaveRoom();     // オンラインの部屋に居たなら出る（AI相手の対局を始める）
   endAnalysis();   // 前の対局の検討が開いていれば閉じる（MultiPV も戻す）
   // 天秤将棋は価値表が読めたときだけ。無ければ radio が無効になっている。
   const mode = modeValue() === 'kings-first' && engines.kingTable ? 'kings-first' : 'standard';
@@ -818,7 +932,8 @@ function startGame() {
 
 /** 250msごと。時計を描き直し、人間の持ち時間が切れていたらそこで終局させる。 */
 function onClockTick() {
-  if (game && timeCtl && game.phase !== 'over' && game.turnColor === game.humanColor) {
+  // オンラインは部屋が切れを裁く（アラーム）。ここは描くだけ。
+  if (!online && game && timeCtl && game.phase !== 'over' && game.turnColor === game.humanColor) {
     const st = humanClockState();
     if (st.inByoyomi && st.byMs <= 0) {
       game.timeout();
@@ -832,10 +947,11 @@ function onClockTick() {
 /** 人間の駒打ち。布石フェーズと通常フェーズで指し手の意味が違う。 */
 function handleDrop(piece, key) {
   if (analysis) return playVariation(`${USI_LETTER[piece.role]}*${key}`);
-  if (!game || !game.isHumanTurn || viewPly !== null) return render();
+  if (!game || !game.isHumanTurn || viewPly !== null || !canMoveOnline()) return render();
   try {
     if (game.phase === 'kings' || game.phase === 'fuseki') game.playFusekiDrop(`${USI_LETTER[piece.role]}*${key}`);
     else game.playNormalMove(`${USI_LETTER[piece.role]}*${key}`);
+    sendLastMove();
   } catch (e) {
     setStatus(t('status_illegal'), e.message);
   }
@@ -846,14 +962,20 @@ function handleDrop(piece, key) {
 /** 人間の移動（通常フェーズのみ）。 */
 function handleMove(orig, dest, prom) {
   if (analysis) return playVariation(`${orig}${dest}${prom ? '+' : ''}`);
-  if (!game || !game.isHumanTurn || viewPly !== null) return render();
+  if (!game || !game.isHumanTurn || viewPly !== null || !canMoveOnline()) return render();
   try {
     game.playNormalMove(`${orig}${dest}${prom ? '+' : ''}`);
+    sendLastMove();
   } catch (e) {
     setStatus(t('status_illegal'), e.message);
   }
   render();
   drive();
+}
+
+/** オンラインなら、相手が揃って部屋が始まっていて、接続が生きているときだけ指せる。 */
+function canMoveOnline() {
+  return !online || (online.started && !!net?.connected);
 }
 
 /**
@@ -865,7 +987,7 @@ function handleMove(orig, dest, prom) {
  */
 async function analyzeForHuman() {
   if (!engines || !game || game.phase !== 'normal' || !game.isHumanTurn) return;
-  if (!showEvalInPlay) return;
+  if (!showEvalInPlay || online) return;
   // 待ったは epoch、着手は手数で見分ける。どちらも動いていたら、この結果は別の局面のもの。
   const g = game;
   const at = g.kifu.length;
@@ -905,9 +1027,9 @@ function viewedRow() {
 const WATCH_MIN_MS = 700;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-/** 人間の手番になるか終局するまでAIに指させる。観戦なら終局まで。 */
+/** 人間の手番になるか終局するまでAIに指させる。観戦なら終局まで。オンラインの相手は部屋から届く（onMoved）。 */
 async function drive() {
-  if (busy || !game) return;
+  if (busy || !game || game.opponent === 'remote') return;
   busy = true;
   const g = game;
   try {
@@ -933,6 +1055,319 @@ async function drive() {
     analyzeForHuman();   // 人間の手番に戻ったので、見せる設定なら聞きに行く
   }
 }
+
+// ---- オンライン対局（友達と対局） ----
+//
+// 部屋（worker/src/room.js）は手順のトークン列と時計と結果だけを持つ。局面はこちらで作る。
+// 自分の手は手元で先に適用してから部屋へ送り（optimistic）、部屋に断られたらその手を戻す。
+// 相手の手は moved で届いて play() で入れる。繋ぎ直すたびに state が丸ごと来るので、
+// 手順を突き合わせて足りないぶんを足す（違っていれば作り直す）。
+// 時計は部屋の値を表示するだけ（onlineRemaining）。切れの判定は部屋。
+
+const TIME_KEY_NAME = { none: 'time_none', '3m': 'time_3m', '10s': 'time_10s', '10m+30s': 'time_10m30s', '5m+5s': 'time_5m5s' };
+let joinAction = null;
+let claimTimer = null;
+
+/** ホームの「友達を招待して対局」。部屋を作り、待つ画面へ。 */
+async function createAndWait() {
+  if (!engines || ui.invite.disabled) return;
+  sound.unlock();
+  ui.invite.disabled = true;
+  try {
+    const mode = modeValue() === 'kings-first' && engines.kingTable ? 'kings-first' : 'standard';
+    const { id, seat } = await createRoom(ROOMS_URL, {
+      mode, time: ui.time.value, side: ui.color.value, role: ui.role.value, lang: LANG,
+    });
+    seatStore.save(id, seat);
+    await joinRoom(id, seat);
+  } catch (e) {
+    setBoot(t('invite_failed'), e.message, true);
+  } finally {
+    renderModeControls();
+  }
+}
+
+/** 招待リンクを開いた。部屋の概要を見せ、参加するかを聞く。席のトークンを持っていれば黙って戻る。 */
+async function enterRoom(id) {
+  showView('home');
+  const seat = seatStore.load(id);
+  let info = null;
+  try { info = await roomInfo(ROOMS_URL, id); }
+  catch (e) { return showJoin({ note: `${t('join_failed')}（${e.message}）` }); }
+  if (!info) return showJoin({ note: t('join_missing') });
+  if (seat) return joinRoom(id, seat);
+  if (info.over) return showJoin({ note: t('join_over') });
+  if (!info.open) return showJoin({ note: t('join_full') });
+  const time = t(TIME_KEY_NAME[info.time] ?? 'time_none');
+  const body = info.mode === 'kings-first'
+    ? t('join_body_role', { time, role: t(info.guestRole === 'placer' ? 'role_placer' : 'role_chooser') })
+    : t('join_body', { time, side: sideName(info.guestSide) });
+  showJoin({
+    title: t(info.mode === 'kings-first' ? 'mode_kings' : 'mode_standard'), body,
+    note: engines ? '' : t('join_loading'), ok: () => joinRoom(id, null),
+  });
+}
+
+function showJoin({ title = t('join_invite'), body = '', note = '', ok = null }) {
+  ui.joinTitle.textContent = title;
+  ui.joinBody.textContent = body;
+  ui.joinNote.textContent = note;
+  ui.joinOk.hidden = !ok;
+  ui.joinOk.disabled = !engines;
+  joinAction = ok;
+  if (!ui.joinDialog.open) ui.joinDialog.showModal();
+}
+ui.joinOk.addEventListener('click', () => {
+  sound.unlock();
+  ui.joinDialog.close();
+  const act = joinAction;
+  joinAction = null;
+  act?.();
+});
+ui.joinCancel.addEventListener('click', () => {
+  ui.joinDialog.close();
+  joinAction = null;
+  history.replaceState(null, '', '#/');
+});
+ui.joinDialog.addEventListener('cancel', e => { e.preventDefault(); ui.joinCancel.click(); });
+
+/** 部屋に着く。エンジンが揃ってから。以後は部屋からの state で対局を組み立てる。 */
+async function joinRoom(id, seat) {
+  await enginesPromise;
+  if (online?.id === id) return;
+  abandonGame();
+  const client = new RoomClient(ROOMS_URL, id, seat);
+  net = client;
+  online = {
+    id, you: null, seats: null, started: false, mode: null, timeCtl: null, clock: null,
+    presence: null, awaySince: null, abandonMs: 5 * 60 * 1000, skew: 0, game: null, reported: false,
+  };
+  // 別の部屋へ移った後に古い接続から届いても捨てる。
+  const on = (type, fn) => client.addEventListener(type, e => { if (net === client) fn(e.detail); });
+  on('state', onState);
+  on('moved', onMoved);
+  on('ended', onEnded);
+  on('presence', onPresence);
+  on('error', onNetError);
+  on('open', () => render());
+  on('close', () => render());
+  on('reconnecting', () => render());
+  on('expired', () => { if (game && game.phase !== 'over') game.endRemote({ reason: 'expired' }); setStatus(t('net_expired'), ''); render(); });
+  client.connect();
+  if (roomIdFromHash() !== id) history.pushState(null, '', `#room/${id}`);
+  showView('play');
+  setStatus(t('net_connecting'), '');
+}
+
+function leaveRoom() {
+  clearTimeout(claimTimer);
+  claimTimer = null;
+  net?.close();
+  net = null;
+  online = null;
+}
+
+function setOnlineClock(c) {
+  if (!c) return;
+  online.clock = { ...c, receivedAt: performance.now() };
+}
+
+/** 部屋の state。入室・再接続・開始のたびに丸ごと来る。 */
+function onState(st) {
+  Object.assign(online, {
+    you: st.you, seats: st.seats, started: st.started, mode: st.mode, timeCtl: st.timeCtl,
+    presence: st.presence, awaySince: st.awaySince, abandonMs: st.abandonMs, skew: st.now - Date.now(),
+  });
+  setOnlineClock(st.clock);
+  if (!game || game !== online.game) buildOnlineGame(st);
+  syncTokens(st.tokens, true);
+  if (st.result) applyResult(st.result);
+  scheduleClaimRender();
+  render();
+}
+
+/** 部屋の設定から Game を作る。相手は remote（AIは指さない）。エンジンは終局後の検討のために渡す。 */
+function buildOnlineGame(st) {
+  endAnalysis();
+  const me = st.seats[st.you];
+  game = new Game({
+    ...engines, opponent: 'remote', mode: st.mode, notation: LANG,
+    humanColor: me.side ?? SENTE, humanRole: st.mode === 'kings-first' ? me.role : null,
+  });
+  online.game = game;
+  online.reported = false;
+  orientation = me.side ?? SENTE;
+  orientedGame = null;
+  pendingSide = null;
+  phaseSeen = null;
+  paused = false;
+  soundedKifu = 0;
+  soundedOver = false;
+  viewPly = null;
+  clock.sente = clock.gote = 0;
+  clock.running = null;
+  timeCtl = null;        // 人間側だけの時計は使わない。部屋の時計を出す
+  humanClock = null;
+  ui.ioNote.textContent = '';
+  clearInterval(clockTimer);
+  clockTimer = setInterval(onClockTick, 250);
+  ensureBoard();
+  ui.resign.disabled = false;
+  disarmResign();
+}
+
+/** 部屋の手順に合わせる。足りないぶんを足し、食い違っていれば作り直す。 */
+function syncTokens(tokens, initial = false) {
+  const mine = game.tokens();
+  const short = Math.min(mine.length, tokens.length);
+  const samePrefix = mine.slice(0, short).every((x, i) => x === tokens[i]);
+  if (samePrefix && mine.length <= tokens.length) {
+    for (const x of tokens.slice(mine.length)) if (!applyRemoteToken(x)) return;
+  } else if (samePrefix && mine.length === tokens.length + 1 && game.kifu[game.kifu.length - 1]?.actor === 'human') {
+    // 切れているあいだに指した自分の1手が部屋に届いていない。送り直す。
+    net.move(tokens.length, mine[tokens.length]);
+  } else {
+    game.undoTo(0);
+    for (const x of tokens) if (!applyRemoteToken(x)) return;
+  }
+  if (initial) { soundedKifu = game.kifu.length; phaseSeen = game.phase; }
+  reportOverIfAny();
+}
+
+/** 部屋から来たトークンを1つ入れる。入らなければ不整合として対局を止める。 */
+function applyRemoteToken(x) {
+  try {
+    game.play(x);
+  } catch (e) {
+    console.error('不整合:', x, e);
+    game.endRemote({ reason: 'desync' });
+    online.reported = true;
+    net?.over(game.tokens().length, { winner: null, reason: 'desync' });
+    return false;
+  }
+  if (game.phase === 'normal' && game.normalMoves.length >= MAX_NORMAL_MOVES) game.endRemote({ reason: 'too_long' });
+  return true;
+}
+
+/** 自分の直前の1手（または選択）を部屋へ。 */
+function sendLastMove() {
+  if (!online || !net) return;
+  const toks = game.tokens();
+  net.move(toks.length - 1, toks[toks.length - 1]);
+  reportOverIfAny();
+}
+
+/** ブラウザが判定した終局（詰み・41手目の裁定・手数の上限）を部屋に伝える。投了は resign で別に送る。 */
+function reportOverIfAny() {
+  if (!online || !net || online.reported || !game || game.phase !== 'over' || !game.result) return;
+  const r = game.result;
+  if (r.reason === 'human_resign' || r.reason === 'aborted') return;
+  online.reported = true;
+  net.over(game.tokens().length, { winner: r.winner, reason: r.reason });
+}
+
+function onMoved(m) {
+  setOnlineClock(m.clock);
+  if (!game) return;
+  const toks = game.tokens();
+  if (m.ply < toks.length) {
+    // 自分の手の写し。食い違っていれば部屋の手順を取り直す。
+    if (toks[m.ply] !== m.token) net.requestState();
+    renderSeats();
+    return;
+  }
+  if (m.ply > toks.length) { net.requestState(); return; }
+  if (applyRemoteToken(m.token)) reportOverIfAny();
+  render();
+}
+
+function onEnded(m) {
+  setOnlineClock(m.clock);
+  applyResult(m.result);
+  render();
+}
+
+/** 部屋で決まった結果を Game に入れる。理由は自分か相手かで言い分ける。 */
+function applyResult(r) {
+  if (!game) return;
+  online.reported = true;
+  if (game.phase === 'over') return;
+  const me = online.you;
+  const winnerIs = r.winnerSeat === null ? null : r.winnerSeat === me ? 'human' : 'ai';
+  const byMe = r.by === me;
+  const reason = r.reason === 'resign' ? (byMe ? 'human_resign' : 'opponent_resign')
+    : r.reason === 'timeout' ? (byMe ? 'human_timeout' : 'opponent_timeout')
+    : r.reason === 'abandon' ? (byMe ? 'opponent_abandon' : 'human_abandon')
+    : r.reason;
+  game.endRemote({ winner: r.winner, reason, winnerIs });
+}
+
+function onPresence(p) {
+  online.presence = p.presence;
+  online.awaySince = p.awaySince;
+  online.skew = p.now - Date.now();
+  scheduleClaimRender();
+  render();
+}
+
+/** 相手が不在になってから申し出られるまでの時間が来たら描き直す（ボタンが出る）。 */
+function scheduleClaimRender() {
+  clearTimeout(claimTimer);
+  claimTimer = null;
+  if (!online || online.awaySince === null || online.awaySince === undefined) return;
+  const wait = online.abandonMs - (Date.now() + online.skew - online.awaySince);
+  if (wait > 0) claimTimer = setTimeout(() => render(), wait + 100);
+}
+
+function claimable() {
+  return !!online && online.started && !!game && game.phase !== 'over'
+    && online.awaySince !== null && online.awaySince !== undefined
+    && Date.now() + online.skew - online.awaySince >= online.abandonMs;
+}
+
+/** 接続と相手の在席。状態文の下に添える。無ければ空。 */
+function onlineNote() {
+  if (!net?.connected) return t('net_reconnecting');
+  if (!online.started) return '';
+  if (online.presence?.[otherSeat(online.you)] === 'away')
+    return claimable() ? t('net_opponent_away_claim', { m: Math.round(online.abandonMs / 60000) }) : t('net_opponent_away');
+  return '';
+}
+
+function onNetError(e) {
+  if (e.ply !== undefined && game) {
+    // 自分の着手が部屋に断られた。手元のその手を戻し、部屋の手順に合わせ直す。
+    if (game.tokens().length > e.ply) game.undoTo(e.ply);
+    soundedKifu = Math.min(soundedKifu, game.kifu.length);
+    setStatus(t('net_rejected'), e.code);
+    net.requestState();
+    render();
+    return;
+  }
+  if (e.code === 'full' || e.code === 'no_room' || e.code === 'bad_seat') {
+    if (e.code === 'bad_seat') seatStore.drop(online.id);
+    leaveRoom();
+    abandonGame();
+    history.replaceState(null, '', '#/');
+    showView('home');
+    showJoin({ note: t(e.code === 'full' ? 'join_full' : e.code === 'no_room' ? 'join_missing' : 'join_failed') });
+    return;
+  }
+  render();
+}
+
+// 待つ画面の操作。リンクを写す・共有する・やめる。
+ui.waitCopy.addEventListener('click', () => online && copyText(roomUrl(online.id), ui.waitCopy, t('btn_wait_copy')));
+ui.waitShare.addEventListener('click', () => {
+  if (!online || !navigator.share) return;
+  navigator.share({ title: t('share_title'), url: roomUrl(online.id) }).catch(() => { /* 取りやめ */ });
+});
+ui.waitShare.hidden = typeof navigator.share !== 'function';
+ui.waitLeave.addEventListener('click', () => {
+  abandonGame();
+  history.replaceState(null, '', '#/');
+  showView('home');
+});
 
 // ---- 表示 ----
 
@@ -966,6 +1401,8 @@ function renderBoard() {
     } else showSnapshot(sg, game.kifu[row - 1].snapshot, shapes);
     return;
   }
+  // 相手を待っているあいだは触れない（先手でも、始まる前に打てては困る）。
+  if (online && !online.started) return void showIdleBoard(sg);
   if (!reviewing) return void syncBoard(sg, game);
   if (viewPly === 0) return void showIdleBoard(sg);
   showSnapshot(sg, game.kifu[viewPly - 1].snapshot);
@@ -1002,12 +1439,13 @@ function renderSeats() {
   const bottom = orientation;
   const top = bottom === SENTE ? GOTE : SENTE;
   // 誰が座っているか。天秤将棋で選ぶ前は色しか無い。押した（仮の）玉があれば仮の席にする。
+  const them = online ? t('seat_opponent') : t('seat_ai', { n: aiLevel });
   const label = c => {
-    const who = game.spectate ? t('seat_ai', { n: aiLevel })
+    const who = game.spectate ? them
       : game.humanColor !== null
-        ? (c === game.humanColor ? t('seat_you') : t('seat_ai', { n: aiLevel }))
+        ? (c === game.humanColor ? t('seat_you') : them)
         : pendingSide !== null
-          ? (c === pendingSide ? t('seat_you_pending') : t('seat_ai', { n: aiLevel }))
+          ? (c === pendingSide ? t('seat_you_pending') : them)
           : null;
     // 誰かが決まっても先後は語で言う（81Dojoと同じ）。天秤将棋は色と役が一致しないので、記号だけでは足りない。
     return who === null ? sideName(c) : `${who} · ${sideName(c)}`;
@@ -1026,18 +1464,15 @@ function renderSeats() {
   ui.clockTop.textContent = clockText(top);
   ui.clockBottom.textContent = clockText(bottom);
   // 残り30秒を切ったら色を変える。秒読み中は常に立てる。
-  const low = c => {
-    if (!timeCtl || c !== game.humanColor || game.phase === 'over') return false;
-    const st = humanClockState();
-    return st.inByoyomi || st.mainMs < 30000;
-  };
-  ui.clockTop.classList.toggle('low', low(top));
-  ui.clockBottom.classList.toggle('low', low(bottom));
+  ui.clockTop.classList.toggle('low', clockLow(top));
+  ui.clockBottom.classList.toggle('low', clockLow(bottom));
   const turn = game.phase !== 'over' ? game.turnColor : null;
   ui.seatTop.classList.toggle('turn', turn === top);
   ui.seatBottom.classList.toggle('turn', turn === bottom);
-  // 考えているのはAIのときだけ。人間の番で脈を打たせると急かしているように見える。
-  const thinking = busy && turn !== null && turn !== game.humanColor;
+  // 考えているのは相手のときだけ。人間の番で脈を打たせると急かしているように見える。
+  const thinking = online
+    ? (online.started && turn !== null && !game.isHumanTurn)
+    : busy && turn !== null && turn !== game.humanColor;
   ui.seatTop.classList.toggle('thinking', thinking && turn === top);
   ui.seatBottom.classList.toggle('thinking', thinking && turn === bottom);
 }
@@ -1058,8 +1493,14 @@ function kifuHeadText() {
     ? t(humanChooses ? 'choice_pending_you' : 'choice_pending_ai')
     : t('choice_took', { side: sideName(game.chosen) });   // 「後手 ☖」。記号込み
   return t(game.spectate ? 'kifu_head_spectate'
-    : game.humanRole === 'placer' ? 'kifu_head_you_placer' : 'kifu_head_you_chooser', { choice });
+    : game.humanRole === 'placer' ? 'kifu_head_you_placer' : 'kifu_head_you_chooser',
+  { choice, them: them(), Them: Them() });
 }
+
+// 相手の呼び名。AI相手なら AI、オンラインなら相手。文の頭に来る形（Them）と中に来る形（them）。
+function them() { return t(online ? 'opponent' : 'ai'); }
+function Them() { return t(online ? 'Opponent' : 'AI'); }
+function themShort() { return online ? t('opponent_short') : 'AI'; }
 
 /** 通常フェーズに入ってから人間が指したか。41手目の案内を引っ込める合図に使う。
  *  通常フェーズは41手目＝先手から始まるので、指し手の並びの偶奇が色になる。 */
@@ -1080,7 +1521,7 @@ function renderStepper() {
     : kf && game.chosen === null ? 'choose' : 'fuseki';
   const cur = over ? endStep : game.phase;
   const curIdx = steps.indexOf(cur);
-  const who = human => t(human ? 'step_you' : 'step_ai');
+  const who = human => t(human ? 'step_you' : online ? 'step_them' : 'step_ai');
   const frag = document.createDocumentFragment();
   steps.forEach((s, i) => {
     const li = document.createElement('li');
@@ -1094,7 +1535,7 @@ function renderStepper() {
       sub = state === 'now' ? `${who(game.humanRole === 'placer')} · ${t('step_left', { n: 2 - game.fusekiMoves.length })}`
         : state === 'next' ? t('step_kings_sub') : '';
     } else if (s === 'choose') {
-      sub = state === 'now' ? t(game.humanRole === 'chooser' ? 'step_turn_you' : 'step_turn_ai')
+      sub = state === 'now' ? t(game.humanRole === 'chooser' ? 'step_turn_you' : online ? 'step_turn_them' : 'step_turn_ai')
         : state === 'done' && game.chosen ? sideName(game.chosen) : '';
       // 誰が選んだかは幅が足りず入らない（「あなた → …」で切れた）。title に回す。
       if (state === 'done' && game.chosen)
@@ -1129,6 +1570,7 @@ function panelState() {
   if (!game) return 'idle';
   if (analysis) return 'analyze';
   if (game.phase === 'over') return 'over';
+  if (online && !online.started) return 'wait';
   if (game.phase === 'choose' && game.isHumanTurn && viewPly === null) return 'choose';
   return 'play';
 }
@@ -1181,11 +1623,15 @@ function render() {
   ui.analyzeAll.textContent = t(analysis?.pass ? 'btn_analyze_stop' : 'btn_analyze_all');
   ui.ioSfen.value = game.sfen();
   ui.undo.disabled = busy || viewPly !== null || game.phase === 'over' || undoTarget() < 0;
-  // 観戦では待った・投了の代わりに一時停止・中断。
-  ui.undo.hidden = ui.resign.hidden = game.spectate;
+  // 観戦では待った・投了の代わりに一時停止・中断。オンラインでは待ったは無い（相手の同意が要る。段3）。
+  ui.undo.hidden = game.spectate || !!online;
+  ui.resign.hidden = game.spectate;
   ui.pause.hidden = ui.abort.hidden = !game.spectate;
   ui.pause.textContent = t(paused ? 'btn_resume' : 'btn_pause');
   ui.pause.disabled = ui.abort.disabled = game.phase === 'over';
+  ui.claim.hidden = !claimable();
+  ui.again.textContent = ui.bannerAgain.textContent = t(online ? 'btn_home' : 'btn_again');
+  if (online && !online.started) ui.waitLink.value = roomUrl(online.id);
   playMoveSounds();
 
   if (analysis) {
@@ -1212,6 +1658,8 @@ function render() {
   } else if (game.spectate) {
     if (paused) setStatus(t('status_paused'), t('status_paused_sub'));
     else setStatus(t('status_watching'), t('status_watching_sub'));
+  } else if (online && !online.started) {
+    setStatus(t('status_wait'), t('status_wait_sub'));
   } else if (game.isHumanTurn) {
     // 41手目でルールが変わる。フェーズの表示が切り替わるだけでは気づけないので、
     // 通常フェーズで自分がまだ1手も指していないあいだは言い続ける。
@@ -1229,6 +1677,10 @@ function render() {
     } else {
       setStatus(t(game.phase === 'fuseki' ? 'status_your_turn_fuseki' : 'status_your_turn'), chosenNote());
     }
+  } else if (online) {
+    const line = t(game.phase === 'kings' ? 'status_them_kings'
+      : game.phase === 'choose' ? 'status_them_choose' : 'status_them_turn');
+    setStatus(line, game.phase === 'kings' ? t('status_ai_kings_sub') : chosenNote());
   } else {
     const line = t(game.phase === 'kings' ? 'status_ai_kings'
       : game.phase === 'choose' ? 'status_ai_choose' : 'status_ai_thinking');
@@ -1237,6 +1689,11 @@ function render() {
       : game.phase === 'choose' ? 'engine_table'
       : game.phase === 'fuseki' ? 'engine_policy' : 'engine_yaneuraou');
     setStatus(line, sub);
+  }
+  // 接続と相手の在席は、対局中ならどの状態文にも添える（切れているのに「あなたの番」だけでは指せない理由が分からない）。
+  if (online && game.phase !== 'over' && !analysis && viewPly === null) {
+    const n = onlineNote();
+    if (n) ui.statusSub.textContent = n;
   }
   renderKingTags();
   renderBanner();
@@ -1300,7 +1757,7 @@ function renderBanner() {
   clearTimeout(bannerTimer);
   bannerTimer = setTimeout(() => hideBanner(), 5000);
 }
-ui.bannerAgain.addEventListener('click', () => { hideBanner(true); newGameClicked(); });
+ui.bannerAgain.addEventListener('click', () => { hideBanner(true); againClicked(); });
 ui.bannerAnalyze.addEventListener('click', () => { hideBanner(true); ui.analyze.click(); });
 el('board').addEventListener('pointerdown', () => hideBanner());
 
@@ -1319,7 +1776,7 @@ function chosenNote() {
   // 自分で選んだときは言わない（帯とトーストに出ている）。AIが選んだときだけ、その結果を添える。
   if (game.humanRole === 'chooser') return '';
   return t('status_chosen_note', {
-    who: t(game.humanRole === 'chooser' ? 'You' : 'AI'),
+    who: game.humanRole === 'chooser' ? t('You') : Them(),
     side: sideName(game.chosen), yours: sideName(game.humanColor),
   });
 }
@@ -1333,17 +1790,17 @@ function resultNote() {
   // マスは棋譜と同じ表記で（日本語なら「４七」。表のキー 4g をそのまま出すと英字が混じる）。
   const sq = key => (LANG === 'en' ? key : makeJapaneseSquare(parseSquareName(key)));
   return t('summary_kings', {
-    placer: t(game.humanRole === 'placer' ? 'You' : 'AI'), kb: sq(sente), kw: sq(gote),
-    chooser: t(game.humanRole === 'chooser' ? 'You' : 'AI'), side: sideName(game.chosen), p,
+    placer: game.humanRole === 'placer' ? t('You') : Them(), kb: sq(sente), kw: sq(gote),
+    chooser: game.humanRole === 'chooser' ? t('You') : Them(), side: sideName(game.chosen), p,
   });
 }
 
 /** 勝敗の一行。表示と棋譜の書き出しで共有する。 */
 function resultLine() {
   const { winner, reason, winnerIs } = game.result;
-  // 天秤将棋で先後を選ぶ前に投了すると、勝った色が無い。人間とAIのどちらかだけ言う。
+  // 天秤将棋で先後を選ぶ前に投了すると、勝った色が無い。人間と相手のどちらかだけ言う。
   const who = reason === 'aborted' ? t('result_aborted')
-    : winner === null ? t(winnerIs === 'ai' ? 'result_ai_wins' : 'result_draw')
+    : winner === null ? t(winnerIs === 'ai' ? (online ? 'result_opponent_wins' : 'result_ai_wins') : 'result_draw')
     : t('result_color_wins', { side: sideName(winner) }) + (winnerIs === 'human' ? t('result_you') : '');
   const key = `reason_${reason}`;
   const why = t(key);
@@ -1882,11 +2339,11 @@ addEventListener('resize', () => { if (game) renderChart(); });
 function kifuText() {
   const seats = game.spectate ? t('kifu_seats_spectate')
     : game.humanColor === null ? t('kifu_seats_undecided')
-    : t(game.humanColor === SENTE ? 'kifu_seats_you_sente' : 'kifu_seats_you_gote');
+    : t(game.humanColor === SENTE ? 'kifu_seats_you_sente' : 'kifu_seats_you_gote', { them: themShort() });
   // 天秤将棋は役も残す。色と役は一致するとは限らないので、両方書く。
   const roles = game.mode !== 'kings-first' ? '' : `${kifuHeadText()} / `;
   const rule = t(game.mode === 'kings-first' ? 'kifu_rule_kings' : 'kifu_rule_standard');
-  const lines = [`${rule} / ${t('kifu_level', { n: aiLevel })} / ${roles}${seats}`];
+  const lines = [`${rule} / ${online ? t('kifu_online') : t('kifu_level', { n: aiLevel })} / ${roles}${seats}`];
   for (const e of game.kifu) {
     // 41手目の局面は指し手からは再現できない（布石フェーズにPositionが無い）。
     if (e.ply === 41 && game.finalSfen) lines.push(t('kifu_sfen41', { sfen: game.finalSfen }));
@@ -1939,6 +2396,7 @@ function loadMoves() {
   if (!moves.length) return note(t('io_empty'));
   if (!engines) return note(t('io_not_ready'));
   if (busy) return note(t('io_busy'));
+  if (online && game && game.phase !== 'over') return note(t('io_online'));
 
   // ルールは手順に書いてある。選択のトークンがあれば天秤将棋。
   const kingsFirst = moves.some(m => m.startsWith('choose:'));

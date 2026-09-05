@@ -54,6 +54,9 @@ AIは置くときも選ぶときも、両玉のマスの組ごとの先手勝率
   押すとその手の局面へ。棋譜をさかのぼると、その手の局面の評価が出る。
 - **検討**（終局後）は見ている局面をやねうら王が読み続け、候補手を3本出す。盤の駒はどちらの色も
   動かせて、変化を1本試せる。「全手を解析」で評価の無い手を埋める。
+- **友達と対局**（ホームの「友達を招待して対局」）は部屋を作って招待リンク（`#room/<id>`）を渡す。
+  相手がリンクを開いて参加すると始まる。部屋は `worker/`（Cloudflare Durable Objects）が持ち、
+  中継するのは手順のトークンだけ。同じリンクで戻れる（24時間）。詳しくは下の「オンライン対局」。
 - **言語は URL のパス**。`/` が日本語、`/en/` が英語。`build.mjs` が `src/index.html` の
   `{{key}}` を `src/i18n.js` の辞書で置き換えて2つの `index.html` を出し、同じ `app.js` が
   `<html lang>` を見て文言と棋譜の表記（日本語は「▲７六歩」、英語は西洋式「☗P-7f」）を替える。
@@ -66,6 +69,7 @@ AIは置くときも選ぶときも、両玉のマスの組ごとの先手勝率
 engine/dlshogi/   dlshogiのフォーク（submodule）。布石フェーズのmovegenと特徴量抽出
 wasm/             cppshogiをEmscriptenでWASMにするビルド
 src/              対局画面（src/README.md 参照）。駒の画像は src/pieces/
+worker/           オンライン対局の部屋（Cloudflare Workers + Durable Objects）。静的配信とは別に置く
 test/             同一性の照合とスモークテスト
 models/           布石方策の重み。再配布できるものだけコミットする（models/README.md）
 build.mjs         src/ と3つのエンジンのアセットを dist/ にまとめる
@@ -104,6 +108,32 @@ Emscriptenはビルド環境に無いので、`wasm/dist/*` はコミットし�
 `crossOriginIsolated` とエンジン2つの起動を実ブラウザで確かめられる。
 対局画面はどちらの場合も `play.html` にも置かれる（重みを載せていなかった頃のURLが
 404にならないようにするため）。
+
+## オンライン対局（worker/）
+
+静的配信は崩さない。部屋だけを別の Worker（`ws.fusekishogi.com`）に置き、ブラウザは WebSocket で
+そこへ繋ぐ。同じホストに Worker のルートは置けないので別ホストにしてある。
+
+- **1部屋＝1対局＝1 Durable Object**（`worker/src/room.js`）。部屋が持つ「対局の真実」は手順のトークン列
+  （`Game.tokens()` と同じ形: 駒打ち `P*5e`・指し手 `7g7f`・天秤将棋の選択 `choose:sente`）と、
+  席ごとの時計と、結果。局面は持たない。
+- **合法性は両者のブラウザが検証する**（段1）。部屋が裁くのは席・手番・手順の連番・時計・不在だけ
+  （`worker/src/rules.js`。Node で単体テストできる）。詰みなどブラウザが判定した終局は `over` で申告する。
+- **時計は席ごと**（色ではなく）。天秤将棋では先後が決まる前から手番があるため。切れの判定は部屋の
+  アラームがやり、ブラウザは受け取った残りを補間して出すだけ。
+- **再接続**は席のトークン（localStorage）で同じ席に戻り、手順を丸ごと受けて突き合わせる。
+  相手が5分戻らなければ、残った側が「勝ちを申し出る」。部屋は最後の動きから24時間で消える。
+- **対局中はAIの評価を出さない**（設定に関わらず）。終局後の検討はいつも通り手元のやねうら王で。
+  待ったは無い（相手の同意が要る。段3）。
+
+```bash
+cd worker && npx wrangler dev --port 8787        # 手元で部屋を動かす
+node build.mjs --rooms http://localhost:8787     # ブラウザ側をそこへ向ける（既定は ws.fusekishogi.com）
+cd worker && npx wrangler deploy                 # 公開。custom_domain なので DNS と証明書も wrangler が作る
+```
+
+`ALLOWED_ORIGINS`（`worker/wrangler.toml`）に無い Origin からは部屋を作れず、繋げない。
+費用は Workers Free の枠で1日およそ5,000局まで（設計は開発リポジトリの docs/plan-online-play.md）。
 
 ## ビルド
 
@@ -171,6 +201,13 @@ node test/eval_record_test.mjs
 node test/spectate_test.mjs
 # 同じことを実ブラウザで。レベル1で終局まで流し、一時停止・中断・評価グラフ・検討（候補手・変化・全手の解析）
 node build.mjs && node test/browser_smoke.mjs --watch
+
+# オンライン対局の部屋。手番機・トークンの形・時計（Node だけ・一瞬）
+node worker/test/rules_test.mjs
+# 部屋を実際に動かして2つの接続で通す（作成・参加・手番・連番・再接続・投了・天秤将棋・時間切れのアラーム）
+(cd worker && npx wrangler dev --port 8787 &) ; node worker/test/room_smoke.mjs
+# 同じことを実ブラウザ2タブで。招待リンク・参加の確認・席と時計・着手の往復・読み込み直し・投了・検討・天秤将棋
+node build.mjs --rooms http://localhost:8787 && node test/browser_smoke.mjs --online
 ```
 
 実測（`test/sample_sfens.jsonl` は実際の方策が作った41手目局面80件）:

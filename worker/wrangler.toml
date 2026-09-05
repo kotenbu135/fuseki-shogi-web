@@ -1,0 +1,29 @@
+# オンライン対局の部屋（Durable Objects）。静的配信の Pages とは別に、この Worker を
+# ws.fusekishogi.com に置く。同じホストに Worker のルートは置けないので別ホストにしてある。
+#
+#   npx wrangler dev          手元で動かす（http://localhost:8787。ブラウザ側は build.mjs --rooms で向ける）
+#   npx wrangler deploy       公開（CLOUDFLARE_API_TOKEN か wrangler login が要る）
+name = "fuseki-shogi-rooms"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# ブラウザからの Origin。これ以外は 403。
+ALLOWED_ORIGINS = "https://fusekishogi.com,https://www.fusekishogi.com,https://fuseki-shogi-web.pages.dev,http://localhost:8080,http://localhost:8099,http://localhost:8098"
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[[durable_objects.bindings]]
+name = "LIMITER"
+class_name = "Limiter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room", "Limiter"]
+
+# 公開のホスト名。custom_domain だと wrangler deploy が DNS と証明書も作る。
+[[routes]]
+pattern = "ws.fusekishogi.com"
+custom_domain = true

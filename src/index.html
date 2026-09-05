@@ -150,6 +150,8 @@
       <p class="boot" id="boot" role="status" aria-live="polite"><span id="boot-line"></span> <span id="boot-sub"></span></p>
       <div class="buttons" id="start-row">
         <button type="button" id="btn-new" class="primary" disabled>{{btn_start}}</button>
+        <!-- オンライン。部屋を作ってリンクを送る（worker/）。手番・役・持ち時間は上の設定、AIの強さは効かない。 -->
+        <button type="button" id="btn-invite" disabled title="{{btn_invite_title}}">{{btn_invite}}</button>
       </div>
     </form>
 
@@ -213,7 +215,20 @@
           <!-- 観戦のときは待った・投了の代わりに一時停止と中断。 -->
           <button type="button" id="btn-pause" hidden>{{btn_pause}}</button>
           <button type="button" id="btn-abort" hidden>{{btn_abort}}</button>
+          <!-- オンラインで相手が5分戻らないとき。 -->
+          <button type="button" id="btn-claim" hidden>{{btn_claim}}</button>
           <button type="button" id="btn-flip" title="{{btn_flip}}">{{btn_flip}}</button>
+        </div>
+        <!-- オンライン。相手を待っているあいだは招待リンク。 -->
+        <div class="actions-wait" data-for="wait">
+          <label class="wait-link-label">{{wait_link_label}}
+            <input type="text" id="wait-link" readonly spellcheck="false" value="">
+          </label>
+          <div class="analyze-row">
+            <button type="button" id="btn-wait-copy" class="primary">{{btn_wait_copy}}</button>
+            <button type="button" id="btn-wait-share">{{btn_wait_share}}</button>
+            <button type="button" id="btn-wait-leave">{{btn_wait_leave}}</button>
+          </div>
         </div>
         <div class="actions-choose" data-for="choose">
           <div class="choice-row" id="choice-row">
@@ -310,11 +325,23 @@
   <!-- 対局中にホームへ戻るときの確認。局面は保存しない（決定）。 -->
   <dialog class="io-dialog leave-dialog" id="leave-dialog">
     <h2>{{leave_title}}</h2>
-    <p class="io-note">{{leave_body}}</p>
+    <p class="io-note" id="leave-body">{{leave_body}}</p>
     <div class="moves-io-actions">
       <button type="button" id="btn-leave-copy">{{leave_copy}}</button>
       <button type="button" id="btn-leave-cancel">{{leave_cancel}}</button>
       <button type="button" id="btn-leave-ok" class="danger">{{leave_ok}}</button>
+    </div>
+  </dialog>
+
+  <!-- 招待リンクを開いたとき。何の対局かを見せてから参加する（押すことで音も起こせる）。 -->
+  <dialog class="io-dialog leave-dialog join-dialog" id="join-dialog">
+    <p class="join-eyebrow">{{join_invite}}</p>
+    <h2 id="join-title"></h2>
+    <p class="io-note" id="join-body"></p>
+    <p class="io-note" id="join-note"></p>
+    <div class="moves-io-actions">
+      <button type="button" id="btn-join-cancel">{{btn_join_cancel}}</button>
+      <button type="button" id="btn-join-ok" class="primary">{{btn_join}}</button>
     </div>
   </dialog>
 

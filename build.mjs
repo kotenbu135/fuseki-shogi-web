@@ -108,6 +108,12 @@ else if (custom) console.warn(`--model: ${path.basename(OUT)}/models/${MODEL} �
 // もので、GCT由来の値は含まない（models/README.md）。重みと世代が対になっており、
 // --model で別の重みを当てたときは src/kings.js の照合が落として、そのモードだけ閉じる。
 const KING_TABLE = 'king_pairs_iter272.json';
+
+// オンライン対局の部屋（worker/）の URL。手元で wrangler dev に向けるときは
+//   node build.mjs --rooms http://localhost:8787
+// 本番は ws.fusekishogi.com（worker/wrangler.toml の routes）。
+const roomsArg = process.argv.indexOf('--rooms');
+const ROOMS_URL = (roomsArg >= 0 ? process.argv[roomsArg + 1] : (process.env.ROOMS_URL || 'https://ws.fusekishogi.com')).replace(/\/+$/, '');
 const hasTable = copy(path.join(HERE, 'models', KING_TABLE), path.join(OUT, 'models'));
 if (!hasTable) console.warn(`警告: models/${KING_TABLE} が無いので含めていない。天秤将棋は使えない`);
 
@@ -227,7 +233,7 @@ for (const lang of LANGS) {
       + ' src/main.js の LOAD_MB を直すこと。');
 }
 
-console.log(`index = ${hasModel ? 'src/index.html (ja, en)' : 'src/soon.html'}  (dlshogi ${info.dlshogi_commit.slice(0, 12)})`);
+console.log(`index = ${hasModel ? 'src/index.html (ja, en)' : 'src/soon.html'}  (dlshogi ${info.dlshogi_commit.slice(0, 12)})  rooms = ${ROOMS_URL}`);
 
 const options = {
   entryPoints: [path.join(HERE, 'src/main.js')],
@@ -239,7 +245,10 @@ const options = {
   legalComments: 'linked', // GPLの著作権表示をdist側にも残す
   // モデルのファイル名をmain.jsへ渡す。main.js側に名前を書くと定義が2箇所になり、
   // --model で差し替えたときに片方だけが古い名前を指す。
-  define: { __MODEL_FILE__: JSON.stringify(MODEL), __KING_TABLE_FILE__: JSON.stringify(KING_TABLE) },
+  define: {
+    __MODEL_FILE__: JSON.stringify(MODEL), __KING_TABLE_FILE__: JSON.stringify(KING_TABLE),
+    __ROOMS_URL__: JSON.stringify(ROOMS_URL),
+  },
   logLevel: 'info',
 };
 

@@ -39,16 +39,19 @@ export class Game {
    * @param {import('./kings.js').KingTable|null} [kingTable] 置く役・選ぶ役のAIが引く価値表
    * @param {'ja'|'en'} [notation] 棋譜の表記。ja は「▲７六歩」、en は西洋式「☗P-7f」
    * @param {boolean} [spectate] 観戦（AI同士）。人間はおらず、色も役も持たない
+   * @param {'ai'|'remote'} [opponent] 相手。remote はオンラインの人間で、手は main.js が
+   *   部屋から受けて play() で入れる。AIは指さない（playAiMove は呼ばれない）
    */
   constructor({ fuseki, policy, engine, humanColor = SENTE, movetimeMs = 1000, temperature = 1,
                 mode = 'standard', humanRole = null, kingTable = null, rng = Math.random,
-                notation = 'ja', spectate = false }) {
+                notation = 'ja', spectate = false, opponent = 'ai' }) {
     this.notation = notation === 'en' ? 'en' : 'ja';
     this.MARK = MARKS[this.notation];
     this.fuseki = fuseki;
     this.policy = policy;
     this.engine = engine;
     this.mode = mode;
+    this.opponent = opponent === 'remote' ? 'remote' : 'ai';
     this.kingTable = kingTable;
     this.rng = rng;
     // 観戦。両方の色をAIが持つ。人間の色（humanColor）も役（humanRole）も無く、
@@ -269,6 +272,7 @@ export class Game {
 
   /** 手番側の手をAIに指させる。返り値は表示用の情報。 */
   async playAiMove() {
+    if (this.opponent === 'remote') throw new Error('オンライン対局ではAIは指さない');
     if (this.phase === 'kings') return this._aiKingsMove();
     if (this.phase === 'choose') return this._aiChoose();
     if (this.phase === 'fuseki') return this._aiFusekiMove();
@@ -513,6 +517,14 @@ export class Game {
    */
   timeout() {
     if (this.phase !== 'over') this._end(this.aiColor, 'human_timeout', 'ai');
+  }
+
+  /**
+   * 部屋（オンライン）で決まった終局。相手の投了・時間切れ・不在、局面の不整合など。
+   * winnerIs は「自分（human）か相手（ai）か」で、勝った色が無いこともある。
+   */
+  endRemote({ winner = null, reason, winnerIs = null }) {
+    if (this.phase !== 'over') this._end(winner, reason, winnerIs);
   }
 
   /**

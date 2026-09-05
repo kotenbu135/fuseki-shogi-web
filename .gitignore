@@ -27,3 +27,6 @@ parity_ref.json
 
 # 方策パリティ検証の中間ファイル（test/policy_probe.mjs が生成する）
 policy_probe.json
+
+# wrangler dev の手元の状態（Durable Object のストレージなど）。worker/ の中にできる
+.wrangler/

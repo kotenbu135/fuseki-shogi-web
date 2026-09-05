@@ -8,6 +8,9 @@
 //   --full           布石40手→41手目の裁定→通常フェーズまで実際に指して通す
 //   --kings-first    天秤将棋を両方の役で始め、盤の玉を押して先後を選ぶところまで
 //   --watch          観戦（AI同士）をレベル1で終局まで流し、一時停止・中断・評価グラフを見る
+//   --online         友達と対局（オンライン）。2つのタブで部屋を作って入り、指し、読み込み直し、投了まで。
+//                    部屋の Worker が要る: cd worker && npx wrangler dev --port 8787
+//                    dist/ は node build.mjs --rooms http://localhost:8787 で作っておく
 //   --shots <dir>    要所の画面を PNG に残す（目で見るため）
 //
 // Chrome を --headless で起こして CDP で叩く（Node 26 の組み込み WebSocket を使うので
@@ -28,6 +31,8 @@ const args = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--sho
 const FULL = argv.includes('--full');
 const KINGS = argv.includes('--kings-first');
 const WATCH = argv.includes('--watch');
+const ONLINE = argv.includes('--online');
+const ROOMS = process.env.ROOMS_URL || 'http://127.0.0.1:8787';
 const DIST = args[0] ? path.resolve(args[0]) : path.join(ROOT, 'dist');
 const NORMAL_PLIES = Number(args[1] ?? 4);
 const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
@@ -121,6 +126,8 @@ try {
 
   check('crossOriginIsolated', await evalUntil(page, 'crossOriginIsolated', v => v === true, 15000) === true,
     'COOP/COEPが効いていないとやねうら王が1スレッドに落ちる');
+  // crossOriginIsolated は head の時点で立つ。body がまだ無いうちに要素を引くと null で落ちる（実際に落ちた）。
+  await evalUntil(page, 'document.readyState', v => v === 'complete', 15000);
 
   // ---- ホーム ----
   check('最初はホームで、対局画面は隠れている', await evaluate(page,
@@ -529,6 +536,7 @@ try {
 
   if (KINGS) await playKingsFirst(page);
   if (WATCH) await watchGame(page);
+  if (ONLINE) await playOnline(cdp, page);
 
   await checkPages(page);
   await checkEnglish(page);
@@ -549,8 +557,8 @@ process.exit(failures ? 1 : 0);
  * はじめて言える。広い画面ではパネルの高さが盤の列と同じで、パネルの子はパネルの
  * 矩形の中に収まり、ページに横スクロールが無い。
  */
-async function layoutCheck(label) {
-  const r = await evaluate(page, `(() => {
+async function layoutCheck(label, pg = page) {
+  const r = await evaluate(pg, `(() => {
     const panel = document.getElementById('panel'), col = document.querySelector('.board-column');
     const de = document.documentElement;
     const narrow = getComputedStyle(panel).display === 'contents';
@@ -573,6 +581,210 @@ async function shot(name) {
   if (!SHOTS) return;
   const { data } = await page.send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(SHOTS, `${name}.png`), Buffer.from(data, 'base64'));
+}
+
+// ---- オンライン対局（--online） ----
+
+/**
+ * 友達と対局。タブAが部屋を作って招待リンクを出し、タブBがそのリンクを開いて参加する。
+ * 部屋の側（worker/）は worker/test/room_smoke.mjs が見ているので、ここで見るのは
+ * **画面と2つのブラウザの同期**: 待つ画面とリンク、参加の確認、席と時計、着手が相手に届くこと、
+ * 読み込み直しで同じ席に戻ること、投了が相手に届くこと、終局後に検討できること。
+ */
+async function playOnline(cdp, pageA) {
+  console.log('\n--- オンライン対局（--online）---');
+  const errorsAtStart = exceptions().length;
+  const alive = await fetch(`${ROOMS}/`).then(r => r.ok).catch(() => false);
+  check('部屋の Worker（wrangler dev）が動いている', alive, `${ROOMS} — cd worker && npx wrangler dev --port 8787`);
+  if (!alive) return;
+  const builtFor = fs.readFileSync(path.join(DIST, 'app.js'), 'utf8').includes(ROOMS.replace('127.0.0.1', 'localhost'))
+    || fs.readFileSync(path.join(DIST, 'app.js'), 'utf8').includes(ROOMS);
+  check('dist/ が手元の部屋の URL で作られている', builtFor, `node build.mjs --rooms ${ROOMS.replace('127.0.0.1', 'localhost')}`);
+  if (!builtFor) return;
+  const snap = pg => evaluate(pg, `({
+    state: document.getElementById('panel').dataset.state ?? '',
+    phase: document.getElementById('panel').dataset.phase ?? '',
+    line: document.getElementById('status-line').textContent,
+    sub: document.getElementById('status-sub').textContent,
+    top: document.getElementById('seat-top-name').textContent,
+    bottom: document.getElementById('seat-bottom-name').textContent,
+    clockTop: document.getElementById('clock-top').textContent,
+    clockBottom: document.getElementById('clock-bottom').textContent,
+    kifu: [...document.querySelectorAll('#kifu li .m')].map(e => e.textContent),
+    pieces: document.querySelectorAll('sg-pieces piece:not(.fading)').length,
+    undoHidden: document.getElementById('btn-undo').hidden,
+    hash: location.hash,
+    again: document.getElementById('btn-again').textContent,
+    evalHidden: document.getElementById('engine').hidden,
+  })`);
+
+  // ---- A: 部屋を作る ----
+  await evaluate(pageA, `(() => {
+    const m = document.getElementById('mode-standard'); m.checked = true; m.dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('opt-color').value = 'sente';
+    document.getElementById('opt-time').value = '10m+30s';
+    document.getElementById('opt-color').dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  check('招待のボタンが押せる', await evaluate(pageA, 'document.getElementById("btn-invite").disabled') === false);
+  await click(pageA, await center(pageA, '#btn-invite'));
+  const link = await evalUntil(pageA, 'document.getElementById("wait-link").value', v => /#room\/[a-z2-9]{8}$/.test(v || ''), 15000);
+  let a = await snap(pageA);
+  check('招待を押すと部屋ができ、待つ画面に招待リンクが出る',
+    /#room\/[a-z2-9]{8}$/.test(link || '') && a.state === 'wait' && a.line === '相手を待っている' && a.hash === link.slice(link.indexOf('#')),
+    `${a.state} / ${a.line} / ${link}`);
+  check('待っているあいだは盤に触れない（打てるマスが無い）', await evaluate(pageA, `(async () => {
+    const p = document.querySelector('sg-hand-wrap.hand-bottom piece.pawn');
+    p?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }));
+    await new Promise(r => setTimeout(r, 200));
+    return document.querySelectorAll('sq.dest').length;
+  })()`) === 0);
+  await layoutCheck('相手を待つ', pageA);
+  await shot('10-online-wait');
+
+  // ---- B: リンクを開いて参加する ----
+  // 別のブラウザ文脈で開く。同じ文脈だと localStorage を共有して、Bが host の席のトークンで
+  // 同じ席に戻ってしまう（実際にそうなった）。相手は別の端末、という前提を作る。
+  const { browserContextId } = await cdp.send('Target.createBrowserContext');
+  const targetB = await cdp.send('Target.createTarget', { url: 'about:blank', browserContextId });
+  const pageB = await cdp.attach(targetB.targetId);
+  pageB.on('Runtime.consoleAPICalled', e => logs.push('[B] ' + e.args.map(x => x.value ?? x.description).join(' ')));
+  pageB.on('Runtime.exceptionThrown', e => logs.push('EXCEPTION [B] ' + (e.exceptionDetails.exception?.description ?? e.exceptionDetails.text)));
+  await pageB.send('Runtime.enable');
+  await pageB.send('Page.enable');
+  await pageB.send('Page.navigate', { url: link });
+  const joinOpen = await evalUntil(pageB, 'document.getElementById("join-dialog").open', v => v === true, 20000);
+  const join = await evaluate(pageB, `({
+    title: document.getElementById('join-title').textContent,
+    body: document.getElementById('join-body').textContent,
+    homeShown: !document.getElementById('view-home').hidden,
+  })`);
+  check('招待リンクを開くと参加の確認が出て、何の対局でどちらを持つかが書いてある',
+    joinOpen === true && join.title === '布石将棋' && join.body.includes('10分＋30秒') && join.body.includes('後手') && join.homeShown,
+    JSON.stringify(join));
+  const joinReady = await evalUntil(pageB, 'document.getElementById("btn-join-ok").disabled', v => v === false, 120000);
+  check('エンジンが起きると参加が押せる', joinReady === false);
+  await click(pageB, await center(pageB, '#btn-join-ok'));
+  await evalUntil(pageA, 'document.getElementById("panel").dataset.state', v => v === 'play', 15000);
+  await evalUntil(pageB, 'document.getElementById("panel").dataset.state', v => v === 'play', 15000);
+  a = await snap(pageA);
+  let b = await snap(pageB);
+  check('両者が揃うと始まり、Aは先手で自分の番、Bは後手で相手の番',
+    a.line.startsWith('あなたの番') && a.bottom === 'あなた · 先手 ☗' && a.top === '相手 · 後手 ☖'
+    && b.line === '相手の番。' && b.bottom === 'あなた · 後手 ☖' && b.top === '相手 · 先手 ☗',
+    `A: ${a.line} / ${a.bottom} / ${a.top} — B: ${b.line} / ${b.bottom} / ${b.top}`);
+  check('両方の席に時計が出る（10分）', a.clockTop === '10:00' && a.clockBottom.startsWith('9:5') || a.clockBottom === '10:00',
+    `A: ${a.clockBottom} / ${a.clockTop}`);
+  check('オンラインでは待ったが無く、URL は部屋のもの', a.undoHidden && b.undoHidden && a.hash === b.hash && a.hash.startsWith('#room/'));
+  check('Bの盤は後手向き（手前が自分）', await evaluate(pageB, 'document.querySelector(".sg-wrap").classList.contains("orientation-gote")'));
+  await layoutCheck('オンラインの対局中', pageA);
+  await layoutCheck('オンラインの対局中（B）', pageB);
+
+  // ---- 着手が相手に届く ----
+  await click(pageA, await center(pageA, 'sg-hand-wrap.hand-bottom piece.pawn'));
+  await evalUntil(pageA, 'document.querySelectorAll("sq.dest").length', v => v > 0, 10000);
+  await click(pageA, await center(pageA, 'sg-squares sq.dest'));
+  const kifuB = await evalUntil(pageB, 'document.querySelectorAll("#kifu li").length', v => v >= 1, 10000);
+  b = await snap(pageB);
+  check('Aの1手目がBの盤と棋譜に届き、Bの番になる', kifuB === 1 && b.pieces === 1 && b.line.startsWith('あなたの番'),
+    `棋譜${kifuB} / 盤上${b.pieces} / ${b.line}`);
+  await click(pageB, await center(pageB, 'sg-hand-wrap.hand-bottom piece.pawn'));
+  await evalUntil(pageB, 'document.querySelectorAll("sq.dest").length', v => v > 0, 10000);
+  await click(pageB, await center(pageB, 'sg-squares sq.dest'));
+  const kifuA = await evalUntil(pageA, 'document.querySelectorAll("#kifu li").length', v => v >= 2, 10000);
+  a = await snap(pageA);
+  b = await snap(pageB);
+  check('Bの応手がAに届き、Aの番に戻る。棋譜は両方で同じ', kifuA === 2 && a.line.startsWith('あなたの番') && a.kifu.join(' ') === b.kifu.join(' '),
+    `A: ${a.kifu.join(' ')} / B: ${b.kifu.join(' ')}`);
+  check('対局中はAIの評価を出さない（設定に関わらず）', await evaluate(pageA, `(() => {
+    const c = document.getElementById('opt-show-eval'); c.checked = true; c.dispatchEvent(new Event('change'));
+    const hidden = document.getElementById('engine').hidden;
+    c.checked = false; c.dispatchEvent(new Event('change'));
+    return hidden;
+  })()`) === true);
+  await shot('11-online-play');
+
+  // ---- 読み込み直しで同じ席に戻る ----
+  await pageB.send('Page.reload');
+  await evalUntil(pageB, 'document.getElementById("panel")?.dataset.state', v => v === 'play', 120000);
+  await evalUntil(pageB, 'document.querySelectorAll("#kifu li").length', v => v >= 2, 15000);
+  b = await snap(pageB);
+  check('Bを読み込み直しても確認なしに同じ席へ戻り、手順が2手ぶん復元される',
+    b.kifu.length === 2 && b.bottom === 'あなた · 後手 ☖' && b.pieces === 2 && b.line === '相手の番。' && !(await evaluate(pageB, 'document.getElementById("join-dialog").open')),
+    `${b.kifu.join(' ')} / ${b.bottom} / ${b.line}`);
+
+  // ---- 投了が相手に届く ----
+  await evalUntil(pageA, 'document.getElementById("status-sub").textContent', v => !v.includes('つなぎ直') && !v.includes('切れた'), 10000);
+  await evaluate(pageB, `(() => { const r = document.getElementById('btn-resign'); r.click(); r.click(); })()`);
+  await evalUntil(pageA, 'document.getElementById("panel").dataset.phase', v => v === 'over', 10000);
+  a = await snap(pageA);
+  b = await snap(pageB);
+  check('Bが投了するとAに勝ちが届く（理由は相手の投了）',
+    a.line === '先手 ☗の勝ち（あなた）' && a.sub === '相手の投了' && b.line === '先手 ☗の勝ち' && b.sub === '投了',
+    `A: ${a.line} / ${a.sub} — B: ${b.line} / ${b.sub}`);
+  check('終局後の行き先は「ホームへ」（相手が要るので、もう一局はしない）', a.again === 'ホームへ' && b.again === 'ホームへ');
+  await evaluate(pageA, 'document.getElementById("btn-analyze").click()');
+  await evalUntil(pageA, 'document.getElementById("panel").dataset.state', v => v === 'analyze', 5000);
+  check('オンラインの対局も終局後に検討できる', (await snap(pageA)).state === 'analyze');
+  await layoutCheck('オンラインの終局', pageA);
+  await shot('12-online-over');
+  await evaluate(pageA, 'document.getElementById("btn-analyze-end").click()');
+
+  // ---- 天秤将棋: 置く役と選ぶ役が別のタブ ----
+  await click(pageA, await center(pageA, '#btn-again'));   // ホームへ
+  await evalUntil(pageA, 'document.getElementById("view-home").hidden', v => v === false, 5000);
+  await evaluate(pageA, `(() => {
+    const m = document.getElementById('mode-kings'); m.checked = true; m.dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('opt-role').value = 'placer';
+    document.getElementById('opt-time').value = 'none';
+  })()`);
+  await click(pageA, await center(pageA, '#btn-invite'));
+  const link2 = await evalUntil(pageA, 'document.getElementById("wait-link").value', v => /#room\/[a-z2-9]{8}$/.test(v || '') && v !== link, 15000);
+  await pageB.send('Page.navigate', { url: link2 });
+  await evalUntil(pageB, 'document.getElementById("join-dialog").open', v => v === true, 20000);
+  const join2 = await evaluate(pageB, 'document.getElementById("join-title").textContent + " / " + document.getElementById("join-body").textContent');
+  check('天秤将棋の招待では、参加する側の役が書いてある', join2.startsWith('天秤将棋') && join2.includes('先後を選ぶ') && join2.includes('無制限'), join2);
+  await evalUntil(pageB, 'document.getElementById("btn-join-ok").disabled', v => v === false, 120000);
+  await click(pageB, await center(pageB, '#btn-join-ok'));
+  await evalUntil(pageA, 'document.getElementById("status-line").textContent', v => v.startsWith('あなたが両玉を置く'), 15000);
+  b = await snap(pageB);
+  check('Aが両玉を置く番で、Bは相手が置くのを待つ（自分が選ぶ役だと言う）',
+    b.line === '相手が両玉を置いている…' && b.sub.startsWith('あなたが先後を選ぶ'), `${b.line} / ${b.sub}`);
+  check('無制限の対局は両方の席が「無制限」', b.clockTop === '無制限' && b.clockBottom === '無制限', `${b.clockTop} / ${b.clockBottom}`);
+  for (const hand of ['hand-bottom', 'hand-top']) {
+    await click(pageA, await center(pageA, `sg-hand-wrap.${hand} piece.king`));
+    await evalUntil(pageA, 'document.querySelectorAll("sq.dest").length', v => v > 0, 10000);
+    await click(pageA, await center(pageA, 'sg-squares sq.dest'));
+    await new Promise(r => setTimeout(r, 400));
+  }
+  await evalUntil(pageB, 'document.getElementById("panel").dataset.state', v => v === 'choose', 10000);
+  b = await snap(pageB);
+  check('両玉が置かれるとBが先後を選ぶ番になり、両玉がBの盤にある', b.state === 'choose' && b.pieces === 2 && b.line.startsWith('どちらの玉で指すか'), `${b.state} / ${b.pieces} / ${b.line}`);
+  a = await snap(pageA);
+  check('Aは相手が選ぶのを待つ', a.line === '相手が先後を選んでいる…', a.line);
+  await click(pageB, await center(pageB, '#btn-choose-gote'));
+  await evalUntil(pageB, 'document.getElementById("btn-choose-confirm").disabled', v => v === false, 5000);
+  await click(pageB, await center(pageB, '#btn-choose-confirm'));
+  await evalUntil(pageA, 'document.getElementById("status-line").textContent', v => v.startsWith('あなたの番'), 10000);
+  a = await snap(pageA);
+  b = await snap(pageB);
+  check('Bが後手を持つとAが先手で3手目の番。席の札と見出しに相手が出る',
+    a.bottom === 'あなた · 先手 ☗' && a.top === '相手 · 後手 ☖' && a.kifu[2] === '△後手を持つ'
+    && b.bottom === 'あなた · 後手 ☖' && b.line === '相手の番。'
+    && (await evaluate(pageA, 'document.getElementById("kifu-head").textContent')) === 'あなたが両玉を置き、相手が後手 ☖を持った',
+    `A: ${a.bottom} / ${a.top} / ${a.kifu.join(' ')} — B: ${b.bottom} / ${b.line}`);
+  await layoutCheck('天秤将棋（オンライン）', pageA);
+  await shot('13-online-kings');
+  // 片付け。Aが投了して両方ホームへ。
+  await evaluate(pageA, `(() => { const r = document.getElementById('btn-resign'); r.click(); r.click(); })()`);
+  await evalUntil(pageB, 'document.getElementById("panel").dataset.phase', v => v === 'over', 10000);
+  b = await snap(pageB);
+  check('先後が決まった後の投了は色で言う', b.line === '後手 ☖の勝ち（あなた）' && b.sub === '相手の投了', `${b.line} / ${b.sub}`);
+  await cdp.send('Target.closeTarget', { targetId: targetB.targetId });
+  await cdp.send('Target.disposeBrowserContext', { browserContextId }).catch(() => {});
+  await click(pageA, await center(pageA, '#btn-again'));
+  await evalUntil(pageA, 'document.getElementById("view-home").hidden', v => v === false, 5000);
+  check('オンライン対局で未処理の例外が無い', exceptions().length === errorsAtStart, exceptions().slice(errorsAtStart).join(' / '));
 }
 
 // ---- 天秤将棋（--kings-first） ----
@@ -1073,7 +1285,7 @@ async function playWholeGame(page) {
       s.status.includes('41手目') || s.status.startsWith('AIが考えている'),
       `${s.status} / ${s.sub}`);
     check('帯が将棋の段に進む', await evaluate(page,
-      'document.querySelector("#stepper .step.now .t")?.textContent') === '将棋');
+      'document.querySelector("#stepper .step.now .t")?.textContent') === '本将棋');
     check('盤の縁が将棋の色に変わる', await evaluate(page,
       'document.querySelector(".sg-wrap").classList.contains("phase-normal")'));
     await layoutCheck('41手目');
@@ -1100,7 +1312,7 @@ async function playWholeGame(page) {
     check('通常フェーズで手が進んだ', s.kifu > 40, `${s.kifu}手`);
     // 41手目の行（指した後に初めて現れる）に区切りが付く。
     check('41手目の棋譜の行に区切りが付く', await evaluate(page,
-      'document.querySelector("#kifu li.divider:not(.choice)")?.dataset.divider') === 'ここから将棋');
+      'document.querySelector("#kifu li.divider:not(.choice)")?.dataset.divider') === 'ここから本将棋');
     // やねうら王が指したので、評価の出どころが替わっている。見せる設定にして読む。
     await evaluate(page, `(() => { const c = document.getElementById('opt-show-eval'); c.checked = true; c.dispatchEvent(new Event('change')); })()`);
     const ev = await evaluate(page, 'document.getElementById("readout-eval").textContent');
