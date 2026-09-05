@@ -23,7 +23,7 @@ const ROOT = path.join(HERE, '..');
 const SEED = Number(process.argv[2] || 20260904);
 const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
 const W = 1200, H = 630, CHROME_UI = 87;
-const MODEL = path.join(ROOT, 'models/fuseki_degct_b3_iter272.onnx');
+const MODEL = path.join(ROOT, 'models/fuseki_degct_b3_iter538.onnx');
 const OUT = path.join(ROOT, 'src/og');
 
 // 固定シード（mulberry32）。同じ seed からは同じ布石。

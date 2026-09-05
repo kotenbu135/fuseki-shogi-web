@@ -18,7 +18,7 @@
 | cppshogi のWASM化（`wasm/`） | `vendor/fuseki/` | GPL v3 |
 | 対局画面（`src/`） | `app.js`, `index.html`, `style.css` | GPL-3.0-only |
 | 駒の画像 kanji_light（下記） | `pieces/*.svg` | CC BY 4.0 |
-| 布石方策の重み（下記） | `models/fuseki_degct_b3_iter272.onnx` | 本リポジトリの著作物 |
+| 布石方策の重み（下記） | `models/fuseki_degct_b3_iter538.onnx` | 本リポジトリの著作物 |
 
 `app.js` にバンドルした分の著作権表示は `app.js.LEGAL.txt` に出している
 （esbuild の `legalComments: 'linked'`）。
@@ -64,7 +64,7 @@ AGPLv3+ で、GPL-3.0-only の配布物に混ぜると配布物全体に AGPL 13
 
 ### 布石方策の重み
 
-配布しているのは `models/fuseki_degct_b3_iter272.onnx`（布石専用ネット・648出力・
+配布しているのは `models/fuseki_degct_b3_iter538.onnx`（布石専用ネット・648出力・
 価値ヘッド無し）。**第三者の学習済みモデルを初期値にしていない。** 乱数初期化した
 重みから出発し、やねうら王（`yaneuraou.k-p` 同梱の SuishoPetite）の探索結果だけを
 教師信号にして自己対局で学習したものである。学習と検証の記録は非公開の開発リポジトリの

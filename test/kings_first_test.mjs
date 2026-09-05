@@ -48,7 +48,7 @@ function makeTable() {
       pairs[`${fb}${rb},${fw}${rw}`] = { v: 0.5 };
   pairs['5i,5a'] = { v: 0.7 };   // 先手が良い
   pairs['5h,5b'] = { v: 0.3 };   // 後手が良い
-  return new KingTable({ format: 'king_pair_table/1', model: 'iter272.npz', band: ['9i,1a', '1i,9a'], pairs });
+  return new KingTable({ format: 'king_pair_table/1', model: 'iter538.npz', band: ['9i,1a', '1i,9a'], pairs });
 }
 const table = makeTable();
 const newGame = (humanRole, extra = {}) =>
@@ -70,7 +70,7 @@ console.log('--- 価値表 ---');
 
 check('世代がずれた表は落とす', () => {
   throws(() => new KingTable(table.data, { modelFile: 'fuseki_degct_b3_iter38.onnx' }), '世代違い');
-  new KingTable(table.data, { modelFile: 'fuseki_degct_b3_iter272.onnx' });
+  new KingTable(table.data, { modelFile: 'fuseki_degct_b3_iter538.onnx' });
 });
 
 check('形式の違う表は落とす', () => {
@@ -88,7 +88,7 @@ check('置く役は帯のうち最も釣り合う組に絞る', () => {
   const far = ['5i,5a', '5h,5b', '5g,5c'];
   for (const k of near) pairs[k] = { v: 0.5 + 0.004 };
   for (const k of far) pairs[k] = { v: 0.5 + 0.03 };   // band_floor(0.01) の外
-  const t = new KingTable({ format: 'king_pair_table/1', model: 'iter272.npz',
+  const t = new KingTable({ format: 'king_pair_table/1', model: 'iter538.npz',
                             band_floor: 0.01, band: [...near, ...far], pairs });
   eq(t.balancedPool().sort().join(' '), [...near].sort().join(' '), '誤差ぶんの組を落とす');
   const seen = new Set();
