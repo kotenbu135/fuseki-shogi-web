@@ -144,6 +144,10 @@
             <option value="5m+5s">{{time_5m5s}}</option>
           </select>
         </label>
+        <!-- オンラインで相手に見せる名前。空なら無名。localStorage に残す。 -->
+        <label id="lbl-nick" title="{{opt_nick_title}}">{{opt_nick}}
+          <input type="text" id="opt-nick" maxlength="20" autocomplete="nickname" placeholder="{{opt_nick_placeholder}}">
+        </label>
       </div>
 
       <!-- 読み込みの進捗は対局の状態ではないので、対局画面の状態枠には出さない。ここに出す。 -->
@@ -153,7 +157,19 @@
         <!-- オンライン。部屋を作ってリンクを送る（worker/）。手番・役・持ち時間は上の設定、AIの強さは効かない。 -->
         <button type="button" id="btn-invite" disabled title="{{btn_invite_title}}">{{btn_invite}}</button>
       </div>
+      <!-- 待合にも載せる（誰でも入れる）。招待リンクは変わらない。 -->
+      <label class="check public-row" id="lbl-public">
+        <input type="checkbox" id="opt-public">
+        <span>{{opt_public}}</span>
+      </label>
     </form>
+
+    <!-- 待合。公開で募集している部屋（worker/src/lobby.js）。一覧は WebSocket で流れてくる。 -->
+    <section class="lobby" id="lobby" aria-labelledby="lobby-head">
+      <h2 id="lobby-head">{{lobby_head}}</h2>
+      <p class="lobby-note" id="lobby-note">{{lobby_empty}}</p>
+      <ul class="seeks" id="seeks"></ul>
+    </section>
 
     <section class="intro">
       <h2>{{home_intro_head}}</h2>
@@ -217,7 +233,16 @@
           <button type="button" id="btn-abort" hidden>{{btn_abort}}</button>
           <!-- オンラインで相手が5分戻らないとき。 -->
           <button type="button" id="btn-claim" hidden>{{btn_claim}}</button>
+          <!-- オンラインの申し出。相手の同意が要るので、AI相手の「待った」とは別のボタン。 -->
+          <button type="button" id="btn-takeback" hidden title="{{btn_takeback_title}}">{{btn_takeback_ask}}</button>
+          <button type="button" id="btn-draw" hidden title="{{btn_draw_title}}">{{btn_draw_offer}}</button>
           <button type="button" id="btn-flip" title="{{btn_flip}}">{{btn_flip}}</button>
+        </div>
+        <!-- 相手からの申し出（待った・引き分け）。受けるか断るか。 -->
+        <div class="offer-row" id="offer-row" data-for="play" hidden>
+          <span class="offer-text" id="offer-text"></span>
+          <button type="button" id="btn-offer-accept" class="primary">{{btn_offer_accept}}</button>
+          <button type="button" id="btn-offer-decline">{{btn_offer_decline}}</button>
         </div>
         <!-- オンライン。相手を待っているあいだは招待リンク。 -->
         <div class="actions-wait" data-for="wait">
@@ -229,6 +254,7 @@
             <button type="button" id="btn-wait-share">{{btn_wait_share}}</button>
             <button type="button" id="btn-wait-leave">{{btn_wait_leave}}</button>
           </div>
+          <p class="io-note" id="wait-note"></p>
         </div>
         <div class="actions-choose" data-for="choose">
           <div class="choice-row" id="choice-row">

@@ -31,4 +31,23 @@ em++ -std=c++17 -O2 -msimd128 -msse4.2 -mavx2 \
   "$HERE/fuseki_wasm.cpp" "${SRC[@]}" \
   -o "$OUT/fuseki.mjs"
 
+# Workers（worker/src/judge.js）向けのグルー。同じ .wasm で JS だけ ENVIRONMENT=web にする。
+# web,worker,node のグルーは wrangler dev/workerd で node と誤認し、import.meta.url が無くて
+# 起動時に落ちる（実際に落ちた）。.wasm は上と同じ物になるので、確かめて片方だけ残す。
+em++ -std=c++17 -O2 -msimd128 -msse4.2 -mavx2 \
+  -include "$HERE/wasm_shim.h" \
+  -DHAVE_SSE4 -DHAVE_SSE42 -DHAVE_AVX2 \
+  -I"$C" \
+  -s MODULARIZE=1 -s EXPORT_ES6=1 -s EXPORT_NAME=FusekiModule \
+  -s ALLOW_MEMORY_GROWTH=1 -s ENVIRONMENT=web \
+  -s EXPORTED_RUNTIME_METHODS=ccall,cwrap,HEAPF32,HEAP32,UTF8ToString,stringToNewUTF8 \
+  "$HERE/fuseki_wasm.cpp" "${SRC[@]}" \
+  -o "$OUT/fuseki-worker.mjs"
+if cmp -s "$OUT/fuseki.wasm" "$OUT/fuseki-worker.wasm"; then
+  rm "$OUT/fuseki-worker.wasm"
+  sed -i 's/fuseki-worker\.wasm/fuseki.wasm/g' "$OUT/fuseki-worker.mjs"
+else
+  echo "警告: fuseki-worker.wasm が fuseki.wasm と一致しない。両方残す" >&2
+fi
+
 ls -la "$OUT"

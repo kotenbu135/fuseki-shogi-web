@@ -18,7 +18,7 @@ import { createBoard, showIdleBoard, showSnapshot, showPosition, setShapes, sync
 import { Sound, VOICES } from './sound.js';
 import { HomeBoard } from './homeboard.js';
 import { t, LANG } from './i18n.js';
-import { RoomClient, createRoom, roomInfo, roomUrl, roomIdFromHash, seatStore } from './net.js';
+import { RoomClient, LobbyClient, createRoom, roomInfo, roomUrl, roomIdFromHash, seatStore, nickStore } from './net.js';
 
 const ASSETS = {
   fuseki: new URL('./vendor/fuseki/fuseki.mjs', import.meta.url).href,
@@ -95,6 +95,9 @@ const ui = {
   waitLink: el('wait-link'), waitCopy: el('btn-wait-copy'), waitShare: el('btn-wait-share'), waitLeave: el('btn-wait-leave'),
   joinDialog: el('join-dialog'), joinTitle: el('join-title'), joinBody: el('join-body'), joinNote: el('join-note'),
   joinOk: el('btn-join-ok'), joinCancel: el('btn-join-cancel'), leaveBody: el('leave-body'),
+  nick: el('opt-nick'), publicSeek: el('opt-public'), lobby: el('lobby'), seeks: el('seeks'), lobbyNote: el('lobby-note'),
+  takeback: el('btn-takeback'), draw: el('btn-draw'), offerRow: el('offer-row'), offerText: el('offer-text'),
+  offerAccept: el('btn-offer-accept'), offerDecline: el('btn-offer-decline'), waitNote: el('wait-note'),
 };
 
 // ---- 表示の設定（歯車） ----
@@ -138,7 +141,7 @@ let showEvalInPlay = false;
 /** いま評価を出してよいか。対局中は設定しだい、終局後と観戦は常に出す（隠す理由が無い）。
  *  オンラインの対局中は設定に関わらず出さない（相手に対して公平でない。決定）。 */
 function evalVisible() {
-  return !!game && (game.phase === 'over' || game.spectate || (showEvalInPlay && !online));
+  return !!game && (game.phase === 'over' || (game.spectate && !online) || (showEvalInPlay && !online));
 }
 
 // 表示の設定は歯車の中。対局中も触れる（対局の設定は対局前だけ）。
@@ -353,8 +356,9 @@ const otherSeat = s => (s === 'host' ? 'guest' : 'host');
 
 /** 色の席。先後が決まる前（天秤将棋）は、手前を自分・向こうを相手として出す。 */
 function onlineSeatOfColor(color) {
-  const seats = online?.seats;
-  if (seats) for (const s of ['host', 'guest']) if (seats[s].side === color) return s;
+  const seat = onlineColorSeat(color);
+  if (seat) return seat;
+  if (!online.you) return color === SENTE ? 'host' : 'guest';   // 観戦で先後が決まる前。仮の割り当て
   return color === orientation ? online.you : otherSeat(online.you);
 }
 
@@ -415,7 +419,10 @@ let infoGen = 0;             // 読んでいる局面の世代。古い info と
 // オンライン対局。net は部屋との接続（net.js）、online は部屋から受けた状態。中身は「オンライン対局」の節。
 let net = null;
 let online = null;
-// { id, you: 'host'|'guest', seats, started, mode, timeCtl, clock, presence, awaySince, abandonMs, skew, game, reported }
+// { id, you: 'host'|'guest'|null（観戦）, spectate, seats, names, started, mode, timeCtl, clock, presence,
+//   awaySince, abandonMs, skew, game, reported, offers, watchers, public, note }
+// 待合。ホームを開いているあいだ繋いでおき、募集の一覧を受ける（接続は末尾で）。
+const lobby = new LobbyClient(ROOMS_URL);
 
 /** 盤を1枚だけ作る。対局前から出しておきたいので、起動時にも呼ぶ。 */
 function ensureBoard() {
@@ -599,6 +606,7 @@ async function boot() {
     engines = { fuseki, policy, engine, kingTable };
     ui.newGame.disabled = false;
     renderModeControls();   // 招待のボタンも開く
+    renderSeeks();          // 待合の「参加」も開く
     ui.joinOk.disabled = false;
     if (ui.joinNote.textContent === t('join_loading')) ui.joinNote.textContent = '';
     enginesReady();
@@ -1077,6 +1085,7 @@ async function createAndWait() {
     const mode = modeValue() === 'kings-first' && engines.kingTable ? 'kings-first' : 'standard';
     const { id, seat } = await createRoom(ROOMS_URL, {
       mode, time: ui.time.value, side: ui.color.value, role: ui.role.value, lang: LANG,
+      nick: ui.nick.value.trim(), isPublic: ui.publicSeek.checked,
     });
     seatStore.save(id, seat);
     await joinRoom(id, seat);
@@ -1096,23 +1105,29 @@ async function enterRoom(id) {
   catch (e) { return showJoin({ note: `${t('join_failed')}（${e.message}）` }); }
   if (!info) return showJoin({ note: t('join_missing') });
   if (seat) return joinRoom(id, seat);
-  if (info.over) return showJoin({ note: t('join_over') });
-  if (!info.open) return showJoin({ note: t('join_full') });
   const time = t(TIME_KEY_NAME[info.time] ?? 'time_none');
+  const title = t(info.mode === 'kings-first' ? 'mode_kings' : 'mode_standard');
+  const eyebrow = info.hostName ? t('join_from', { who: info.hostName }) : t('join_invite');
+  // 席が埋まっている（または終わっている）なら観戦。
+  if (!info.open) {
+    return showJoin({
+      title, eyebrow, body: time, note: info.over ? t('join_over') : t('join_watch_note'),
+      okLabel: t('btn_watch'), ok: () => joinRoom(id, null, { spectate: true }),
+    });
+  }
   const body = info.mode === 'kings-first'
     ? t('join_body_role', { time, role: t(info.guestRole === 'placer' ? 'role_placer' : 'role_chooser') })
     : t('join_body', { time, side: sideName(info.guestSide) });
-  showJoin({
-    title: t(info.mode === 'kings-first' ? 'mode_kings' : 'mode_standard'), body,
-    note: engines ? '' : t('join_loading'), ok: () => joinRoom(id, null),
-  });
+  showJoin({ title, eyebrow, body, note: engines ? '' : t('join_loading'), ok: () => joinRoom(id, null) });
 }
 
-function showJoin({ title = t('join_invite'), body = '', note = '', ok = null }) {
+function showJoin({ title = t('join_invite'), eyebrow = t('join_invite'), body = '', note = '', ok = null, okLabel = t('btn_join') }) {
   ui.joinTitle.textContent = title;
+  ui.joinDialog.querySelector('.join-eyebrow').textContent = eyebrow;
   ui.joinBody.textContent = body;
   ui.joinNote.textContent = note;
   ui.joinOk.hidden = !ok;
+  ui.joinOk.textContent = okLabel;
   ui.joinOk.disabled = !engines;
   joinAction = ok;
   if (!ui.joinDialog.open) ui.joinDialog.showModal();
@@ -1132,15 +1147,16 @@ ui.joinCancel.addEventListener('click', () => {
 ui.joinDialog.addEventListener('cancel', e => { e.preventDefault(); ui.joinCancel.click(); });
 
 /** 部屋に着く。エンジンが揃ってから。以後は部屋からの state で対局を組み立てる。 */
-async function joinRoom(id, seat) {
+async function joinRoom(id, seat, { spectate = false } = {}) {
   await enginesPromise;
   if (online?.id === id) return;
   abandonGame();
-  const client = new RoomClient(ROOMS_URL, id, seat);
+  const client = new RoomClient(ROOMS_URL, id, seat, { nick: ui.nick.value.trim(), spectate });
   net = client;
   online = {
-    id, you: null, seats: null, started: false, mode: null, timeCtl: null, clock: null,
+    id, you: null, spectate, seats: null, names: null, started: false, mode: null, timeCtl: null, clock: null,
     presence: null, awaySince: null, abandonMs: 5 * 60 * 1000, skew: 0, game: null, reported: false,
+    offers: { draw: null, takeback: null }, watchers: 0, public: false, note: null,
   };
   // 別の部屋へ移った後に古い接続から届いても捨てる。
   const on = (type, fn) => client.addEventListener(type, e => { if (net === client) fn(e.detail); });
@@ -1148,11 +1164,15 @@ async function joinRoom(id, seat) {
   on('moved', onMoved);
   on('ended', onEnded);
   on('presence', onPresence);
+  on('offer', onOffer);
+  on('offer_declined', onOfferDeclined);
+  on('rewound', onRewound);
   on('error', onNetError);
   on('open', () => render());
   on('close', () => render());
   on('reconnecting', () => render());
   on('expired', () => { if (game && game.phase !== 'over') game.endRemote({ reason: 'expired' }); setStatus(t('net_expired'), ''); render(); });
+  on('cancelled', () => { if (game && game.phase !== 'over') game.endRemote({ reason: 'cancelled' }); render(); });
   client.connect();
   if (roomIdFromHash() !== id) history.pushState(null, '', `#room/${id}`);
   showView('play');
@@ -1175,8 +1195,10 @@ function setOnlineClock(c) {
 /** 部屋の state。入室・再接続・開始のたびに丸ごと来る。 */
 function onState(st) {
   Object.assign(online, {
-    you: st.you, seats: st.seats, started: st.started, mode: st.mode, timeCtl: st.timeCtl,
-    presence: st.presence, awaySince: st.awaySince, abandonMs: st.abandonMs, skew: st.now - Date.now(),
+    you: st.you, spectate: st.you === null, seats: st.seats, names: st.names ?? null, started: st.started,
+    mode: st.mode, timeCtl: st.timeCtl, presence: st.presence, awaySince: st.awaySince, abandonMs: st.abandonMs,
+    skew: st.now - Date.now(), offers: st.offers ?? { draw: null, takeback: null }, watchers: st.watchers ?? 0,
+    public: !!st.public,
   });
   setOnlineClock(st.clock);
   if (!game || game !== online.game) buildOnlineGame(st);
@@ -1189,14 +1211,16 @@ function onState(st) {
 /** 部屋の設定から Game を作る。相手は remote（AIは指さない）。エンジンは終局後の検討のために渡す。 */
 function buildOnlineGame(st) {
   endAnalysis();
-  const me = st.seats[st.you];
-  game = new Game({
-    ...engines, opponent: 'remote', mode: st.mode, notation: LANG,
-    humanColor: me.side ?? SENTE, humanRole: st.mode === 'kings-first' ? me.role : null,
-  });
+  const me = st.you ? st.seats[st.you] : null;
+  game = me
+    ? new Game({
+      ...engines, opponent: 'remote', mode: st.mode, notation: LANG,
+      humanColor: me.side ?? SENTE, humanRole: st.mode === 'kings-first' ? me.role : null,
+    })
+    : new Game({ ...engines, opponent: 'remote', mode: st.mode, notation: LANG, spectate: true });
   online.game = game;
   online.reported = false;
-  orientation = me.side ?? SENTE;
+  orientation = me?.side ?? SENTE;
   orientedGame = null;
   pendingSide = null;
   phaseSeen = null;
@@ -1277,9 +1301,127 @@ function onMoved(m) {
     return;
   }
   if (m.ply > toks.length) { net.requestState(); return; }
+  online.offers = { draw: null, takeback: null };   // 指したら申し出は流れる（部屋も同じ）
   if (applyRemoteToken(m.token)) reportOverIfAny();
   render();
 }
+
+// ---- 申し出（待った・引き分け）と観戦 ----
+
+function onOffer(m) {
+  if (m.kind === 'draw') online.offers.draw = m.by;
+  else if (m.kind === 'takeback') online.offers.takeback = { by: m.by, ply: m.ply };
+  if (m.by !== online.you) sound.play('phase');
+  render();
+}
+function onOfferDeclined(m) {
+  if (m.kind === 'draw') online.offers.draw = null;
+  else if (m.kind === 'takeback') online.offers.takeback = null;
+  if (m.by !== online.you) onlineFlash(t(m.kind === 'draw' ? 'offer_declined_draw' : 'offer_declined_takeback'));
+  render();
+}
+/** 待ったが受けられた。部屋の手順に合わせて戻す。 */
+function onRewound(m) {
+  setOnlineClock(m.clock);
+  online.offers = { draw: null, takeback: null };
+  if (game) {
+    game.undoTo(m.ply);
+    soundedKifu = Math.min(soundedKifu, game.kifu.length);
+    viewPly = null;
+    pendingSide = null;
+    disarmResign();
+    if (m.tokens && m.tokens.join(' ') !== game.tokens().join(' ')) syncTokens(m.tokens);
+  }
+  onlineFlash(m.ply === 0 ? t('rewound_note_start') : t('rewound_note', { n: m.ply }));
+  render();
+}
+/** 状態文の下に数秒だけ出す知らせ（断られた・戻った）。 */
+let flashTimer = null;
+function onlineFlash(text) {
+  if (!online) return;
+  online.note = { text, until: Date.now() + 5000 };
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { if (online) { online.note = null; render(); } }, 5100);
+}
+
+/** 申し出のボタンと、相手からの申し出の行。 */
+function renderOffers() {
+  const active = !!online && !online.spectate && online.started && !!game && game.phase !== 'over';
+  ui.takeback.hidden = ui.draw.hidden = !active;
+  if (!active) { ui.offerRow.hidden = true; return; }
+  const o = online.offers ?? { draw: null, takeback: null };
+  const mine = o.draw === online.you || o.takeback?.by === online.you;
+  const linked = !!net?.connected;
+  ui.takeback.disabled = !linked || mine || !!o.draw || !!o.takeback || !game.kifu.some(e => e.actor === 'human');
+  ui.draw.disabled = !linked || mine || !!o.takeback;
+  const incoming = o.takeback && o.takeback.by !== online.you ? 'takeback' : o.draw && o.draw !== online.you ? 'draw' : null;
+  ui.offerRow.hidden = !incoming;
+  if (!incoming) return;
+  ui.offerRow.dataset.kind = incoming;
+  const who = onlineSeatName(otherSeat(online.you));
+  ui.offerText.textContent = incoming === 'draw' ? t('offer_draw_in', { who })
+    : o.takeback.ply === 0 ? t('offer_takeback_in_start', { who }) : t('offer_takeback_in', { who, n: o.takeback.ply });
+}
+ui.takeback.addEventListener('click', () => { if (online && !online.spectate) net?.offer('takeback'); });
+ui.draw.addEventListener('click', () => { if (online && !online.spectate) net?.offer('draw'); });
+ui.offerAccept.addEventListener('click', () => { if (ui.offerRow.dataset.kind) net?.accept(ui.offerRow.dataset.kind); });
+ui.offerDecline.addEventListener('click', () => { if (ui.offerRow.dataset.kind) net?.decline(ui.offerRow.dataset.kind); });
+
+/** 席に着いている色の席。先後が決まる前（天秤将棋）は null。
+ *  部屋の seats は state でしか更新されないので、選択の直後は手元の Game（chosen）から引く。 */
+function onlineColorSeat(color) {
+  if (!online?.seats) return null;
+  const direct = ['host', 'guest'].find(s => online.seats[s].side === color);
+  if (direct) return direct;
+  if (game?.chosen) {
+    const chooser = ['host', 'guest'].find(s => online.seats[s].role === 'chooser');
+    if (chooser) return color === game.chosen ? chooser : otherSeat(chooser);
+  }
+  return null;
+}
+/** 席の呼び名。自分は「あなた」、相手は名乗っていれば名前、観戦から見た無名は「名無し」。 */
+function onlineSeatName(seat) {
+  if (!seat) return t('seat_anon');
+  if (seat === online.you) return t('seat_you');
+  return online.names?.[seat] ?? (online.you ? t('seat_opponent') : t('seat_anon'));
+}
+/** 棋譜の書き出しの席の行（オンライン）。 */
+function onlineSeatsLine() {
+  const s = onlineColorSeat(SENTE), g = onlineColorSeat(GOTE);
+  if (!s || !g) return t('kifu_seats_undecided');
+  return t('kifu_seats_online', { sente: onlineSeatName(s), gote: onlineSeatName(g) });
+}
+
+// ---- 待合 ----
+
+function renderSeeks() {
+  const list = lobby.seeks.filter(s => s.id !== online?.id);
+  ui.lobbyNote.textContent = list.length ? '' : t('lobby_empty');
+  const frag = document.createDocumentFragment();
+  for (const s of list) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.className = 'seek-who';
+    who.textContent = s.nick ?? t('seat_anon');
+    const info = document.createElement('span');
+    info.className = 'seek-info';
+    const you = s.mode === 'kings-first'
+      ? t(s.guestRole === 'placer' ? 'role_placer' : 'role_chooser') : sideName(s.guestSide);
+    info.textContent = `${t(s.mode === 'kings-first' ? 'mode_kings' : 'mode_standard')} · ${t(TIME_KEY_NAME[s.time] ?? 'time_none')} · ${t('lobby_you', { you })}`;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = t('lobby_join');
+    btn.disabled = !engines;
+    btn.addEventListener('click', () => { sound.unlock(); enterRoom(s.id); });
+    li.append(who, info, btn);
+    frag.appendChild(li);
+  }
+  ui.seeks.replaceChildren(frag);
+}
+lobby.addEventListener('seeks', renderSeeks);
+// 名前は残す。
+ui.nick.value = nickStore.load();
+ui.nick.addEventListener('change', () => nickStore.save(ui.nick.value.trim()));
 
 function onEnded(m) {
   setOnlineClock(m.clock);
@@ -1304,6 +1446,8 @@ function applyResult(r) {
 
 function onPresence(p) {
   online.presence = p.presence;
+  if (p.names) online.names = p.names;
+  if (p.watchers !== undefined) online.watchers = p.watchers;
   online.awaySince = p.awaySince;
   online.skew = p.now - Date.now();
   scheduleClaimRender();
@@ -1320,7 +1464,7 @@ function scheduleClaimRender() {
 }
 
 function claimable() {
-  return !!online && online.started && !!game && game.phase !== 'over'
+  return !!online && !!online.you && online.started && !!game && game.phase !== 'over'
     && online.awaySince !== null && online.awaySince !== undefined
     && Date.now() + online.skew - online.awaySince >= online.abandonMs;
 }
@@ -1328,7 +1472,12 @@ function claimable() {
 /** 接続と相手の在席。状態文の下に添える。無ければ空。 */
 function onlineNote() {
   if (!net?.connected) return t('net_reconnecting');
+  if (online.note && Date.now() < online.note.until) return online.note.text;
+  if (!online.you) return online.watchers > 1 ? t('watchers_note', { n: online.watchers }) : '';
   if (!online.started) return '';
+  const o = online.offers ?? {};
+  if (o.draw === online.you) return t('offer_sent_draw');
+  if (o.takeback?.by === online.you) return t('offer_sent_takeback');
   if (online.presence?.[otherSeat(online.you)] === 'away')
     return claimable() ? t('net_opponent_away_claim', { m: Math.round(online.abandonMs / 60000) }) : t('net_opponent_away');
   return '';
@@ -1364,6 +1513,8 @@ ui.waitShare.addEventListener('click', () => {
 });
 ui.waitShare.hidden = typeof navigator.share !== 'function';
 ui.waitLeave.addEventListener('click', () => {
+  // 相手が来る前にやめる。部屋ごと消す（待合からも外れる）。
+  if (online?.you === 'host' && !online.started) net?.cancel();
   abandonGame();
   history.replaceState(null, '', '#/');
   showView('home');
@@ -1441,12 +1592,20 @@ function renderSeats() {
   // 誰が座っているか。天秤将棋で選ぶ前は色しか無い。押した（仮の）玉があれば仮の席にする。
   const them = online ? t('seat_opponent') : t('seat_ai', { n: aiLevel });
   const label = c => {
-    const who = game.spectate ? them
-      : game.humanColor !== null
-        ? (c === game.humanColor ? t('seat_you') : them)
-        : pendingSide !== null
-          ? (c === pendingSide ? t('seat_you_pending') : them)
-          : null;
+    let who;
+    if (online) {
+      // 席に名前があれば名前。先後が決まる前（天秤将棋）は押した（仮の）玉だけ。
+      const seat = onlineColorSeat(c);
+      who = seat ? onlineSeatName(seat)
+        : pendingSide !== null ? (c === pendingSide ? t('seat_you_pending') : them) : null;
+    } else {
+      who = game.spectate ? them
+        : game.humanColor !== null
+          ? (c === game.humanColor ? t('seat_you') : them)
+          : pendingSide !== null
+            ? (c === pendingSide ? t('seat_you_pending') : them)
+            : null;
+    }
     // 誰かが決まっても先後は語で言う（81Dojoと同じ）。天秤将棋は色と役が一致しないので、記号だけでは足りない。
     return who === null ? sideName(c) : `${who} · ${sideName(c)}`;
   };
@@ -1492,15 +1651,27 @@ function kifuHeadText() {
   const choice = game.chosen === null
     ? t(humanChooses ? 'choice_pending_you' : 'choice_pending_ai')
     : t('choice_took', { side: sideName(game.chosen) });   // 「後手 ☖」。記号込み
+  if (online?.spectate) {
+    const seatOfRole = role => ['host', 'guest'].find(s => online.seats?.[s]?.role === role);
+    return t('kifu_head_online', {
+      placer: onlineSeatName(seatOfRole('placer')), chooser: onlineSeatName(seatOfRole('chooser')),
+      choice: game.chosen === null ? t('choice_pending_ai') : t('choice_took', { side: sideName(game.chosen) }),
+    });
+  }
   return t(game.spectate ? 'kifu_head_spectate'
     : game.humanRole === 'placer' ? 'kifu_head_you_placer' : 'kifu_head_you_chooser',
   { choice, them: them(), Them: Them() });
 }
 
 // 相手の呼び名。AI相手なら AI、オンラインなら相手。文の頭に来る形（Them）と中に来る形（them）。
-function them() { return t(online ? 'opponent' : 'ai'); }
-function Them() { return t(online ? 'Opponent' : 'AI'); }
-function themShort() { return online ? t('opponent_short') : 'AI'; }
+function them() { return online ? (opponentNick() ?? t('opponent')) : t('ai'); }
+function Them() { return online ? (opponentNick() ?? t('Opponent')) : t('AI'); }
+function themShort() { return online ? (opponentNick() ?? t('opponent_short')) : 'AI'; }
+/** 相手の名前（オンラインで、相手が名乗っていれば）。 */
+function opponentNick() {
+  if (!online?.you) return null;
+  return online.names?.[otherSeat(online.you)] ?? null;
+}
 
 /** 通常フェーズに入ってから人間が指したか。41手目の案内を引っ込める合図に使う。
  *  通常フェーズは41手目＝先手から始まるので、指し手の並びの偶奇が色になる。 */
@@ -1570,7 +1741,7 @@ function panelState() {
   if (!game) return 'idle';
   if (analysis) return 'analyze';
   if (game.phase === 'over') return 'over';
-  if (online && !online.started) return 'wait';
+  if (online && !online.started && online.you) return 'wait';
   if (game.phase === 'choose' && game.isHumanTurn && viewPly === null) return 'choose';
   return 'play';
 }
@@ -1608,6 +1779,7 @@ function render() {
   renderBoard();
   ui.panel.dataset.state = panelState();
   ui.panel.dataset.phase = game.phase;
+  ui.panel.classList.toggle('online', !!online);
   tickClock(game.phase === 'over' ? null : game.turnColor);
   renderSeats();
   renderKifuHead();
@@ -1626,12 +1798,16 @@ function render() {
   // 観戦では待った・投了の代わりに一時停止・中断。オンラインでは待ったは無い（相手の同意が要る。段3）。
   ui.undo.hidden = game.spectate || !!online;
   ui.resign.hidden = game.spectate;
-  ui.pause.hidden = ui.abort.hidden = !game.spectate;
+  ui.pause.hidden = ui.abort.hidden = !game.spectate || !!online;
+  renderOffers();
   ui.pause.textContent = t(paused ? 'btn_resume' : 'btn_pause');
   ui.pause.disabled = ui.abort.disabled = game.phase === 'over';
   ui.claim.hidden = !claimable();
   ui.again.textContent = ui.bannerAgain.textContent = t(online ? 'btn_home' : 'btn_again');
-  if (online && !online.started) ui.waitLink.value = roomUrl(online.id);
+  if (online && !online.started) {
+    ui.waitLink.value = roomUrl(online.id);
+    ui.waitNote.textContent = online.public ? t('wait_public_note') : '';
+  }
   playMoveSounds();
 
   if (analysis) {
@@ -1655,6 +1831,8 @@ function render() {
     disarmResign();
   } else if (viewPly !== null) {
     setStatus(t('status_reviewing', { n: viewPly }), game.spectate ? '' : t('status_reviewing_sub'));
+  } else if (online?.spectate) {
+    setStatus(online.started ? t('status_watching_online') : t('status_wait'), t('status_watching_online_sub'));
   } else if (game.spectate) {
     if (paused) setStatus(t('status_paused'), t('status_paused_sub'));
     else setStatus(t('status_watching'), t('status_watching_sub'));
@@ -1789,9 +1967,12 @@ function resultNote() {
   try { p = (engines.kingTable.v(sente, gote) * 100).toFixed(1); } catch { /* 表に無ければ出さない */ }
   // マスは棋譜と同じ表記で（日本語なら「４七」。表のキー 4g をそのまま出すと英字が混じる）。
   const sq = key => (LANG === 'en' ? key : makeJapaneseSquare(parseSquareName(key)));
+  const seatOfRole = role => ['host', 'guest'].find(s => online?.seats?.[s]?.role === role);
+  const who = role => (online?.spectate ? onlineSeatName(seatOfRole(role))
+    : game.humanRole === role ? t('You') : Them());
   return t('summary_kings', {
-    placer: game.humanRole === 'placer' ? t('You') : Them(), kb: sq(sente), kw: sq(gote),
-    chooser: game.humanRole === 'chooser' ? t('You') : Them(), side: sideName(game.chosen), p,
+    placer: who('placer'), kb: sq(sente), kw: sq(gote),
+    chooser: who('chooser'), side: sideName(game.chosen), p,
   });
 }
 
@@ -2337,7 +2518,8 @@ addEventListener('resize', () => { if (game) renderChart(); });
  * KIFと名乗って どのKIFリーダーも読めないのは、素のテキストより悪い。
  */
 function kifuText() {
-  const seats = game.spectate ? t('kifu_seats_spectate')
+  const seats = online ? onlineSeatsLine()
+    : game.spectate ? t('kifu_seats_spectate')
     : game.humanColor === null ? t('kifu_seats_undecided')
     : t(game.humanColor === SENTE ? 'kifu_seats_you_sente' : 'kifu_seats_you_gote', { them: themShort() });
   // 天秤将棋は役も残す。色と役は一致するとは限らないので、両方書く。
@@ -2510,3 +2692,6 @@ function setStatus(line, sub = '') {
   ui.statusLine.textContent = line;
   ui.statusSub.textContent = sub;
 }
+
+// 待合。ホームを開いているあいだ募集の一覧を受ける。部屋が要るのは参加してから。
+lobby.connect();

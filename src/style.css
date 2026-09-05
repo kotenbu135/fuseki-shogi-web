@@ -203,14 +203,41 @@ body {
 @media (min-width: 56rem) {
   .home { max-width: 66rem; grid-template-columns: minmax(0, 1fr) minmax(16rem, 24rem); align-items: start; }
   .home > h1, .home > .tagline { grid-column: 1 / -1; }
-  .home > .setup, .home > .intro { grid-column: 1; }
-  .home > .home-board { grid-column: 2; grid-row: 3 / span 2; position: sticky; top: 1rem; }
+  .home > .setup, .home > .intro, .home > .lobby { grid-column: 1; }
+  .home > .home-board { grid-column: 2; grid-row: 3 / span 3; position: sticky; top: 1rem; }
 }
 /* 狭い画面では設定の後ろに回す（DOMでは設定より前にある。広い画面の2列目に置くため）。
    広い画面では下の grid-row の明示配置が効くので order は関係しない。 */
 .home > .setup { order: 1; }
-.home > .home-board { order: 2; }
-.home > .intro { order: 3; }
+.home > .lobby { order: 2; }
+.home > .home-board { order: 3; }
+.home > .intro { order: 4; }
+/* 待合。公開で募集中の部屋。1行に名前・何の対局か・参加。 */
+.lobby { margin-top: 1.6rem; }
+.lobby h2 { margin: 0 0 .4rem; font-size: .75rem; font-weight: 600; letter-spacing: .1em; color: var(--ink-soft); }
+.lobby-note { margin: 0; font-size: .8rem; color: var(--ink-soft); }
+.lobby-note:empty { display: none; }
+.seeks { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.seeks li {
+  display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto; gap: .3rem .8rem; align-items: center;
+  padding: .5rem .8rem; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; font-size: .85rem;
+}
+.seeks .seek-who { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 10rem; }
+.seeks .seek-info { color: var(--ink-soft); font-size: .8rem; }
+.seeks button {
+  padding: .4rem .8rem; background: var(--ink); color: var(--paper); border: 1px solid var(--ink); border-radius: 4px;
+  font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.seeks button:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 34rem) { .seeks li { grid-template-columns: minmax(0, 1fr) auto; } .seeks .seek-info { grid-column: 1 / -1; } }
+/* 招待の下の「待合にも載せる」。 */
+.public-row { display: flex; align-items: center; gap: .5rem; margin: -.4rem 0 0; font-size: .8rem; color: var(--ink-soft); cursor: pointer; }
+.public-row input { margin: 0; accent-color: var(--accent); }
+.setup-grid input[type="text"] {
+  width: 100%; min-width: 0; padding: .45rem .5rem;
+  background: var(--paper-raised); color: var(--ink); border: 1px solid var(--rule); border-radius: 4px;
+  font: inherit; font-size: .9rem;
+}
 .home-board { display: grid; gap: .5rem; justify-items: center; margin: 1.6rem auto 0; max-width: 20rem; width: 100%; }
 @media (min-width: 56rem) { .home-board { margin: 0; max-width: none; } }
 .home-board canvas { display: block; width: 100%; aspect-ratio: 1; }
@@ -1050,7 +1077,15 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 /* 操作枠。三つの中身のうち、パネルの data-state に合うものだけを出す。 */
 .actions > div { display: none; }
 .panel[data-state="play"] .actions-play,
-.panel[data-state="idle"] .actions-play { display: flex; gap: .4rem; }
+.panel[data-state="idle"] .actions-play { display: flex; gap: .4rem; flex-wrap: wrap; }
+/* オンラインでは投了・待った・引き分け・反転の4つ。2つずつ2行に折り返す
+   （折り返せる行の最小幅は最長のボタン1つぶんで、パネルが横に伸びない）。 */
+.actions .actions-play button { flex: 1 1 5.5rem; }
+.panel.online .actions .actions-play button { flex-basis: 7.5rem; }
+/* 相手からの申し出。操作枠の中で、ボタンの行の下に1行。 */
+.panel[data-state="play"] .offer-row:not([hidden]) { display: flex; gap: .4rem; align-items: center; margin-top: .4rem; flex-wrap: wrap; }
+.offer-row .offer-text { flex: 1 1 100%; font-size: .78rem; color: var(--ink); line-height: 1.4; }
+.offer-row button { flex: 1 1 0; }
 .panel[data-state="choose"] .actions-choose { display: grid; gap: .4rem; }
 .panel[data-state="over"] .actions-over { display: grid; gap: .4rem; }
 .panel[data-state="analyze"] .actions-analyze { display: grid; gap: .4rem; }

@@ -79,7 +79,11 @@
 時計は部屋が席ごとに持つ値を `onlineRemaining()` が補間して出すだけで、切れの判定は部屋。
 相手を待っているあいだはパネルの状態が `wait`（招待リンク）で、盤は `showIdleBoard` のまま。
 URL は `#room/<id>`。同じリンクで戻ると席のトークン（localStorage）で確認なしに同じ席へ着く。
-相手の呼び名（AI／相手）は `them()` / `Them()` / `themShort()` で引き、辞書の `{them}` に入る。
+相手の呼び名（AI／相手／名乗った名前）は `them()` / `Them()` / `themShort()` で引き、辞書の `{them}` に入る。
+観戦は `Game({ spectate: true, opponent: 'remote' })`（`online.you` が null）。席の名前は `onlineSeatName()`。
+天秤将棋で先後が決まった直後は部屋の seats がまだ古いので、色→席は `onlineColorSeat()` が手元の `game.chosen` から引く。
+待った・引き分けは申し出（`offer` / `accept` / `decline`）で、`renderOffers()` がボタンと相手からの行を出す。
+受けられた待ったは `rewound` で届き、`undoTo(ply)` で戻す。待合は `LobbyClient`（`renderSeeks()`）。
 
 ## 守っていること
 

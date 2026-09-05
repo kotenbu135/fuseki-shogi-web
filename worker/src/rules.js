@@ -1,8 +1,7 @@
-// 部屋のルールのうち、Durable Object の API に依存しない部分。手番機・時計・トークンの形。
+// 部屋のルールのうち、Durable Object の API に依存しない部分。手番機・時計・トークンの形・待った。
 //
-// 局面の合法性は見ない（段1）。両者のブラウザが同じコード（wasm/ と shogiops）で検証し、
-// ここは「誰の番か」「手順の連番」「時計」だけを裁く。合法性まで見るのは段2
-// （開発リポジトリ docs/plan-online-play.md）。
+// 局面の合法性はここでは見ない。それは judge.js（ブラウザと同じ Game を Workers で動かす）。
+// ここは「誰の番か」「手順の連番」「時計」「誰がどの手を指したか」だけを裁く。
 //
 // test/rules_test.mjs が Node で直接通す。
 
@@ -25,8 +24,10 @@ export const MAX_NORMAL_MOVES = 320;
 export const ABANDON_MS = 5 * 60 * 1000;
 /** 対局が始まった部屋を最後の動きから消すまで。 */
 export const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
-/** 相手が来ないまま部屋を消すまで。 */
+/** 相手が来ないまま部屋を消すまで。待合の募集もこれで消える。 */
 export const UNJOINED_TTL_MS = 2 * 60 * 60 * 1000;
+/** ニックネームの長さ。 */
+export const NICK_MAX = 20;
 
 const DROP_RE = /^[PLNSGBRK]\*[1-9][a-i]$/;
 const KING_DROP_RE = /^K\*[1-9][a-i]$/;
@@ -58,23 +59,38 @@ export function normalCount(tokens) {
 }
 
 /**
- * いま誰の番か。対局が始まっていない・終わっていれば null。
+ * 手順が n 個のときに誰の番か。対局が始まっていない・終わっていれば turnSeat が null を返す。
  * 天秤将棋: 置く役が2手 → 選ぶ役が choose → 選ばれた側から交互。
  */
-export function turnSeat(state) {
-  if (state.result || !state.startedAt) return null;
-  const n = state.tokens.length;
+export function turnSeatAt(state, n) {
   if (state.mode === 'kings-first') {
     if (n < 2) return roleSeat(state, 'placer');
     if (n === 2) return roleSeat(state, 'chooser');
-    const m = n - 3;
-    return seatOfColor(state, m % 2 === 0 ? SENTE : GOTE);
+    // 3つ目の choose で決まった色。手順を戻して choose より前に居るときは色が無い。
+    const m = CHOOSE_RE.exec(state.tokens[2] ?? '');
+    if (!m) return null;
+    const chooser = roleSeat(state, 'chooser');
+    const senteSeat = m[1] === SENTE ? chooser : other(chooser);
+    return (n - 3) % 2 === 0 ? senteSeat : other(senteSeat);
   }
   return seatOfColor(state, n % 2 === 0 ? SENTE : GOTE);
 }
+export function turnSeat(state) {
+  if (state.result || !state.startedAt) return null;
+  return turnSeatAt(state, state.tokens.length);
+}
+/** i 番目のトークンを指した席。待ったで「自分の直前の手」を探すのに使う。 */
+export function seatOfToken(state, i) {
+  return turnSeatAt(state, i);
+}
+/** 席が最後に指した手の添字。無ければ -1。 */
+export function lastTokenOf(state, seat) {
+  for (let i = state.tokens.length - 1; i >= 0; i--) if (seatOfToken(state, i) === seat) return i;
+  return -1;
+}
 
 /**
- * トークンの形と、その段で許される種類。合法性は見ない。
+ * トークンの形と、その段で許される種類。合法性は見ない（judge.js）。
  * 返り値はエラーのコード（null なら通る）。
  */
 export function tokenError(state, token) {
@@ -96,12 +112,30 @@ export function tokenError(state, token) {
 /** トークンを1つ適用したときの席の変化（天秤将棋の選択で色が決まる）。state を書き換える。 */
 export function applyToken(state, token) {
   state.tokens.push(token);
-  const m = CHOOSE_RE.exec(token);
-  if (m) {
-    const chooser = roleSeat(state, 'chooser');
-    state.seats[chooser].side = m[1];
-    state.seats[other(chooser)].side = otherColor(m[1]);
-  }
+  syncSeatsWithTokens(state);
+}
+
+/** 手順を n 個に戻す（待った）。選択より前へ戻れば色も消える。 */
+export function rewindTo(state, n) {
+  state.tokens.length = Math.max(0, Math.min(state.tokens.length, n));
+  syncSeatsWithTokens(state);
+}
+
+/** 天秤将棋の席の色を手順から引き直す。通常将棋の色は作成時に決まっていて動かない。 */
+function syncSeatsWithTokens(state) {
+  if (state.mode !== 'kings-first') return;
+  const m = CHOOSE_RE.exec(state.tokens[2] ?? '');
+  const chooser = roleSeat(state, 'chooser');
+  if (!m) { state.seats.host.side = null; state.seats.guest.side = null; return; }
+  state.seats[chooser].side = m[1];
+  state.seats[other(chooser)].side = otherColor(m[1]);
+}
+
+/** ニックネーム。制御文字を落として長さを切る。空なら null。 */
+export function cleanNick(s) {
+  if (typeof s !== 'string') return null;
+  const v = s.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, NICK_MAX);
+  return v || null;
 }
 
 // ---- 時計 ----

@@ -35,7 +35,17 @@ export class Fuseki {
    */
   static async load(moduleUrl) {
     const { default: FusekiModule } = await import(moduleUrl);
-    const M = await FusekiModule();
+    return Fuseki.create(FusekiModule);
+  }
+
+  /**
+   * 読み込み済みのモジュール関数から作る。Workers（worker/src/judge.js）はWASMを URL から
+   * 取れないので、import したモジュールと Emscripten の instantiateWasm フックをここへ渡す。
+   * @param {Function} FusekiModule wasm/dist/fuseki.mjs の default export
+   * @param {object} [moduleArg] Emscripten の Module 引数（instantiateWasm など）
+   */
+  static async create(FusekiModule, moduleArg = {}) {
+    const M = await FusekiModule(moduleArg);
     M.ccall('fw_init', null, [], []);
 
     // 特徴量の形がONNXの入力と一致していること。wasmを再ビルドしてここがズレると

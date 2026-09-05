@@ -97,6 +97,8 @@ export class Game {
     // eval は「その手を指した後の局面」の評価で、無い行もある（布石の手・解析前の手）。
     this.kifu = [];
     this._lastDestSquare = undefined;// 「同」の判定に使う直前の着手先
+    // 千日手の判定用。通常フェーズの局面（盤・持ち駒・手番）と、その局面が王手かどうか。
+    this._history = [];
 
     this.fuseki.reset();
     this.boardPieces = new Map();    // 布石フェーズの表示用。打った手をそのまま並べるだけ。
@@ -453,6 +455,7 @@ export class Game {
     this.position = parsed.unwrap();
     this.finalSfen = sfen;
     this.phase = 'normal';
+    this._history = [{ key: repetitionKey(this.position), check: this.position.isCheck() }];
     this.engine?.newGame();
     // 布石フェーズの評価を持ち越さない。価値ヘッドの無いネットでは布石の評価は
     // 「採用手の確率」で、通常フェーズの評価（やねうら王の評価値）とは別物。
@@ -483,7 +486,31 @@ export class Game {
       ? [makeSquareName(md.from), makeSquareName(md.to)]
       : [makeSquareName(md.to)];
     this.kifu[this.kifu.length - 1].snapshot = this._snapshot();
+    if (this._recordRepetition()) return;
     this._checkNormalGameOver();
+  }
+
+  /**
+   * 千日手。同じ局面（盤・持ち駒・手番）が4回目なら終局。その繰り返しのあいだ一方が
+   * 王手をかけ続けていれば（連続王手の千日手）その側の負け、そうでなければ引き分け。
+   * shogiops の outcome() は繰り返しを見ないので、ここで持つ。
+   */
+  _recordRepetition() {
+    const key = repetitionKey(this.position);
+    this._history.push({ key, check: this.position.isCheck() });
+    const hits = this._history.filter(h => h.key === key).length;
+    if (hits < 4) return false;
+    const first = this._history.findIndex(h => h.key === key);
+    // 最初に現れてから今までの局面。末尾が直前に指した側の手、1つ手前が相手の手。
+    const span = this._history.slice(first + 1);
+    const last = span.length - 1;
+    const mover = otherColorOf(this.position.turn);   // 直前に指した側
+    const moverChecked = span.filter((_, i) => (last - i) % 2 === 0).every(h => h.check);
+    const otherChecked = span.filter((_, i) => (last - i) % 2 === 1).every(h => h.check);
+    if (moverChecked) this._end(otherColorOf(mover), 'perpetual_check');
+    else if (otherChecked) this._end(mover, 'perpetual_check');
+    else this._end(null, 'sennichite');
+    return true;
   }
 
   _checkNormalGameOver() {
@@ -623,8 +650,15 @@ export class Game {
     this.lastDests = [];
     this.lastEval = null;
     this._lastDestSquare = undefined;
+    this._history = [];
   }
 }
+
+/** 千日手の判定に使う局面の鍵。盤・持ち駒・手番（手数は含めない）。 */
+function repetitionKey(position) {
+  return makeSfen(position).split(' ').slice(0, 3).join(' ');
+}
+const otherColorOf = c => (c === SENTE ? GOTE : SENTE);
 
 /**
  * 持ち駒のSFEN表記。標準の並び（飛角金銀桂香歩）のあとに玉を足す。

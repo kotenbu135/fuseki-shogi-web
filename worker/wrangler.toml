@@ -2,7 +2,10 @@
 # ws.fusekishogi.com に置く。同じホストに Worker のルートは置けないので別ホストにしてある。
 #
 #   npx wrangler dev          手元で動かす（http://localhost:8787。ブラウザ側は build.mjs --rooms で向ける）
-#   npx wrangler deploy       公開（CLOUDFLARE_API_TOKEN か wrangler login が要る）
+#   npx wrangler deploy       公開（wrangler login 済みなら押すだけ）
+#
+# 局面の判定（src/judge.js）はブラウザと同じ Game と布石のWASMを束ねる。.wasm は
+# CompiledWasm として import される（wrangler の既定の rules）。
 name = "fuseki-shogi-rooms"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
@@ -19,9 +22,17 @@ class_name = "Room"
 name = "LIMITER"
 class_name = "Limiter"
 
+[[durable_objects.bindings]]
+name = "LOBBY"
+class_name = "Lobby"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room", "Limiter"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Lobby"]
 
 # 公開のホスト名。custom_domain だと wrangler deploy が DNS と証明書も作る。
 [[routes]]

@@ -618,13 +618,17 @@ async function playOnline(cdp, pageA) {
     evalHidden: document.getElementById('engine').hidden,
   })`);
 
-  // ---- A: 部屋を作る ----
+  // ---- A: 部屋を作る（名前を名乗り、待合にも載せる） ----
   await evaluate(pageA, `(() => {
     const m = document.getElementById('mode-standard'); m.checked = true; m.dispatchEvent(new Event('change', { bubbles: true }));
     document.getElementById('opt-color').value = 'sente';
     document.getElementById('opt-time').value = '10m+30s';
     document.getElementById('opt-color').dispatchEvent(new Event('change', { bubbles: true }));
+    const nick = document.getElementById('opt-nick'); nick.value = '太郎'; nick.dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('opt-public').checked = true;
   })()`);
+  check('待合は最初は空で、その旨が書いてある', await evaluate(pageA,
+    'document.querySelectorAll("#seeks li").length === 0 && document.getElementById("lobby-note").textContent.length > 0'));
   check('招待のボタンが押せる', await evaluate(pageA, 'document.getElementById("btn-invite").disabled') === false);
   await click(pageA, await center(pageA, '#btn-invite'));
   const link = await evalUntil(pageA, 'document.getElementById("wait-link").value', v => /#room\/[a-z2-9]{8}$/.test(v || ''), 15000);
@@ -639,10 +643,11 @@ async function playOnline(cdp, pageA) {
     await new Promise(r => setTimeout(r, 200));
     return document.querySelectorAll('sq.dest').length;
   })()`) === 0);
+  check('待合に載せた部屋は、待つ画面にその旨が出る', (await evaluate(pageA, 'document.getElementById("wait-note").textContent')).length > 0);
   await layoutCheck('相手を待つ', pageA);
   await shot('10-online-wait');
 
-  // ---- B: リンクを開いて参加する ----
+  // ---- B: 待合から参加する ----
   // 別のブラウザ文脈で開く。同じ文脈だと localStorage を共有して、Bが host の席のトークンで
   // 同じ席に戻ってしまう（実際にそうなった）。相手は別の端末、という前提を作る。
   const { browserContextId } = await cdp.send('Target.createBrowserContext');
@@ -652,15 +657,27 @@ async function playOnline(cdp, pageA) {
   pageB.on('Runtime.exceptionThrown', e => logs.push('EXCEPTION [B] ' + (e.exceptionDetails.exception?.description ?? e.exceptionDetails.text)));
   await pageB.send('Runtime.enable');
   await pageB.send('Page.enable');
-  await pageB.send('Page.navigate', { url: link });
+  await pageB.send('Page.navigate', { url: link.slice(0, link.indexOf('#')) });
+  const seek = await evalUntil(pageB, `(() => {
+    const li = document.querySelector('#seeks li');
+    return li ? { who: li.querySelector('.seek-who').textContent, info: li.querySelector('.seek-info').textContent, n: document.querySelectorAll('#seeks li').length } : null;
+  })()`, v => !!v, 20000);
+  check('別の人のホームの待合に、名前と何の対局か（あなたは後手）が載る',
+    seek && seek.who === '太郎' && seek.info.includes('布石将棋') && seek.info.includes('10分＋30秒') && seek.info.includes('後手') && seek.n === 1,
+    JSON.stringify(seek));
+  check('自分の募集は自分の待合には出ない', await evaluate(pageA, 'document.querySelectorAll("#seeks li").length') === 0);
+  // 参加はエンジンが起きてから押せる。
+  await evalUntil(pageB, 'document.querySelector("#seeks li button")?.disabled', v => v === false, 120000);
+  await click(pageB, await center(pageB, '#seeks li button'));
   const joinOpen = await evalUntil(pageB, 'document.getElementById("join-dialog").open', v => v === true, 20000);
   const join = await evaluate(pageB, `({
     title: document.getElementById('join-title').textContent,
     body: document.getElementById('join-body').textContent,
+    eyebrow: document.querySelector('#join-dialog .join-eyebrow').textContent,
     homeShown: !document.getElementById('view-home').hidden,
   })`);
-  check('招待リンクを開くと参加の確認が出て、何の対局でどちらを持つかが書いてある',
-    joinOpen === true && join.title === '布石将棋' && join.body.includes('10分＋30秒') && join.body.includes('後手') && join.homeShown,
+  check('待合の「参加」で確認が出て、誰からの招待で、何の対局でどちらを持つかが書いてある',
+    joinOpen === true && join.title === '布石将棋' && join.eyebrow === '太郎からの招待' && join.body.includes('10分＋30秒') && join.body.includes('後手') && join.homeShown,
     JSON.stringify(join));
   const joinReady = await evalUntil(pageB, 'document.getElementById("btn-join-ok").disabled', v => v === false, 120000);
   check('エンジンが起きると参加が押せる', joinReady === false);
@@ -669,10 +686,15 @@ async function playOnline(cdp, pageA) {
   await evalUntil(pageB, 'document.getElementById("panel").dataset.state', v => v === 'play', 15000);
   a = await snap(pageA);
   let b = await snap(pageB);
-  check('両者が揃うと始まり、Aは先手で自分の番、Bは後手で相手の番',
+  check('両者が揃うと始まり、Aは先手で自分の番、Bは後手で相手の番。名乗った名前が相手の席に出る',
     a.line.startsWith('あなたの番') && a.bottom === 'あなた · 先手 ☗' && a.top === '相手 · 後手 ☖'
-    && b.line === '相手の番。' && b.bottom === 'あなた · 後手 ☖' && b.top === '相手 · 先手 ☗',
+    && b.line === '相手の番。' && b.bottom === 'あなた · 後手 ☖' && b.top === '太郎 · 先手 ☗',
     `A: ${a.line} / ${a.bottom} / ${a.top} — B: ${b.line} / ${b.bottom} / ${b.top}`);
+  check('待合から相手が来た募集は消える', await evalUntil(pageA, 'document.querySelectorAll("#seeks li").length', v => v === 0, 5000) === 0);
+  check('オンラインでは「待ったを頼む」「引き分けを提案」が出て、まだ指していない側の待ったは押せない', await evaluate(pageA, `(() => {
+    const tb = document.getElementById('btn-takeback'), dr = document.getElementById('btn-draw');
+    return !tb.hidden && !dr.hidden && tb.disabled && !dr.disabled;
+  })()`));
   check('両方の席に時計が出る（10分）', a.clockTop === '10:00' && a.clockBottom.startsWith('9:5') || a.clockBottom === '10:00',
     `A: ${a.clockBottom} / ${a.clockTop}`);
   check('オンラインでは待ったが無く、URL は部屋のもの', a.undoHidden && b.undoHidden && a.hash === b.hash && a.hash.startsWith('#room/'));
@@ -713,15 +735,66 @@ async function playOnline(cdp, pageA) {
     b.kifu.length === 2 && b.bottom === 'あなた · 後手 ☖' && b.pieces === 2 && b.line === '相手の番。' && !(await evaluate(pageB, 'document.getElementById("join-dialog").open')),
     `${b.kifu.join(' ')} / ${b.bottom} / ${b.line}`);
 
-  // ---- 投了が相手に届く ----
   await evalUntil(pageA, 'document.getElementById("status-sub").textContent', v => !v.includes('つなぎ直') && !v.includes('切れた'), 10000);
-  await evaluate(pageB, `(() => { const r = document.getElementById('btn-resign'); r.click(); r.click(); })()`);
+
+  // ---- 観戦: 3人目が同じリンクを開く ----
+  const ctxC = await cdp.send('Target.createBrowserContext');
+  const targetC = await cdp.send('Target.createTarget', { url: 'about:blank', browserContextId: ctxC.browserContextId });
+  const pageC = await cdp.attach(targetC.targetId);
+  pageC.on('Runtime.exceptionThrown', e => logs.push('EXCEPTION [C] ' + (e.exceptionDetails.exception?.description ?? e.exceptionDetails.text)));
+  await pageC.send('Runtime.enable');
+  await pageC.send('Page.enable');
+  await pageC.send('Page.navigate', { url: link });
+  await evalUntil(pageC, 'document.getElementById("join-dialog").open', v => v === true, 20000);
+  const joinC = await evaluate(pageC, `({ ok: document.getElementById('btn-join-ok').textContent, note: document.getElementById('join-note').textContent })`);
+  check('席が埋まった部屋のリンクを開くと「観戦する」になる', joinC.ok === '観戦する' && joinC.note.includes('観戦'), JSON.stringify(joinC));
+  await evalUntil(pageC, 'document.getElementById("btn-join-ok").disabled', v => v === false, 120000);
+  await click(pageC, await center(pageC, '#btn-join-ok'));
+  await evalUntil(pageC, 'document.querySelectorAll("#kifu li").length', v => v >= 2, 15000);
+  const c = await snap(pageC);
+  check('観戦は手順が揃い、席に名前（無名は名無し）が出て、投了も待ったも無い',
+    c.kifu.length === 2 && c.line === '観戦中' && c.top === '名無し · 後手 ☖' && c.bottom === '太郎 · 先手 ☗'
+    && (await evaluate(pageC, 'document.getElementById("btn-resign").hidden && document.getElementById("btn-takeback").hidden && document.getElementById("btn-undo").hidden')),
+    `${c.line} / ${c.top} / ${c.bottom} / ${c.kifu.join(' ')}`);
+  check('観戦中は評価を出さない', c.evalHidden === true);
+  await layoutCheck('観戦', pageC);
+  await shot('14-online-watch');
+
+  // ---- 待った: Bが頼み、Aが受ける ----
+  await click(pageB, await center(pageB, '#btn-takeback'));
+  const offerA = await evalUntil(pageA, 'document.getElementById("offer-row").hidden', v => v === false, 10000);
+  const offerText = await evaluate(pageA, 'document.getElementById("offer-text").textContent');
+  check('待ったの申し出が相手に出る（誰が、どこまで戻すか）', offerA === false && offerText.includes('待った') && offerText.includes('1手目'), offerText);
+  check('頼んだ側は返事を待っていると言う', (await snap(pageB)).sub.includes('待ったを頼んだ'));
+  await click(pageA, await center(pageA, '#btn-offer-accept'));
+  await evalUntil(pageB, 'document.querySelectorAll("#kifu li").length', v => v === 1, 10000);
+  a = await snap(pageA); b = await snap(pageB);
+  check('受けると両方の棋譜が1手に戻り、Bの番になる', a.kifu.length === 1 && b.kifu.length === 1 && b.line.startsWith('あなたの番') && a.line === '相手の番。',
+    `A: ${a.kifu.join(' ')} / ${a.line} — B: ${b.kifu.join(' ')} / ${b.line}`);
+  check('観戦にも戻りが届く', await evalUntil(pageC, 'document.querySelectorAll("#kifu li").length', v => v === 1, 10000) === 1);
+  // 指し直してから、引き分けを断る・受ける。
+  await click(pageB, await center(pageB, 'sg-hand-wrap.hand-bottom piece.pawn'));
+  await evalUntil(pageB, 'document.querySelectorAll("sq.dest").length', v => v > 0, 10000);
+  await click(pageB, await center(pageB, 'sg-squares sq.dest'));
+  await evalUntil(pageA, 'document.querySelectorAll("#kifu li").length', v => v === 2, 10000);
+  await click(pageA, await center(pageA, '#btn-draw'));
+  await evalUntil(pageB, 'document.getElementById("offer-row").hidden', v => v === false, 10000);
+  check('引き分けの提案が相手に出る', (await evaluate(pageB, 'document.getElementById("offer-text").textContent')).includes('引き分け'));
+  await click(pageB, await center(pageB, '#btn-offer-decline'));
+  const declined = await evalUntil(pageA, 'document.getElementById("status-sub").textContent', v => v.includes('断った'), 10000);
+  check('断ると提案した側に伝わる', String(declined).includes('引き分けを断った'), String(declined));
+  await click(pageA, await center(pageA, '#btn-draw'));
+  await evalUntil(pageB, 'document.getElementById("offer-row").hidden', v => v === false, 10000);
+  await click(pageB, await center(pageB, '#btn-offer-accept'));
   await evalUntil(pageA, 'document.getElementById("panel").dataset.phase', v => v === 'over', 10000);
   a = await snap(pageA);
   b = await snap(pageB);
-  check('Bが投了するとAに勝ちが届く（理由は相手の投了）',
-    a.line === '先手 ☗の勝ち（あなた）' && a.sub === '相手の投了' && b.line === '先手 ☗の勝ち' && b.sub === '投了',
+  check('受けると合意の引き分けで終わる（両方）',
+    a.line === '引き分け' && a.sub === '合意の引き分け' && b.line === '引き分け' && b.sub === '合意の引き分け',
     `A: ${a.line} / ${a.sub} — B: ${b.line} / ${b.sub}`);
+  check('観戦にも終局が届く', await evalUntil(pageC, 'document.getElementById("panel").dataset.phase', v => v === 'over', 10000) === 'over');
+  await cdp.send('Target.closeTarget', { targetId: targetC.targetId });
+  await cdp.send('Target.disposeBrowserContext', { browserContextId: ctxC.browserContextId }).catch(() => {});
   check('終局後の行き先は「ホームへ」（相手が要るので、もう一局はしない）', a.again === 'ホームへ' && b.again === 'ホームへ');
   await evaluate(pageA, 'document.getElementById("btn-analyze").click()');
   await evalUntil(pageA, 'document.getElementById("panel").dataset.state', v => v === 'analyze', 5000);

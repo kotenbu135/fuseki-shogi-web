@@ -3,6 +3,7 @@
 //   node worker/test/rules_test.mjs
 import {
   TIME_CONTROLS, MAX_NORMAL_MOVES, turnSeat, tokenError, applyToken, newClock, remaining, closeTurn, deadline,
+  seatOfToken, lastTokenOf, rewindTo, cleanNick,
 } from '../src/rules.js';
 
 let failures = 0;
@@ -72,6 +73,30 @@ check('天秤: 置く役が2手、選ぶ役が choose、選ばれた側から', 
   play(s, 'P*5e');
   eq(turnSeat(s), 'host', '4手目は後手');
   eq(tokenError(s, 'choose:sente'), 'unexpected_choose', '二度目の選択');
+});
+check('待った: 誰がどの手を指したかと、自分の直前の手まで戻す', () => {
+  const s = room('standard', 'gote');   // guest が先手
+  play(s, drops[0]); play(s, drops[1]); play(s, drops[2]);
+  eq(seatOfToken(s, 0), 'guest', '1手目'); eq(seatOfToken(s, 1), 'host', '2手目'); eq(seatOfToken(s, 2), 'guest', '3手目');
+  eq(lastTokenOf(s, 'host'), 1, 'host の直前の手'); eq(lastTokenOf(s, 'guest'), 2, 'guest の直前の手');
+  rewindTo(s, 1);
+  eq(s.tokens.length, 1, '戻した'); eq(turnSeat(s), 'host', '戻した先は host の番');
+  eq(lastTokenOf(s, 'host'), -1, 'host はまだ指していない');
+});
+check('待った: 天秤将棋で選択より前へ戻すと色が消える', () => {
+  const s = room('kings-first', 'placer');   // host が置く役
+  play(s, 'K*5i'); play(s, 'K*5a'); play(s, 'choose:sente'); play(s, 'P*5e');
+  eq(seatOfToken(s, 2), 'guest', '選択は選ぶ役'); eq(seatOfToken(s, 3), 'guest', '3手目は先手（選んだ guest）');
+  eq(lastTokenOf(s, 'host'), 1, 'host の直前は2手目の玉');
+  rewindTo(s, 2);
+  eq(s.seats.host.side, null, '色が消える'); eq(turnSeat(s), 'guest', '選ぶ役の番に戻る');
+  rewindTo(s, 1);
+  eq(turnSeat(s), 'host', '置く役の番に戻る');
+});
+check('ニックネーム: 制御文字を落とし、20文字で切り、空は null', () => {
+  eq(cleanNick(' 太郎\u0000 '), '太郎', '制御文字');
+  eq(cleanNick('a'.repeat(30)).length, 20, '長さ');
+  eq(cleanNick('   '), null, '空'); eq(cleanNick(42), null, '文字列でない');
 });
 check('時計: 本時間 → 秒読み → 切れ', () => {
   const tc = TIME_CONTROLS['10m+30s'];

@@ -18,7 +18,7 @@ const check = (label, cond, detail = '') => {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /** メッセージを溜めて、条件に合うものを待つ小さな口。 */
-function open(id, seat) {
+function open(id, seat, nick = undefined) {
   const url = `${BASE.replace(/^http/, 'ws')}/rooms/${id}/ws`;
   const ws = new WebSocket(url, { headers: { Origin: ORIGIN } });
   const inbox = [];
@@ -47,7 +47,7 @@ function open(id, seat) {
     close: () => ws.close(),
   };
   return new Promise((resolve, reject) => {
-    ws.on('open', () => { client.send({ t: 'join', ...(seat ? { seat } : {}) }); resolve(client); });
+    ws.on('open', () => { client.send({ t: 'join', ...(seat ? { seat } : {}), ...(nick ? { nick } : {}) }); resolve(client); });
     ws.on('error', reject);
   });
 }
@@ -77,8 +77,8 @@ const guestSeat = st.seatToken;
 const hostStart = await host.wait(m => m.t === 'state' && m.started === true);
 check('host にも開始の state が届く', hostStart.started === true && hostStart.seats.guest.side === 'gote');
 const third = await open(made.id, null);
-const full = await third.wait(m => m.t === 'error');
-check('3人目は入れない', full.code === 'full', full.code);
+const full = await third.wait(m => m.t === 'state');
+check('3人目は席が無く観戦になる', full.you === null && full.started === true, JSON.stringify({ you: full.you }));
 third.close();
 
 // ---- 手番と連番 ----
@@ -145,13 +145,15 @@ check('天秤: 選ぶと先手（置く役）の番になる', m2.token === 'cho
 kg.send({ t: 'state' });
 st = await kg.wait(m => m.t === 'state' && m.tokens.length === 3);
 check('天秤: 色が席に付く（host=後手、guest=先手）', st.seats.host.side === 'gote' && st.seats.guest.side === 'sente', JSON.stringify(st.seats));
-// ブラウザが判定した終局の申告。
-kg.send({ t: 'move', ply: 3, token: 'P*5e' });
+kg.send({ t: 'move', ply: 3, token: 'P*5e' });   // 先手の陣（六〜九段）の外
+e = await kg.wait(m => m.t === 'error', 10000);
+check('天秤: 判定役が陣の外への駒打ちを断る', e.code === 'illegal', e.code);
+kg.send({ t: 'move', ply: 3, token: 'P*5g' });
 await kh.wait(m => m.t === 'moved' && m.ply === 3);
+// ブラウザが判定した終局の申告は、判定役が見直す。終わっていなければ断る。
 kh.send({ t: 'over', ply: 4, result: { winner: 'sente', reason: 'checkmate' } });
-const kEnd = await kg.wait(m => m.t === 'ended');
-check('天秤: 終局の申告が通り、勝った色から席が決まる', kEnd.result.winner === 'sente' && kEnd.result.winnerSeat === 'guest' && kEnd.result.reason === 'checkmate',
-  JSON.stringify(kEnd.result));
+e = await kh.wait(m => m.t === 'error');
+check('天秤: 終局の申告は判定役が見直し、終わっていなければ断る', e.code === 'not_over', e.code);
 kh.close(); kg.close();
 
 // ---- 10秒将棋の時間切れ（アラーム） ----
@@ -170,6 +172,117 @@ console.log(`  （時間切れの通知まで ${tElapsed}ms）`);
 check('10秒将棋: 指さないまま10秒で時間切れになり、host（後手）の勝ち',
   tEnd && tEnd.result.reason === 'timeout' && tEnd.result.winnerSeat === 'host', `${tElapsed}ms ` + JSON.stringify(tEnd?.result ?? th.inbox.map(m => `${m.t}@${m._at - t0}`)));
 th.close(); tg.close();
+
+// ---- 判定役（judge）: 非合法手は部屋が断る。待った・引き分けの申し出 ----
+r = await fetch(`${BASE}/rooms`, { method: 'POST', headers: { 'content-type': 'application/json', Origin: ORIGIN },
+  body: JSON.stringify({ mode: 'standard', time: 'none', side: 'sente', nick: '太郎', lang: 'ja' }) });
+const jRoom = await r.json();
+const jh = await open(jRoom.id, jRoom.seat);
+st = await jh.wait(m => m.t === 'state');
+check('作った人の名前が state に入る', st.names.host === '太郎', JSON.stringify(st.names));
+const jg = await open(jRoom.id, null, '花子');
+st = await jg.wait(m => m.t === 'state');
+check('参加した人の名前も入る', st.names.guest === '花子' && st.names.host === '太郎', JSON.stringify(st.names));
+jh.send({ t: 'move', ply: 0, token: 'P*5a' });   // 先手が後手陣に打つ
+e = await jh.wait(m => m.t === 'error', 10000);
+check('判定役: 形は正しいが非合法な駒打ちを断る', e.code === 'illegal', e.code);
+jh.send({ t: 'move', ply: 0, token: 'P*5g' });
+await jg.wait(m => m.t === 'moved' && m.ply === 0, 10000);
+jg.send({ t: 'move', ply: 1, token: 'P*5c' });
+await jh.wait(m => m.t === 'moved' && m.ply === 1);
+jg.send({ t: 'move', ply: 2, token: 'P*5g' });   // 相手の番
+e = await jg.wait(m => m.t === 'error');
+check('判定役が居ても手番の裁定は先', e.code === 'not_your_turn', e.code);
+// 待った。host が頼む → 自分の直前の手（1手目）まで戻る → guest が受ける。
+jh.send({ t: 'offer', kind: 'takeback' });
+const tb = await jg.wait(m => m.t === 'offer');
+check('待ったの申し出が相手に届き、戻る先が付く', tb.kind === 'takeback' && tb.by === 'host' && tb.ply === 0, JSON.stringify(tb));
+jg.send({ t: 'accept', kind: 'takeback' });
+const rw = await jh.wait(m => m.t === 'rewound');
+check('受けると手順が戻り、頼んだ側の番から時計が回る', rw.ply === 0 && rw.tokens.length === 0 && rw.clock.running === 'host', JSON.stringify(rw));
+jh.send({ t: 'move', ply: 0, token: 'P*7g' });
+const again = await jg.wait(m => m.t === 'moved');
+check('戻した後も判定役が続く（新しい手順で指せる）', again.token === 'P*7g' && again.ply === 0);
+// 引き分け。guest が提案 → host が断る → もう一度 → host が受ける。
+jg.send({ t: 'offer', kind: 'draw' });
+const dr = await jh.wait(m => m.t === 'offer');
+check('引き分けの提案が届く', dr.kind === 'draw' && dr.by === 'guest');
+jh.send({ t: 'decline', kind: 'draw' });
+const dc = await jg.wait(m => m.t === 'offer_declined');
+check('断ると相手に伝わる', dc.kind === 'draw' && dc.by === 'host');
+jg.send({ t: 'offer', kind: 'draw' });
+await jh.wait(m => m.t === 'offer');
+jh.send({ t: 'accept', kind: 'draw' });
+const agreed = await jg.wait(m => m.t === 'ended');
+check('受けると合意の引き分け', agreed.result.reason === 'agreement' && agreed.result.winner === null, JSON.stringify(agreed.result));
+jh.close(); jg.close();
+
+// ---- 待合（lobby）と観戦・取り消し ----
+const lobbyWs = new WebSocket(`${BASE.replace(/^http/, 'ws')}/lobby/ws`, { headers: { Origin: ORIGIN } });
+const lobbyMsgs = [];
+lobbyWs.on('message', d => lobbyMsgs.push(JSON.parse(d.toString())));
+await new Promise(res => lobbyWs.on('open', res));
+await sleep(200);
+check('待合の WebSocket は繋いだ直後に一覧を送る', lobbyMsgs.length >= 1 && lobbyMsgs[0].t === 'seeks' && Array.isArray(lobbyMsgs[0].seeks));
+r = await fetch(`${BASE}/rooms`, { method: 'POST', headers: { 'content-type': 'application/json', Origin: ORIGIN },
+  body: JSON.stringify({ mode: 'kings-first', time: '3m', role: 'chooser', nick: '待合の人', public: true, lang: 'ja' }) });
+const pub = await r.json();
+let lobby = await (await fetch(`${BASE}/lobby`, { headers: { Origin: ORIGIN } })).json();
+check('作っただけ（作った人がまだ居ない）では待合に載らない', !lobby.seeks.some(x => x.id === pub.id));
+const ph = await open(pub.id, pub.seat);
+await ph.wait(m => m.t === 'state');
+await sleep(300);
+lobby = await (await fetch(`${BASE}/lobby`, { headers: { Origin: ORIGIN } })).json();
+const entry = lobby.seeks.find(x => x.id === pub.id);
+check('作った人が居れば待合に載る（モード・持ち時間・相手が持つ役・名前）',
+  !!entry && entry.mode === 'kings-first' && entry.time === '3m' && entry.guestRole === 'placer' && entry.nick === '待合の人', JSON.stringify(entry));
+check('待合の WebSocket にも流れる', lobbyMsgs.some(m => m.t === 'seeks' && m.seeks.some(x => x.id === pub.id)));
+// 作った人が居なくなると外れ、戻ると載る。
+ph.close();
+await sleep(400);
+lobby = await (await fetch(`${BASE}/lobby`, { headers: { Origin: ORIGIN } })).json();
+check('作った人が居なくなった募集は待合から外れる', !lobby.seeks.some(x => x.id === pub.id));
+const ph2 = await open(pub.id, pub.seat);
+await ph2.wait(m => m.t === 'state');
+await sleep(300);
+lobby = await (await fetch(`${BASE}/lobby`, { headers: { Origin: ORIGIN } })).json();
+check('戻ると載り直す', lobby.seeks.some(x => x.id === pub.id));
+// 相手が来ると外れる。3人目は観戦。
+const pg = await open(pub.id, null);
+await pg.wait(m => m.t === 'state');
+await sleep(300);
+lobby = await (await fetch(`${BASE}/lobby`, { headers: { Origin: ORIGIN } })).json();
+check('相手が来ると待合から外れる', !lobby.seeks.some(x => x.id === pub.id));
+const spec = await open(pub.id, null);
+const specState = await spec.wait(m => m.t === 'state');
+check('席が埋まった部屋に入ると観戦（席が無く、手順は届く）', specState.you === null && specState.started === true, JSON.stringify({ you: specState.you }));
+const pres = await ph2.wait(m => m.t === 'presence' && m.watchers === 1, 5000).catch(() => null);
+check('観戦の人数が対局者に伝わる', pres?.watchers === 1, JSON.stringify(pres));
+pg.send({ t: 'move', ply: 0, token: 'K*5i' });
+const seen = await spec.wait(m => m.t === 'moved');
+check('観戦にも着手が流れる', seen.token === 'K*5i');
+spec.send({ t: 'move', ply: 1, token: 'K*5a' });
+e = await spec.wait(m => m.t === 'error');
+check('観戦は指せない', e.code === 'not_joined', e.code);
+ph2.close(); pg.close(); spec.close();
+// 取り消し。作った人が相手を待つのをやめると部屋ごと消える。
+r = await fetch(`${BASE}/rooms`, { method: 'POST', headers: { 'content-type': 'application/json', Origin: ORIGIN },
+  body: JSON.stringify({ mode: 'standard', time: 'none', side: 'gote', public: true, lang: 'ja' }) });
+const cx = await r.json();
+const ch = await open(cx.id, cx.seat);
+await ch.wait(m => m.t === 'state');
+await sleep(300);
+lobby = await (await fetch(`${BASE}/lobby`, { headers: { Origin: ORIGIN } })).json();
+check('取り消す前は待合にある', lobby.seeks.some(x => x.id === cx.id));
+const closed = new Promise(res => ch.ws.on('close', (code, reason) => res({ code, reason: reason.toString() })));
+ch.send({ t: 'cancel' });
+const cl = await closed;
+await sleep(300);
+lobby = await (await fetch(`${BASE}/lobby`, { headers: { Origin: ORIGIN } })).json();
+const gone = (await fetch(`${BASE}/rooms/${cx.id}`, { headers: { Origin: ORIGIN } })).status;
+check('取り消すと接続が閉じ、部屋が消え、待合からも外れる', cl.reason === 'cancelled' && gone === 404 && !lobby.seeks.some(x => x.id === cx.id),
+  JSON.stringify({ cl, gone }));
+lobbyWs.close();
 
 await sleep(100);
 console.log(`\n不一致 ${failures} 件`);

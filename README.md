@@ -116,9 +116,15 @@ Emscriptenはビルド環境に無いので、`wasm/dist/*` はコミットし�
 
 - **1部屋＝1対局＝1 Durable Object**（`worker/src/room.js`）。部屋が持つ「対局の真実」は手順のトークン列
   （`Game.tokens()` と同じ形: 駒打ち `P*5e`・指し手 `7g7f`・天秤将棋の選択 `choose:sente`）と、
-  席ごとの時計と、結果。局面は持たない。
-- **合法性は両者のブラウザが検証する**（段1）。部屋が裁くのは席・手番・手順の連番・時計・不在だけ
-  （`worker/src/rules.js`。Node で単体テストできる）。詰みなどブラウザが判定した終局は `over` で申告する。
+  席ごとの時計と、結果。
+- **合法性と終局は部屋も判定する**（`worker/src/judge.js`）。ブラウザと同じ `src/game.js` と布石のWASMを
+  Workers で動かすので、ルールを2度書かない。cppshogi の禁じ手・41手目の裁定・shogiops の詰み・千日手が
+  部屋でも効く。WASMは Workers 用のグルー（`wasm/dist/fuseki-worker.mjs`、ENVIRONMENT=web）を
+  `instantiateWasm` フックで載せる。席・手番・手順の連番・時計・不在は `worker/src/rules.js`（Node で単体テストできる）。
+- **待合**（`worker/src/lobby.js`）は公開で募集している部屋の一覧を1つの Durable Object が持ち、ホームへ
+  WebSocket で流す。作った人が居るあいだだけ載り、相手が来ると外れる。名前（ニックネーム）は席に付く。
+- **観戦**は席が埋まった部屋に同じリンクで入る（送れない接続）。**待った・引き分け**は申し出て相手が受ける。
+  千日手は同じ局面4回で引き分け、連続王手なら王手をかけ続けた側の負け（`src/game.js`。AI相手でも効く）。
 - **時計は席ごと**（色ではなく）。天秤将棋では先後が決まる前から手番があるため。切れの判定は部屋の
   アラームがやり、ブラウザは受け取った残りを補間して出すだけ。
 - **再接続**は席のトークン（localStorage）で同じ席に戻り、手順を丸ごと受けて突き合わせる。
@@ -204,10 +210,13 @@ node build.mjs && node test/browser_smoke.mjs --watch
 
 # オンライン対局の部屋。手番機・トークンの形・時計（Node だけ・一瞬）
 node worker/test/rules_test.mjs
-# 部屋を実際に動かして2つの接続で通す（作成・参加・手番・連番・再接続・投了・天秤将棋・時間切れのアラーム）
+# 部屋を実際に動かして2つの接続で通す（作成・参加・手番・連番・再接続・投了・天秤将棋・時間切れのアラーム・
+# 判定役の非合法手・待った・引き分け・待合・観戦・取り消し）
 (cd worker && npx wrangler dev --port 8787 &) ; node worker/test/room_smoke.mjs
-# 同じことを実ブラウザ2タブで。招待リンク・参加の確認・席と時計・着手の往復・読み込み直し・投了・検討・天秤将棋
+# 同じことを実ブラウザ3タブで。待合から参加・名前・席と時計・着手の往復・読み込み直し・観戦・待った・引き分け・検討・天秤将棋
 node build.mjs --rooms http://localhost:8787 && node test/browser_smoke.mjs --online
+# 千日手（同じ局面4回・連続王手）を Game 単体で
+node test/repetition_test.mjs
 ```
 
 実測（`test/sample_sfens.jsonl` は実際の方策が作った41手目局面80件）:

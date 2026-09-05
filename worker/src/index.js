@@ -3,12 +3,16 @@
 //   POST /rooms            部屋を作る → { id, seat }（seat は作った人の席のトークン）
 //   GET  /rooms/:id        部屋の概要（参加する前に見せる分）
 //   GET  /rooms/:id/ws     WebSocket。以後は src/room.js のメッセージ
+//   GET  /lobby            待合（公開で募集中の部屋）の一覧
+//   GET  /lobby/ws         待合の WebSocket。一覧が変わるたびに流れてくる
 //
-// 部屋の中身は Durable Object（Room）。ここは Origin の確認・CORS・作成の頻度制限だけ。
+// 部屋の中身は Durable Object（Room）、待合も1つの Durable Object（Lobby）。
+// ここは Origin の確認・CORS・作成の頻度制限だけ。
 import { Room } from './room.js';
+import { Lobby } from './lobby.js';
 import { randomId } from './rules.js';
 
-export { Room };
+export { Room, Lobby };
 
 const ID_RE = /^[a-z2-9]{8}$/;
 
@@ -26,12 +30,21 @@ export default {
     if (req.method === 'OPTIONS') return new Response(null, { status: allowed ? 204 : 403, headers: cors });
     if (url.pathname === '/' || url.pathname === '') return new Response('fuseki-shogi rooms\n', { headers: cors });
 
+    // ブラウザからしか来ない。Origin が無い・許していないなら断る（curl での健康診断は / だけ）。
+    if (!allowed) return json({ error: 'origin' }, 403);
+
+    if (url.pathname === '/lobby' || url.pathname === '/lobby/ws') {
+      const lobby = env.LOBBY.get(env.LOBBY.idFromName('lobby'));
+      if (url.pathname === '/lobby/ws') {
+        if (req.headers.get('Upgrade') !== 'websocket') return json({ error: 'expected_websocket' }, 426, cors);
+        return lobby.fetch('https://lobby/ws', req);
+      }
+      return withHeaders(await lobby.fetch('https://lobby/list'), cors);
+    }
+
     const m = /^\/rooms(?:\/([^/]+))?(\/ws)?$/.exec(url.pathname);
     if (!m) return json({ error: 'not_found' }, 404, cors);
     const [, id, ws] = m;
-
-    // ブラウザからしか来ない。Origin が無い・許していないなら断る（curl での健康診断は / だけ）。
-    if (!allowed) return json({ error: 'origin' }, 403);
 
     if (!id && req.method === 'POST') {
       const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
