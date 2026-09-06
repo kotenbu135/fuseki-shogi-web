@@ -101,7 +101,7 @@
         <legend>{{home_pick}}</legend>
         <label class="mode-card" for="mode-standard">
           <input type="radio" name="mode" id="mode-standard" value="standard" checked>
-          <span class="mode-name">{{mode_standard}}</span>
+          <span class="mode-name">{{mode_standard}} <small class="mode-tag">{{home_tag_standard}}</small></span>
           <span class="mode-desc">{{mode_standard_desc}}</span>
           <!-- 空の盤から始める、を図で。天秤将棋の札は両玉だけ置いた盤（下）。 -->
           <svg class="mode-fig" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><rect x="5" y="5" width="90" height="90" rx="2"/><g class="l"><path d="M20 5v90M5 20h90" /><path d="M30 5v90M5 30h90" /><path d="M40 5v90M5 40h90" /><path d="M50 5v90M5 50h90" /><path d="M60 5v90M5 60h90" /><path d="M70 5v90M5 70h90" /><path d="M80 5v90M5 80h90" /><path d="M90 5v90M5 90h90" /></g></svg>
@@ -114,7 +114,7 @@
         </label>
         <label class="mode-card" for="mode-kings">
           <input type="radio" name="mode" id="mode-kings" value="kings-first">
-          <span class="mode-name">{{mode_kings}}</span>
+          <span class="mode-name">{{mode_kings}} <small class="mode-tag">{{home_tag_kings}}</small></span>
           <span class="mode-desc">{{mode_kings_desc}}</span>
           <svg class="mode-fig" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><rect x="5" y="5" width="90" height="90" rx="2"/><g class="l"><path d="M20 5v90M5 20h90" /><path d="M30 5v90M5 30h90" /><path d="M40 5v90M5 40h90" /><path d="M50 5v90M5 50h90" /><path d="M60 5v90M5 60h90" /><path d="M70 5v90M5 70h90" /><path d="M80 5v90M5 80h90" /><path d="M90 5v90M5 90h90" /></g><path class="k s" d="M62 66l7 3v9H55v-9z"/><path class="k g" d="M43 34l-7-3v-9h14v9z"/></svg>
           <ol class="stepper mini four" aria-label="{{home_flow}}">
@@ -228,6 +228,17 @@
       <div class="status" id="status" role="status" aria-live="polite">
         <p class="status-line" id="status-line"></p>
         <p class="status-sub" id="status-sub"></p>
+        <!-- 天秤の図。玉を置く・先後を選ぶあいだだけ出す（main.js の renderStatus）。
+             文で言っても伝わらなかったところを絵で言う: 左の皿に先手（先に動ける得＋薄い玉）、
+             右の皿に後手（堅い玉）、梁は水平（釣り合いが目標）。判定（傾き）は出さない。 -->
+        <svg class="scale-fig" id="scale-fig" viewBox="0 0 260 82" role="img" aria-label="{{scale_label}}" hidden>
+          <g class="frame"><path d="M130 20v46" /><path d="M116 66h28" /><path d="M130 20l-6 8h12z" class="fill" /></g>
+          <path class="beam" d="M36 20h188" />
+          <g class="side"><path d="M62 20v13" /><path class="pan" d="M20 33h84l-7 9H27z" />
+            <text x="62" y="58" class="h">{{scale_sente}} ☗</text><text x="62" y="72">{{scale_sente_1}} {{scale_sente_2}}</text></g>
+          <g class="side"><path d="M198 20v13" /><path class="pan" d="M156 33h84l-7 9h-70z" />
+            <text x="198" y="58" class="h">{{scale_gote}} ☖</text><text x="198" y="72">{{scale_gote_1}}</text></g>
+        </svg>
       </div>
 
       <!-- 操作枠。対局中／先後を選ぶ／終局後で中身が入れ替わる。枠は消えない。 -->

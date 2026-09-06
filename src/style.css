@@ -320,6 +320,12 @@ body {
 .mode-card:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .mode-card input { position: absolute; width: 1px; height: 1px; margin: -1px; opacity: 0; }
 .mode-name { font-family: var(--serif); font-size: 1.2rem; font-weight: 700; }
+/* 名前の隣の小さな札。二つのルールの関係（基本／その釣り合い形）を一語で。 */
+.mode-tag {
+  display: inline-block; vertical-align: .2em; margin-left: .2em; padding: 0 .45em;
+  font-family: var(--sans); font-size: .66rem; font-weight: 600; letter-spacing: .04em;
+  color: var(--ink-soft); border: 1px solid var(--rule); border-radius: 999px; line-height: 1.6; white-space: nowrap;
+}
 .mode-desc { font-size: .84rem; color: var(--ink-soft); line-height: 1.5; text-wrap: pretty; }
 /* カードの中の1局の流れ。対局画面のフェーズ帯（.stepper / .step）と同じ部品で、
    この将棋だけの段は塗り、普通の将棋の段は破線。段の本体の見た目は「右のパネル」の節。 */
@@ -852,8 +858,11 @@ sg-hp-wrap.selected {
 }
 sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 
-/* 玉分け将棋で置く役の番は、駒台の玉だけが押せる。ほかの駒は薄くして「今はこれ」を示す。 */
+/* 天秤将棋で置く人の番は、駒台の玉だけが押せる。ほかの駒は薄くして「今はこれ」を示す。
+   2手目に押す後手玉は向こうの駒台（広い画面では左の列の手前寄り）にあり、王は回しても同じ形なので、
+   輪郭も付けて「この駒」と言う。 */
 .sg-wrap.kings-only sg-hp-wrap:not(:has(piece.king)) { opacity: .25; }
+.sg-wrap.kings-only sg-hp-wrap:has(piece.king):not([data-nb="0"]) { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
 
 /* ---- 先後を選ぶ：両玉の札と輪 ---- */
 
@@ -888,6 +897,25 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   white-space: nowrap;
 }
 .king-label.pending { background: var(--accent); color: var(--paper-raised); border-color: var(--accent); }
+.king-label.placed { border-color: var(--rule); font-weight: 600; opacity: .95; }
+/* 置く陣の札。陣の境目の線に掛けて、手前の陣なら線の下（陣の中）、向こうの陣なら線の上。
+   記号は紙地の上だけに置く決まりなので、地は紙。 */
+.zone-hint {
+  position: absolute;
+  transform: translate(-50%, 0);
+  padding: .15em .7em;
+  background: var(--paper-raised);
+  color: var(--ink);
+  border: 1.5px solid var(--accent);
+  border-radius: 999px;
+  font-size: clamp(10px, 1.5vw, 13px);
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+}
+.zone-hint.bottom { transform: translate(-50%, 2px); }
+.zone-hint.top { transform: translate(-50%, calc(-100% - 2px)); }
 /* 選べる玉の上ではカーソルを手にする。shogiground は触れない駒でも pointer にするので、
    逆に「触れない」ことを示すために、選ぶ最中は玉以外を既定に戻す。 */
 .sg-wrap.choosing piece { cursor: default; }
@@ -1098,6 +1126,17 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .status-sub:empty { display: none; }
+/* 玉を置く・先後を選ぶあいだは説明が長い。行数の上限を緩め、下に天秤の図を出す。 */
+.status.scale .status-sub { -webkit-line-clamp: 4; }
+.scale-fig { display: block; width: 100%; max-width: 18rem; height: auto; margin: .4rem auto 0; }
+.scale-fig[hidden] { display: none; }
+.scale-fig path { fill: none; stroke: var(--ink-soft); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.scale-fig .frame path { stroke: var(--ink-soft); }
+.scale-fig .frame .fill { fill: var(--ink-soft); }
+.scale-fig .beam { stroke: var(--ink); stroke-width: 2; }
+.scale-fig .pan { fill: var(--paper); stroke: var(--ink); stroke-width: 1.2; }
+.scale-fig text { fill: var(--ink-soft); font-family: var(--sans); font-size: 10.5px; text-anchor: middle; }
+.scale-fig text.h { fill: var(--ink); font-size: 12.5px; font-weight: 700; }
 
 /* 操作枠。三つの中身のうち、パネルの data-state に合うものだけを出す。 */
 .actions > div { display: none; }
@@ -1265,10 +1304,13 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .variation li.current .m { font-weight: 600; }
 
 /* 検討の候補手。評価・指し手・読み筋を1行ずつ。押すとその手を指し、なぞると矢印が出る。 */
+/* 候補手は1本1行（評価・手・読み筋を同じ行に。読み筋は省略記号で切る）。読み筋を2行目にすると
+   3本で6行になり、グラフ・操作2行と合わせて棋譜の高さを食う（1920×1080 で棋譜が3行になった）。 */
 .candidates { margin: .15rem 0 0; padding: 0; list-style: none; display: grid; gap: .1rem; }
 .candidates li {
   display: grid;
-  grid-template-columns: 4.2em 1fr;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
   gap: .1rem .5rem;
   padding: .15rem .4rem;
   border: 1px solid var(--rule);
@@ -1276,12 +1318,17 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
   background: var(--paper-raised);
   cursor: pointer;
   font-variant-numeric: tabular-nums;
+  min-width: 0;
 }
 .candidates li:hover, .candidates li.hover { border-color: var(--accent); }
-.candidates .ev { font-weight: 700; color: var(--ink); white-space: nowrap; }
-.candidates .mv { color: var(--ink); font-family: var(--serif); font-weight: 600; }
-.candidates .pv { grid-column: 1 / -1; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .72rem; }
+.candidates .ev { font-weight: 700; color: var(--ink); white-space: nowrap; min-width: 3.4em; }
+.candidates .mv { color: var(--ink); font-family: var(--serif); font-weight: 600; white-space: nowrap; }
+.candidates .pv { color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .72rem; }
 .candidates .pv:empty { display: none; }
+/* 布石の候補（確率と手だけ）は札を横に並べる。5本で2行ほど。 */
+.candidates.chips { display: flex; flex-wrap: wrap; gap: .25rem; }
+.candidates.chips li { display: flex; gap: .35em; padding: .1rem .5rem; border-radius: 999px; }
+.candidates.chips .ev { min-width: 0; }
 :lang(en) .candidates .mv { font-family: var(--sans); }
 
 /* 検討で盤に出す矢印と印（shogiground の drawable）。ブラシ名がそのままクラスになる。 */
@@ -1332,7 +1379,9 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 @media (min-width: 56rem) {
   .layout > .panel {
     display: grid;
-    grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto auto;
+    /* 棋譜の行は余りを取るが、9rem は下回らない（検討では状態・操作2行・グラフ・候補手が並び、
+       盤の高さに収めると棋譜が3行に潰れた）。足りなければパネルが盤より高くなり、ページが伸びる。 */
+    grid-template-rows: auto auto auto auto minmax(9rem, 1fr) auto auto auto;
     gap: .55rem;
     min-height: 0;
   }

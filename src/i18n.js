@@ -12,8 +12,8 @@ const DICT = {
   // ---- サイト共通 ----
   site_title: { ja: '布石将棋', en: 'Fuseki Shogi' },
   meta_description: {
-    ja: '空の盤に20枚ずつ打ってから指す変則将棋「布石将棋」を、ブラウザだけで対局する。',
-    en: 'Play Fuseki Shogi in your browser: a shogi variant where both sides place 20 pieces on an empty board before the game begins.',
+    ja: '空の盤に20枚ずつ打ってから指す変則将棋「布石将棋」と、先手の得を釣り合わせた「天秤将棋」を、ブラウザだけで対局する。',
+    en: 'Play Fuseki Shogi in your browser: a shogi variant where both sides place 20 pieces on an empty board before the game begins, and Balance Shogi, its form with the first move balanced away.',
   },
   nav_play: { ja: '対局', en: 'Play' },
   nav_rules: { ja: 'ルール', en: 'Rules' },
@@ -32,10 +32,14 @@ const DICT = {
   keys_hint: { ja: 'キー: ← → で棋譜をたどる、Home / End で最初・最新', en: 'Keys: ← → step through the record, Home / End for first / latest' },
 
   // ---- ホーム ----
+  // サイトの立ち位置。選んでいるルールに関わらず正しい一文にする（天秤将棋を選んでいるのに
+  // 布石将棋の説明が大きく出ていた）。ルールごとの説明は札（mode_*_desc）が持つ。
   home_tagline: {
-    ja: '空の盤に交互に20枚ずつ打つ。41手目からは本将棋。',
-    en: 'Both sides place 20 pieces on an empty board, one at a time. From move 41 it is ordinary shogi.',
+    ja: '空の盤に交互に駒を打ってから指す将棋。基本の布石将棋と、先手の得を釣り合わせた天秤将棋の二つのルールを、ブラウザだけで遊べる。',
+    en: 'Shogi that starts from an empty board, each side placing its pieces before anything moves. Two rule sets, Fuseki Shogi and Balance Shogi, playable right in the browser.',
   },
+  home_tag_standard: { ja: '基本のルール', en: 'the base rules' },
+  home_tag_kings: { ja: '先手の得を釣り合わせる', en: 'balances the first move' },
   home_pick: { ja: 'ルールを選ぶ', en: 'Pick a rule set' },
   // 誰と指すか（ホームの3タブ）
   opp_label: { ja: '誰と対局するか', en: 'Who to play' },
@@ -134,6 +138,8 @@ const DICT = {
   step_you: { ja: 'あなた', en: 'you' },
   step_ai: { ja: 'AI', en: 'AI' },
   step_left: { ja: '残り{n}枚', en: '{n} left' },
+  step_king_sente: { ja: '先手玉', en: 'Sente king' },
+  step_king_gote: { ja: '後手玉', en: 'Gote king' },
   step_ply: { ja: '{n}手目', en: 'move {n}' },
   step_over: { ja: '{n}手で終局', en: 'ended at move {n}' },
   step_chosen: { ja: '{who} → {side}', en: '{who} → {side}' },
@@ -154,16 +160,31 @@ const DICT = {
   step_title_normal: { ja: '41手目からは本将棋', en: 'From move 41 it is ordinary shogi' },
 
   // 置く人への案内は「何と何を天秤にかけるか」だけを言う。釣り合っているかの判定は出さない（対局者の判断）。
+  // 置く人は自分がどちらを持つか知らずに置く。ここを言わないと「自分の玉は堅く、相手の玉は薄く」と
+  // 置いてしまう（初めての人が実際にそう置いた）。天秤の図（#scale-fig）と盤の陣の札が同じことを絵で言う。
   status_placer_first: { ja: 'あなたが両玉を置く。まず先手玉を先手陣に。', en: 'You place both kings. First, the Sente king in Sente’s camp.' },
   status_placer_first_sub: {
-    ja: '先手は先に動ける。そのぶん先手玉は後手玉より薄く置いて、手番の得と釣り合わせる。',
-    en: 'Sente moves first, so its king should be thinner than Gote’s to pay for that.',
+    ja: 'どちらの玉を持つかは{them}が決める。先手は先に動けるぶん、先手玉は薄く（前や中央寄り）。',
+    en: '{Them} will pick the side. Sente moves first, so the Sente king goes thin (forward or central).',
   },
   status_placer_second: { ja: '次に後手玉を後手陣に。', en: 'Now the Gote king in Gote’s camp.' },
   status_placer_second_sub: {
-    ja: '後手は手番の得が無いぶん、玉を堅く。堅さの差が先手番の得と釣り合えば、相手はどちらを持っても得をしない。',
-    en: 'Gote has no first move, so its king gets the safety. If that gap matches the first move, the chooser gains nothing either way.',
+    ja: '後手玉は先手玉より堅く（奥や隅寄り）。堅さの差が先手番の得と釣り合えば、{them}はどちらを持っても得をしない。',
+    en: 'The Gote king goes safer than Sente’s (back or corner). If the safety gap matches the first move, {them} gains nothing either way.',
   },
+  // 盤の陣に重ねる札。記号は紙地の上だけ（sente-gote-marks）。
+  zone_hint_sente: { ja: '先手玉をここに · 薄く', en: 'Sente king here · thin' },
+  zone_hint_gote: { ja: '後手玉をここに · 先手玉より堅く', en: 'Gote king here · safer than Sente’s' },
+  king_tag_sente: { ja: '先手玉', en: 'Sente king' },
+  king_tag_gote: { ja: '後手玉', en: 'Gote king' },
+  // 天秤の図。左の皿が先手（先に動ける得＋薄い玉）、右の皿が後手（堅い玉）。釣り合った水平の梁。
+  scale_label: { ja: '天秤: 先手番の得と玉の堅さ', en: 'The balance: first move against king safety' },
+  scale_sente: { ja: '先手', en: 'Sente' },
+  scale_sente_1: { ja: '先に動ける得', en: 'moves first' },
+  scale_sente_2: { ja: '＋ 薄い玉', en: '+ thin king' },
+  scale_gote: { ja: '後手', en: 'Gote' },
+  scale_gote_1: { ja: '堅い玉', en: 'safe king' },
+  scale_gote_2: { ja: '（差が手番の得と釣り合う）', en: '(the gap pays for the move)' },
   status_choose: { ja: 'どちらの玉で指すか選ぶ。持ちたい玉を押す。', en: 'Pick the king you want to play. Tap it on the board.' },
   status_choose_sub: {
     ja: '先手 ☗ は先に動ける。後手 ☖ は最後の一枚を打つ。手番の得と玉の堅さを天秤にかける。',

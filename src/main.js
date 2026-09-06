@@ -55,9 +55,9 @@ const el = id => document.getElementById(id);
 const ui = {
   app: el('app'), viewHome: el('view-home'), viewPlay: el('view-play'),
   logo: el('logo'), navPlay: el('nav-play'),
-  statusLine: el('status-line'), statusSub: el('status-sub'),
+  statusLine: el('status-line'), statusSub: el('status-sub'), scaleFig: el('scale-fig'),
   bootLine: el('boot-line'), bootSub: el('boot-sub'), boot: el('boot'),
-  kifu: el('kifu'), stepper: el('stepper'), panel: el('panel'),
+  kifu: el('kifu'), stepper: el('stepper'), panel: el('panel'), status: el('status'),
   color: el('opt-color'), level: el('opt-level'), volume: el('opt-volume'),
   scale: el('opt-scale'), time: el('opt-time'), theme: el('opt-theme'),
   role: el('opt-role'), colorLabel: el('lbl-color'), roleLabel: el('lbl-role'),
@@ -851,11 +851,15 @@ function squareCenter(key, b) {
   return { x: (col + .5) * sq, y: (row + .5) * sq, sq };
 }
 
-/** 先後を選ぶあいだ、両玉に札（先手／後手）と輪を重ねる。押した玉の札は朱地なので記号は付けない。 */
+/** 先後を選ぶあいだ、両玉に札（先手／後手）と輪を重ねる。押した玉の札は朱地なので記号は付けない。
+ *  玉を置くあいだ（置く人の番）も使う: 置く陣の境目に「先手玉をここに · 薄く」の札、置いた玉に「先手玉」の札。
+ *  文で「先手玉は薄く」と言うだけでは、自分の玉のつもりで堅く置いてしまう人がいた。 */
 function renderKingTags() {
-  const show = !!game && game.phase === 'choose' && viewPly === null && !ui.viewPlay.hidden;
+  const choosing = !!game && game.phase === 'choose' && viewPly === null && !ui.viewPlay.hidden;
+  const placing = !!game && game.phase === 'kings' && game.isHumanTurn && viewPly === null && !ui.viewPlay.hidden;
+  const show = choosing || placing;
   const wrap = el('board');
-  wrap.classList.toggle('choosing', show && game.isHumanTurn);
+  wrap.classList.toggle('choosing', choosing && game.isHumanTurn);
   ui.kingTags.hidden = !show;
   if (!show) { ui.kingTags.replaceChildren(); return; }
   const boardEl = wrap.querySelector('sg-board');
@@ -863,6 +867,34 @@ function renderKingTags() {
   const col = ui.kingTags.getBoundingClientRect();
   const b = boardEl.getBoundingClientRect();
   const frag = document.createDocumentFragment();
+  if (placing) {
+    const sq = b.width / 9;
+    // 置く陣。手番の色が手前なら下の4段、向こうなら上の4段。札は陣の境目の線に掛ける。
+    const bottom = game.turnColor === orientation;
+    const hint = document.createElement('div');
+    hint.className = `zone-hint ${bottom ? 'bottom' : 'top'}`;
+    hint.textContent = t(game.turnColor === SENTE ? 'zone_hint_sente' : 'zone_hint_gote');
+    const y = b.top - col.top + (bottom ? 5 : 4) * sq;
+    hint.style.cssText = `left:${b.left - col.left + b.width / 2}px;top:${y}px`;
+    frag.appendChild(hint);
+    // 置いた玉（2手目のとき先手玉）に札。
+    for (const color of [SENTE, GOTE]) {
+      const key = game.kingSquares[color];
+      if (!key) continue;
+      const { x, y } = squareCenter(key, b);
+      const label = document.createElement('div');
+      label.className = 'king-label placed';
+      label.textContent = t(color === SENTE ? 'king_tag_sente' : 'king_tag_gote');
+      const upper = y < b.height / 2;
+      const cx = b.left - col.left + x, cy = b.top - col.top + y, r = sq * .5;
+      label.style.cssText = upper
+        ? `left:${cx}px;top:${cy + r}px`
+        : `left:${cx}px;top:${cy - r}px;transform:translate(-50%,-100%)`;
+      frag.appendChild(label);
+    }
+    ui.kingTags.replaceChildren(frag);
+    return;
+  }
   for (const color of [SENTE, GOTE]) {
     const key = game.kingSquares[color];
     if (!key) continue;
@@ -1759,7 +1791,7 @@ function renderStepper() {
     let bar = null;
     if (over && i === curIdx) sub = t('step_over', { n: game.moveCount });
     else if (s === 'kings') {
-      sub = state === 'now' ? `${who(game.humanRole === 'placer')} · ${t('step_left', { n: 2 - game.fusekiMoves.length })}`
+      sub = state === 'now' ? t(game.fusekiMoves.length === 0 ? 'step_king_sente' : 'step_king_gote')
         : state === 'next' ? t('step_kings_sub') : '';
     } else if (s === 'choose') {
       sub = state === 'now' ? t(game.humanRole === 'chooser' ? 'step_turn_you' : online ? 'step_turn_them' : 'step_turn_ai')
@@ -1902,7 +1934,7 @@ function render() {
       // 置く役は自分の色を知らずに両玉を置く。2手目は相手の駒台の玉を相手陣へ。
       const first = game.fusekiMoves.length === 0;
       setStatus(t(first ? 'status_placer_first' : 'status_placer_second'),
-        t(first ? 'status_placer_first_sub' : 'status_placer_second_sub'));
+        t(first ? 'status_placer_first_sub' : 'status_placer_second_sub', { them: them(), Them: Them() }));
     } else if (game.phase === 'choose') {
       if (pendingSide) setStatus(t('status_pending', { side: sideName(pendingSide) }), t('status_pending_sub'));
       else setStatus(t('status_choose'), t('status_choose_sub'));
@@ -1929,6 +1961,11 @@ function render() {
     const n = onlineNote();
     if (n) ui.statusSub.textContent = n;
   }
+  // 天秤の図は玉を置く・先後を選ぶあいだだけ。文の行数の上限もこのあいだは緩める（.status.scale）。
+  const scale = game.mode === 'kings-first' && (game.phase === 'kings' || game.phase === 'choose')
+    && !analysis && viewPly === null;
+  ui.scaleFig.toggleAttribute('hidden', !scale);   // SVG 要素に .hidden は無い（HTMLElement だけ）
+  ui.status.classList.toggle('scale', scale);
   renderKingTags();
   renderBanner();
   announcePhase();
@@ -2215,6 +2252,9 @@ function restartInfinite() {
   analysis.candidates = [];
   analysis.live = null;
   analysis.hover = null;
+  // 棋譜をたどると render() がこの前に走り、前の局面の候補手が新しい局面に対して描かれる
+  // （非合法なので手が生のUSIで出る）。空にしたものを描き直してから読み始める。
+  renderAnalysis();
   const { pos, row, inVariation } = analysisPosition();
   if (!pos) {
     engines.engine.stopInfinite();
@@ -2318,6 +2358,9 @@ function renderCandidates() {
   ui.enginePv.textContent = '';
   const list = analysis.candidates.filter(Boolean);
   const { pos, lastDest } = analysisPosition();
+  // 布石の候補（確率と手だけ）は札を横に並べる。1行ずつ並べると5本で棋譜の高さを食い、
+  // 1920×1080 で棋譜が3行になった（検討の枠は状態・操作2行・グラフ・候補手で棋譜と高さを分ける）。
+  ui.candidates.classList.toggle('chips', !pos);
   const live = analysis.live;
   if (!pos) {
     ui.evaluation.textContent = '—';
