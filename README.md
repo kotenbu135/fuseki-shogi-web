@@ -246,6 +246,12 @@ node worker/test/rules_test.mjs
 (cd worker && npx wrangler dev --port 8787 &) ; node worker/test/room_smoke.mjs
 # 同じことを実ブラウザ3タブで。待合から参加・名前・席と時計・着手の往復・読み込み直し・観戦・待った・引き分け・検討・天秤将棋
 node build.mjs --rooms http://localhost:8787 && node test/browser_smoke.mjs --online
+# 公開中のサイトを実ブラウザで開き、CSPが何も止めていないこと・エンジンが起きることを見る
+#   node test/live_check.mjs [URL]   （既定 https://fusekishogi.com/）
+#   Pages が配信時に足すもの（Web Analytics のビーコン）は手元のビルドに無いので、
+#   CSP を触ったら公開後にこれを一度回す
+node test/live_check.mjs
+
 # 千日手（同じ局面4回・連続王手）を Game 単体で
 node test/repetition_test.mjs
 ```
