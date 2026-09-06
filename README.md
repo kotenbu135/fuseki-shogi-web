@@ -300,6 +300,11 @@ sha256 はページごとに違う（`page.html` の script に現在地が埋�
 `dist/_headers` を読んで同じ見出しを返すので、CSP は本番と手元で1つ——
 スモークテストは「CSP が何も止めていないこと」を最後に見る。
 
+ただし **Cloudflare Web Analytics のビーコンは Pages が配信時に注入する**ので、
+手元のビルドには存在せず、本番でだけ CSP に弾かれる（実ブラウザで踏んだ）。
+`static.cloudflareinsights.com` と `cloudflareinsights.com` を通してある。
+CSP を触ったら、手元のスモークだけでなく**公開後の実ブラウザでも**一度見ること。
+
 ### distに入るのは配布してよい重みだけ
 
 `node build.mjs` が `dist/` へ入れるのは `models/` にコミットしてある重み

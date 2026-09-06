@@ -279,12 +279,15 @@ for (const lang of LANGS) {
     "form-action 'none'",
     // 3つのエンジンはどれも WebAssembly を組み立てる。'wasm-unsafe-eval' が無いと動かない
     // （'unsafe-eval' と違って JavaScript の eval は許さない）。
-    `script-src 'self' 'wasm-unsafe-eval' ${[...hashes].join(' ')}`,
+    // Cloudflare Web Analytics のビーコンは Pages が**配信時に**注入するので、
+    // 手元のビルドには存在しない（本番でだけ CSP に弾かれる。実ブラウザで踏んだ）。
+    // 要らなくなったらダッシュボードの Web Analytics を切り、ここも消す。
+    `script-src 'self' 'wasm-unsafe-eval' https://static.cloudflareinsights.com ${[...hashes].join(' ')}`,
     "style-src 'self'",
     "img-src 'self'",
     "font-src 'self'",
     // 対局の部屋（別ホストの Worker）。http と ws の両方を挙げる。
-    `connect-src 'self' ${rooms.origin} ${rooms.protocol === 'http:' ? 'ws:' : 'wss:'}//${rooms.host}`,
+    `connect-src 'self' ${rooms.origin} ${rooms.protocol === 'http:' ? 'ws:' : 'wss:'}//${rooms.host} https://cloudflareinsights.com`,
     // onnxruntime-web と やねうら王 はスレッドを Worker で起こす。
     "worker-src 'self' blob:",
   ].join('; ');
