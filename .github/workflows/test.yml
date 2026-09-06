@@ -1,0 +1,57 @@
+# Cloudflare Pages が回すのと同じビルドと、外部を何も要らないテストだけを回す。
+#
+# 入れていないもの（手元で回す。README の「テスト」を参照）:
+#   browser_smoke / room_smoke   Chrome・wrangler dev を起こす
+#   parity_test / policy_parity  dlshogi の Python 拡張と .gitignore してある中間ファイルが要る
+#   live_check                   公開中のサイトを叩く。push のたびに本番へ行かせない
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # submodule は取らない。build.mjs は dlshogi のコミットIDを
+      # `git rev-parse HEAD:engine/dlshogi` で木から読むので、実体が無くても出る。
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'   # Pages のビルド環境変数 NODE_VERSION と同じ
+          cache: npm
+
+      - run: npm ci
+
+      - name: ビルド（Pages と同じコマンド）
+        run: node build.mjs
+
+      - name: 41手目の裁定が shogiops より前に効く
+        run: node test/adjudication_test.mjs
+
+      - name: 終局した Game から表示の値が取り出せる
+        run: node test/game_terminal_test.mjs
+
+      - name: 天秤将棋の状態機械
+        run: node test/kings_first_test.mjs
+
+      - name: 千日手
+        run: node test/repetition_test.mjs
+
+      - name: 観戦（AI同士）の Game
+        run: node test/spectate_test.mjs
+
+      - name: 棋譜の行ごとの評価
+        run: node test/eval_record_test.mjs
+
+      - name: オンライン対局の部屋のルール
+        run: node worker/test/rules_test.mjs
+
+      # 布石40手 → 41手目の裁定 → 通常フェーズ。onnxruntime-web とやねうら王WASM を
+      # Node で動かすので、3つのエンジンのうち2つがここで動く。
+      - name: 対局の経路を1局通す
+        run: node test/pipeline_smoke.mjs

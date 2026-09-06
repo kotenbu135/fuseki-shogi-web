@@ -1,7 +1,58 @@
 # fuseki-shogi-web
 
+**指す → [fusekishogi.com](https://fusekishogi.com)**
+
+[![test](https://github.com/kotenbu135/fuseki-shogi-web/actions/workflows/test.yml/badge.svg)](https://github.com/kotenbu135/fuseki-shogi-web/actions/workflows/test.yml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+
 [布石将棋](https://shogitter.com/rule/布石将棋)をブラウザだけで指せる対局サイト。
-サーバーを持たず、静的配信だけで動く。
+サーバーを持たず、静的配信だけで動く。AIも通常将棋のエンジンも、
+すべてブラウザの中（WebAssembly）で動く。アカウントもインストールも要らない。
+
+[![終局後の検討の画面](docs/screenshot.png)](https://fusekishogi.com)
+
+<sub>AI同士の対局を観戦して終局し、その81手目を検討させたところ（候補手・評価グラフ・棋譜）。</sub>
+
+- **AIと対局**（5段階）／**友達と対局**（招待リンク）／**待合**（相手を待つ）／**観戦**（AI同士）
+- **天秤将棋** —— 先手番の得を先手玉の薄さで釣り合わせる、このサイトの追加ルール
+- **検討** —— 終局後にやねうら王で読ませ、候補手と変化を並べる。評価グラフは棋譜の行ごと
+- 日本語 / English（`/en/`）
+
+<details>
+<summary><b>In English</b></summary>
+
+**Fuseki Shogi** is a shogi variant from [shogitter](https://shogitter.com/rule/布石将棋):
+both players drop 20 pieces each onto an empty board, alternating, and from move 41 the
+game continues as ordinary shogi. This repository is a browser-only client for it — no
+server, no account, no install. Play at **[fusekishogi.com](https://fusekishogi.com)**
+(the site is bilingual; English lives under `/en/`).
+
+Everything runs in the tab: the fuseki policy (ONNX, one NN forward per move, no search)
+through onnxruntime-web, ordinary shogi rules through [shogiops], the ordinary-phase
+engine [YaneuraOu] compiled to WebAssembly, and the board through [shogiground]. The one
+piece of server is a Cloudflare Worker that holds online rooms, and it relays move tokens
+only — no engine, no account.
+
+The site also offers **Balance Shogi**, a rule of its own. One player places both kings
+without knowing which side they will get; the other then chooses a side. That pie rule
+balances the ~62% first-player win rate the variant otherwise has.
+
+The rest of this README, and the comments in the code, are in Japanese.
+
+[shogiops]: https://github.com/WandererXII/shogiops
+[shogiground]: https://github.com/WandererXII/shogiground
+[YaneuraOu]: https://www.npmjs.com/package/@mizarjp/yaneuraou.k-p
+
+</details>
+
+| | |
+| --- | --- |
+| [天秤将棋（追加ルール）](#天秤将棋追加ルール) | 先手の得を釣り合わせる手順 |
+| [画面と言語](#画面と言語) | ホーム・対局・観戦・検討・オンライン |
+| [構成](#構成) / [ビルド](#ビルド) / [テスト](#テスト) | 動かす・作る・確かめる |
+| [オンライン対局（worker/）](#オンライン対局worker) | 部屋・待合・[濫用への歯止め](#濫用への歯止め) |
+| [デプロイ](#デプロイcloudflare-pages) / [配信](#配信) | Cloudflare Pages・CSP |
+| [ライセンス](#ライセンス) | GPL-3.0。同梱物は [THIRD_PARTY.md](THIRD_PARTY.md) |
 
 布石将棋は通常の将棋と違い、**空の盤に双方が交互に20枚ずつ打ってから指し始める**変則ルール。
 41手目からは通常の将棋になる。この2つのフェーズを、別々のエンジンで担当させている。
@@ -256,6 +307,10 @@ node test/live_check.mjs
 node test/repetition_test.mjs
 ```
 
+このうち**ブラウザ・wrangler・Pythonが要らないもの**は、push と Pull Request のたびに
+GitHub Actions が回す（[`.github/workflows/test.yml`](.github/workflows/test.yml)。
+Pages と同じ `node build.mjs` も一緒に通す）。残りは手元で回す。
+
 実測（`test/sample_sfens.jsonl` は実際の方策が作った41手目局面80件）:
 
 - **照合 8880項目すべて一致**（legalDrops・62+59プレーンの特徴量・指し手ラベル・最終SFEN・玉の被利き）
@@ -321,6 +376,17 @@ CSP を触ったら、手元のスモークだけでなく**公開後の実ブ�
 node build.mjs                                            # デプロイ用。dist/
 node build.mjs --model models/fuseki_rollout_iter38.onnx  # dist-local/。配ってはいけない
 ```
+
+## 困ったとき・直したいとき
+
+- **不具合と要望**は [Issues](https://github.com/kotenbu135/fuseki-shogi-web/issues) へ。
+  再現の手順と、対局画面の下端に出る**ビルドの行**（`dlshogi … / web … / fuseki.wasm …`）を
+  一緒に貼ってもらえると、どの版で起きたかがそれで決まる。
+- **Pull Request** も歓迎。手元で `node build.mjs` が通り、上のテストのうち
+  CI が回すぶんが緑なら十分。コメントと文言は日本語で書いている。
+- **脆弱性**は公開の Issue ではなく [SECURITY.md](SECURITY.md) の窓口（GitHub の非公開の報告）へ。
+- 布石将棋そのもののルールは [shogitter](https://shogitter.com/rule/布石将棋) のもので、
+  ここはその実装。ルール自体の話は本家へ。天秤将棋はこのサイトの追加ルールなので、ここでよい。
 
 ## ライセンス
 
