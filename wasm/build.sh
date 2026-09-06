@@ -19,9 +19,12 @@ SRC=(
 )
 
 # em++ を使う（emccだとlibc++がリンクされず operator new が未定義になる）。
+# -ffile-prefix-map でソースの絶対パスをリポジトリ相対に畳む。付けないと assert の
+# __FILE__ が手元のホームディレクトリごと .wasm に焼き付き、配布物に出る。
 # -msimd128 でEmscriptenのSSEエミュレーションを有効にし、足りないPOPCNT組み込み関数だけ
 # wasm_shim.h で埋める。FP16は定義しない（定義するとcuda_fp16.hを要求する）。
 em++ -std=c++17 -O2 -msimd128 -msse4.2 -mavx2 \
+  -ffile-prefix-map="$HERE/..=." \
   -include "$HERE/wasm_shim.h" \
   -DHAVE_SSE4 -DHAVE_SSE42 -DHAVE_AVX2 \
   -I"$C" \
@@ -35,6 +38,7 @@ em++ -std=c++17 -O2 -msimd128 -msse4.2 -mavx2 \
 # web,worker,node のグルーは wrangler dev/workerd で node と誤認し、import.meta.url が無くて
 # 起動時に落ちる（実際に落ちた）。.wasm は上と同じ物になるので、確かめて片方だけ残す。
 em++ -std=c++17 -O2 -msimd128 -msse4.2 -mavx2 \
+  -ffile-prefix-map="$HERE/..=." \
   -include "$HERE/wasm_shim.h" \
   -DHAVE_SSE4 -DHAVE_SSE42 -DHAVE_AVX2 \
   -I"$C" \
