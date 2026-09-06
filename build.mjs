@@ -53,7 +53,7 @@ copy(path.join(HERE, 'src', 'favicon.svg'), OUT);
 // 共有プレビューの画像（scripts/og.mjs が描いてコミットしてある。ここでは写すだけ）。
 for (const f of ['og-ja.png', 'og-en.png'])
   if (!copy(path.join(HERE, 'src/og', f), path.join(OUT, 'og'))) console.warn(`警告: src/og/${f} が無い。node scripts/og.mjs で作る`);
-copy(path.join(HERE, '_headers'), OUT);
+// _headers は HTML を書き出した後に組み立てる（CSP に inline script の hash が要る）。
 
 // 駒の画像（CC BY 4.0 / Ka-hu。THIRD_PARTY.md を参照）。
 // style.css が pieces/<ファイル名> の相対で引くので、dist直下に同じ名前で置く。
@@ -251,6 +251,44 @@ for (const lang of LANGS) {
   if (shown && Math.abs(Number(shown) - actual) > 3)
     console.warn(`起動時の表示「約${shown}MB」が実物（${actual.toFixed(1)}MB）とずれている。`
       + ' src/main.js の LOAD_MB を直すこと。');
+}
+
+// _headers。CSP の inline script の hash は、書き出した HTML から数え直す
+// （page.html の中の script には {{nav_current}} が入るので、ページごとに違う）。
+// hash を手で書くと、文面を1文字直しただけでサイトが白くなる。
+{
+  const htmls = [];
+  const walk = d => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) walk(f);
+      else if (e.name.endsWith('.html')) htmls.push(f);
+    }
+  };
+  walk(OUT);
+  const hashes = new Set();
+  for (const f of htmls)
+    for (const m of fs.readFileSync(f, 'utf8').matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g))
+      hashes.add(`'sha256-${crypto.createHash('sha256').update(m[1]).digest('base64')}'`);
+  const rooms = new URL(ROOMS_URL);
+  const csp = [
+    "default-src 'self'",
+    "base-uri 'none'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'none'",
+    // 3つのエンジンはどれも WebAssembly を組み立てる。'wasm-unsafe-eval' が無いと動かない
+    // （'unsafe-eval' と違って JavaScript の eval は許さない）。
+    `script-src 'self' 'wasm-unsafe-eval' ${[...hashes].join(' ')}`,
+    "style-src 'self'",
+    "img-src 'self'",
+    "font-src 'self'",
+    // 対局の部屋（別ホストの Worker）。http と ws の両方を挙げる。
+    `connect-src 'self' ${rooms.origin} ${rooms.protocol === 'http:' ? 'ws:' : 'wss:'}//${rooms.host}`,
+    // onnxruntime-web と やねうら王 はスレッドを Worker で起こす。
+    "worker-src 'self' blob:",
+  ].join('; ');
+  write('_headers', fs.readFileSync(path.join(HERE, '_headers'), 'utf8').replace('Content-Security-Policy: __CSP__', `Content-Security-Policy: ${csp}`));
 }
 
 console.log(`index = ${hasModel ? 'src/index.html (ja, en)' : 'src/soon.html'}  (dlshogi ${info.dlshogi_commit.slice(0, 12)})  rooms = ${ROOMS_URL}`);

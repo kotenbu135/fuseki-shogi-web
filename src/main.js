@@ -1343,17 +1343,30 @@ function syncTokens(tokens, initial = false) {
   reportOverIfAny();
 }
 
-/** 部屋から来たトークンを1つ入れる。入らなければ不整合として対局を止める。 */
+/**
+ * 部屋から来たトークンを1つ入れる。入らなければ不整合。
+ *
+ * 部屋はブラウザと同じ Game で見ているので、ふつうは起こらない。1度目は部屋に申し出て
+ * 手順を丸ごと送り返してもらい、入れ直す（部屋は判定役が生きているあいだ中断せず、
+ * state を返してくる）。2度目も入らなければ本当に合っていないので、こちらだけ止める
+ * ——部屋は続くので、相手は時間切れか不在で勝てる。負けている側が「合わない」と
+ * 言うだけで対局を無かったことにできてはいけない。
+ */
 function applyRemoteToken(x) {
   try {
     game.play(x);
   } catch (e) {
     console.error('不整合:', x, e);
-    game.endRemote({ reason: 'desync' });
-    online.reported = true;
+    online.desyncTries = (online.desyncTries ?? 0) + 1;
+    if (online.desyncTries >= 2) {
+      game.endRemote({ reason: 'desync' });
+      online.reported = true;
+      return false;   // これ以上は言わない（言えば state が返り、また同じ所で落ちる）
+    }
     net?.over(game.tokens().length, { winner: null, reason: 'desync' });
     return false;
   }
+  online.desyncTries = 0;
   if (game.phase === 'normal' && game.normalMoves.length >= MAX_NORMAL_MOVES) game.endRemote({ reason: 'too_long' });
   return true;
 }

@@ -21,6 +21,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { siteHeaders } from '../scripts/site_headers.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -68,7 +69,7 @@ const check = (label, cond, detail = '') => {
   if (!cond) failures++;
 };
 
-// ---- dist/ をCOOP/COEP付きで配る（serve.mjs と同じ条件） ----
+// ---- dist/ を本番と同じ見出し（COOP/COEP・CSP）付きで配る（serve.mjs と同じ条件） ----
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
@@ -86,6 +87,8 @@ const server = http.createServer((req, res) => {
     'Content-Type': TYPES[path.extname(file)] ?? 'application/octet-stream',
     'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Embedder-Policy': 'require-corp',
+    // CSP を含む本番と同じ見出し。ここを省くと CSP が壊れていても素通りする。
+    ...siteHeaders(DIST),
   });
   fs.createReadStream(file).pipe(res);
 });
@@ -116,6 +119,15 @@ const cdp = await connect(wsUrl);
 const logs = [];
 /** これまでに出た未処理例外。logs は増え続けるので、その都度数える。 */
 const exceptions = () => logs.filter(l => l.startsWith('EXCEPTION'));
+/** CSP が止めたもの。1つでもあれば本番でも同じものが止まる。 */
+const cspViolations = [];
+const watchCsp = p => {
+  p.on('Log.entryAdded', e => {
+    const txt = e.entry?.text ?? '';
+    if (/Content Security Policy/i.test(txt)) cspViolations.push(txt);
+  });
+  return p.send('Log.enable');
+};
 let page;
 try {
   const target = await cdp.send('Target.createTarget', { url: 'about:blank' });
@@ -124,6 +136,7 @@ try {
   page.on('Runtime.exceptionThrown', e => logs.push('EXCEPTION ' + (e.exceptionDetails.exception?.description ?? e.exceptionDetails.text)));
   await page.send('Runtime.enable');
   await page.send('Page.enable');
+  await watchCsp(page);
   await page.send('Page.navigate', { url: `http://localhost:${PORT}/` });
 
   check('crossOriginIsolated', await evalUntil(page, 'crossOriginIsolated', v => v === true, 15000) === true,
@@ -578,6 +591,10 @@ try {
   try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* Chromeが掴んだままでも実害は無い */ }
 }
 
+// CSP は「効いていること」ではなく「何も止めていないこと」を見る。止めていれば
+// 本番でも同じものが止まり、エンジンや盤が黙って動かなくなる。
+check('CSP が止めたものが無い', cspViolations.length === 0, cspViolations.slice(0, 3).join(' / '));
+
 console.log(`\n不一致 ${failures} 件`);
 process.exit(failures ? 1 : 0);
 
@@ -689,6 +706,7 @@ async function playOnline(cdp, pageA) {
   pageB.on('Runtime.exceptionThrown', e => logs.push('EXCEPTION [B] ' + (e.exceptionDetails.exception?.description ?? e.exceptionDetails.text)));
   await pageB.send('Runtime.enable');
   await pageB.send('Page.enable');
+  await watchCsp(pageB);
   await pageB.send('Page.navigate', { url: link.slice(0, link.indexOf('#')) });
   // 別の人は初めて来た体なので AI タブで開く。待合の札に募集の数が出て、タブを押すと一覧が出る。
   await evalUntil(pageB, 'document.readyState', v => v === 'complete', 15000);
@@ -788,6 +806,7 @@ async function playOnline(cdp, pageA) {
   pageC.on('Runtime.exceptionThrown', e => logs.push('EXCEPTION [C] ' + (e.exceptionDetails.exception?.description ?? e.exceptionDetails.text)));
   await pageC.send('Runtime.enable');
   await pageC.send('Page.enable');
+  await watchCsp(pageC);
   await pageC.send('Page.navigate', { url: link });
   await evalUntil(pageC, 'document.getElementById("join-dialog").open', v => v === true, 20000);
   const joinC = await evaluate(pageC, `({ ok: document.getElementById('btn-join-ok').textContent, note: document.getElementById('join-note').textContent })`);

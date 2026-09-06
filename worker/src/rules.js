@@ -29,6 +29,60 @@ export const UNJOINED_TTL_MS = 2 * 60 * 60 * 1000;
 /** ニックネームの長さ。 */
 export const NICK_MAX = 20;
 
+// ---- 濫用への歯止め（無認証で叩けるものは、すべて上限を持たせる） ----
+//
+// この Worker は誰でも叩ける。守るべきものは棋譜ではなく**課金**で、
+// 「1リクエストが Durable Object を1つ起こす」「1メッセージが storage へ1回書く」
+// という増幅を、どこにも残さないのが方針。
+
+/** WebSocket の1メッセージの上限（バイト）。棋譜のトークンは十数バイトしかない。 */
+export const MAX_MSG_BYTES = 4096;
+/** 部屋を作るときの本文の上限（バイト）。 */
+export const MAX_BODY_BYTES = 4096;
+/** 1部屋に繋げる接続の上限（対局者2＋観戦）。 */
+export const MAX_ROOM_SOCKETS = 60;
+/** 待合に繋げる接続の上限（待合は全体で1つの Durable Object）。 */
+export const MAX_LOBBY_SOCKETS = 400;
+/** 待合に載せる募集の上限。溢れたら古いものから落とす。 */
+export const MAX_LOBBY_SEEKS = 200;
+
+/** 1接続が送ってよいメッセージの量。溜めは40、毎秒5ずつ戻る。 */
+export const MSG_BUCKET = { capacity: 40, refillPerSec: 5 };
+/** 空のバケツを叩き続けたら接続を切る回数。 */
+export const MSG_STRIKES = 12;
+
+export function newBucket(now = Date.now()) {
+  return { tokens: MSG_BUCKET.capacity, at: now, strikes: 0 };
+}
+/**
+ * バケツから cost 個引く。引けなければ false（そのメッセージは捨てる）。
+ * 溜めたぶんだけ連射を許し、続くなら毎秒 refillPerSec に落ちる。
+ */
+export function takeToken(b, cost = 1, now = Date.now()) {
+  const gained = Math.max(0, now - b.at) / 1000 * MSG_BUCKET.refillPerSec;
+  b.tokens = Math.min(MSG_BUCKET.capacity, b.tokens + gained);
+  b.at = now;
+  if (b.tokens < cost) { b.strikes++; return false; }
+  b.tokens -= cost;
+  b.strikes = 0;
+  return true;
+}
+
+/**
+ * 頻度制限の鍵。IPv6 は /64 まで（下位64ビットは1人が自由に振り替えられるので、
+ * 生のアドレスで数えると制限にならない）。
+ */
+export function clientKey(ip) {
+  if (typeof ip !== 'string' || !ip) return 'unknown';
+  if (!ip.includes(':')) return ip;
+  const [head, tail] = ip.split('::');
+  const h = head ? head.split(':') : [];
+  const t = tail ? tail.split(':') : [];
+  const fill = new Array(Math.max(0, 8 - h.length - t.length)).fill('0');
+  const groups = tail === undefined ? h : [...h, ...fill, ...t];
+  return groups.slice(0, 4).map(g => (g || '0').toLowerCase().replace(/^0+(?=.)/, '')).join(':') + '::';
+}
+
 const DROP_RE = /^[PLNSGBRK]\*[1-9][a-i]$/;
 const KING_DROP_RE = /^K\*[1-9][a-i]$/;
 const MOVE_RE = /^[1-9][a-i][1-9][a-i]\+?$/;
@@ -131,10 +185,14 @@ function syncSeatsWithTokens(state) {
   state.seats[other(chooser)].side = otherColor(m[1]);
 }
 
-/** ニックネーム。制御文字を落として長さを切る。空なら null。 */
+// 名前から落とす文字。制御文字のほかに、書字方向の上書き（相手の画面で行を
+// 逆さに見せられる）と幅ゼロ（見えない字で他人と同じ名前を作れる）も落とす。
+const NICK_STRIP = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb]/g;
+
+/** ニックネーム。危ない文字を落とし、空白を潰して長さを切る。空なら null。 */
 export function cleanNick(s) {
   if (typeof s !== 'string') return null;
-  const v = s.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, NICK_MAX);
+  const v = s.replace(NICK_STRIP, '').replace(/\s+/g, ' ').trim().slice(0, NICK_MAX);
   return v || null;
 }
 

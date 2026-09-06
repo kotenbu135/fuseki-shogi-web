@@ -1,6 +1,11 @@
+# CSP の中身は build.mjs が組み立てて差し込む（inline script の hash と、
+# 部屋の Worker のホスト名が --rooms で変わるため）。手元の serve.mjs はここを
+# そのまま読んで同じ見出しを返すので、CSP は本番と手元で1つに保たれる。
 /*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
+  X-Content-Type-Options: nosniff
+  Content-Security-Policy: __CSP__
 
 # 駒の画像。Pagesは拡張子から推測するが、octet-stream で配られるとブラウザが
 # SVGとしてデコードせず、要素は在るのに盤が空に見える（実際に手元で踏んだ）。

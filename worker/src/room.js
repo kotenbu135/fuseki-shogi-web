@@ -10,7 +10,7 @@
 import {
   SEATS, TIME_CONTROLS, ABANDON_MS, MAX_NORMAL_MOVES, other, turnSeat, tokenError, applyToken, rewindTo,
   lastTokenOf, newClock, remaining, closeTurn, deadline, expiresAt, seatOfColor, colorOfSeat, cleanNick,
-  normalCount,
+  normalCount, MAX_MSG_BYTES, MAX_ROOM_SOCKETS, MSG_STRIKES, newBucket, takeToken,
 } from './rules.js';
 import { newJudge } from './judge.js';
 
@@ -24,6 +24,9 @@ export class Room {
     this.state = null;
     this.judge = null;         // 局面を持つ Game。最初に要るときに手順から作る
     this.judgeBroken = false;  // 作れなかった（手順が壊れている・WASMが起きない）。検証なしで続ける
+    // 接続ごとのメッセージの量（濫用の歯止め）。休眠から起きたら空から数え直す
+    // ——休眠するのは静かなときだけなので、連射の途中では消えない。
+    this.buckets = new WeakMap();
     this.ctx.blockConcurrencyWhile(async () => {
       this.state = (await this.ctx.storage.get('state')) ?? null;
     });
@@ -52,6 +55,8 @@ export class Room {
     if (url.pathname === '/info') return json(this.info());
     if (url.pathname === '/ws') {
       if (req.headers.get('Upgrade') !== 'websocket') return json({ error: 'expected_websocket' }, 426);
+      // 観戦は誰でも入れる。1部屋に無制限に繋がれると、着手のたびの配信が増幅される。
+      if (this.ctx.getWebSockets().length >= MAX_ROOM_SOCKETS) return json({ error: 'room_full' }, 503);
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
       this.ctx.acceptWebSocket(server);
@@ -192,9 +197,29 @@ export class Room {
     };
   }
 
+  /**
+   * 1接続あたりの送信量。溜めを使い切ったら黙って捨てる（返事を返すと同じ数だけ
+   * 増幅されるので、断りは最初の1回だけ）。叩き続ける接続は切る。
+   * state と join は丸ごとの状態を作るので重く数える。
+   */
+  allow(ws, type) {
+    const cost = type === 'state' || type === 'join' ? 5 : 1;
+    let b = this.buckets.get(ws);
+    if (!b) { b = newBucket(); this.buckets.set(ws, b); }
+    if (takeToken(b, cost)) return true;
+    if (b.strikes >= MSG_STRIKES) { try { ws.close(1008, 'rate_limited'); } catch { /* 既に閉じている */ } }
+    else if (b.strikes === 1) send(ws, { t: 'error', code: 'rate_limited' });
+    return false;
+  }
+
   async webSocketMessage(ws, raw) {
+    // 長さを先に見る。JSON.parse に大きな文字列を渡さない。
+    const size = typeof raw === 'string' ? raw.length : raw.byteLength;
+    if (size > MAX_MSG_BYTES) { try { ws.close(1009, 'too_large'); } catch { /* 無視 */ } return; }
     let msg;
     try { msg = JSON.parse(raw); } catch { return send(ws, { t: 'error', code: 'bad_json' }); }
+    if (!msg || typeof msg !== 'object') return send(ws, { t: 'error', code: 'bad_json' });
+    if (!this.allow(ws, msg.t)) return;
     if (!this.state) return send(ws, { t: 'error', code: 'no_room' });
     const seat = attachment(ws).seat;
     if (msg.t === 'join') return this.join(ws, msg);
@@ -322,7 +347,14 @@ export class Room {
     if (s.result) return;
     const r = msg.result ?? {};
     const reason = typeof r.reason === 'string' && /^[a-z_]{1,40}$/.test(r.reason) ? r.reason : 'unknown';
-    if (reason === 'desync') return this.end({ winnerSeat: null, winner: null, reason: 'desync', by: seat });
+    if (reason === 'desync') {
+      // 判定役が生きているなら不整合は起こり得ない（ブラウザと同じ Game で見ている）。
+      // 申告どおりに中断できてしまうと、負けている側がいつでも対局を無かったことに
+      // できる。手順を丸ごと送り返して直し、部屋は続ける。判定役が居ないときだけ信じる。
+      const judge = await this.ensureJudge();
+      if (judge) return send(ws, this.fullState(seat));
+      return this.end({ winnerSeat: null, winner: null, reason: 'desync', by: seat });
+    }
     if (this.judge || !this.judgeBroken) {
       // 判定役で見直す。手順がそこで終わっていれば自分の結果で終える。
       const judge = await this.ensureJudge();

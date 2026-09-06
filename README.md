@@ -147,6 +147,31 @@ cd worker && npx wrangler deploy                 # 公開。custom_domain なの
 `ALLOWED_ORIGINS`（`worker/wrangler.toml`）に無い Origin からは部屋を作れず、繋げない。
 費用は Workers Free の枠で1日およそ5,000局まで（設計は開発リポジトリの docs/plan-online-play.md）。
 
+### 濫用への歯止め
+
+この Worker は誰でも叩ける。守るものは棋譜（見られて困るものは無い）ではなく**課金**で、
+「無認証の1リクエストが Durable Object を1つ起こす」経路をどこにも残さないのが方針。
+Origin の確認は他所のサイトの JS を止めるだけで curl は素通りするので、歯止めにはならない。
+
+| どこ | 上限 | なぜ |
+| --- | --- | --- |
+| 部屋を作る | IP あたり 10分で 60 | 作りっぱなしの部屋を溜められない（相手が来なければ2時間で消える） |
+| 部屋の照会・待合の一覧 | IP あたり 1分で 120 | **無い部屋のIDでも Durable Object は起きる**。招待リンクの2人が同じ NAT の裏に居ても足りる数 |
+| WebSocket を繋ぐ | IP あたり 1分で 60 | 再接続の連打を含む |
+| 1接続のメッセージ | 溜め40・毎秒5（`state`と`join`は5つぶん） | 1メッセージが storage への書き込みを起こす。空を叩き続ける接続は切る |
+| 1メッセージの長さ | 4KB | 棋譜のトークンは十数バイト |
+| 1部屋の接続 | 60（観戦を含む） | 着手のたびの配信が増幅されない |
+| 待合の接続・募集 | 400・200件 | 待合は全体で1つの Durable Object。一覧の配信は 500ms にまとめる |
+
+数える鍵は IP、**IPv6 は /64 まで**（下位64ビットは1人が自由に振り替えられる）。
+鍵が IP である以上、狭く取ると同じ NAT の裏（将棋クラブ・学校・CGNAT）がまとめて締め出される。
+どの上限も「人が使う量よりずっと上、濫用には効く」ところに置いてある。
+名前は制御文字に加えて書字方向の上書き・幅ゼロの文字も落とす（相手と待合の画面に出るため）。
+「局面が合わない」という申告は、部屋の判定役が生きているあいだは受けない（同じ `Game` で
+見ているので起こり得ず、受けると負けている側の逃げ道になる）。部屋は手順を丸ごと送り返し、
+ブラウザは入れ直す。2度目も入らなければ**そのブラウザだけ**止まる——部屋は続くので、
+相手は時間切れか不在で勝てる。
+
 ## ビルド
 
 ```bash
@@ -263,7 +288,17 @@ Chromeを起こして確認する。
 ```
 Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
+X-Content-Type-Options: nosniff
+Content-Security-Policy: （build.mjs が組み立てる）
 ```
+
+CSP は `_headers` の `__CSP__` を `build.mjs` が差し替えて書き出す。inline script の
+sha256 はページごとに違う（`page.html` の script に現在地が埋まる）ので、手で書くと
+文面を1文字直しただけでサイトが白くなる。`connect-src` の部屋のホスト名も `--rooms` で変わる。
+3つのエンジンは WebAssembly を組み立てるので `script-src` に `'wasm-unsafe-eval'` が要る
+（JavaScript の `eval` は許さない）。手元の `serve.mjs` と `test/browser_smoke.mjs` は
+`dist/_headers` を読んで同じ見出しを返すので、CSP は本番と手元で1つ——
+スモークテストは「CSP が何も止めていないこと」を最後に見る。
 
 ### distに入るのは配布してよい重みだけ
 

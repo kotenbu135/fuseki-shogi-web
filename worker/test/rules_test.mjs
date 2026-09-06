@@ -3,7 +3,7 @@
 //   node worker/test/rules_test.mjs
 import {
   TIME_CONTROLS, MAX_NORMAL_MOVES, turnSeat, tokenError, applyToken, newClock, remaining, closeTurn, deadline,
-  seatOfToken, lastTokenOf, rewindTo, cleanNick,
+  seatOfToken, lastTokenOf, rewindTo, cleanNick, clientKey, newBucket, takeToken, MSG_BUCKET,
 } from '../src/rules.js';
 
 let failures = 0;
@@ -131,6 +131,29 @@ check('時計: アラームの時刻', () => {
   c.running = 'host'; c.since = 1000;
   eq(deadline(c, TIME_CONTROLS['10m+30s']), 1000 + 600000 + 30000, '本時間＋秒読み');
   eq(deadline(newClock(null), null), null, '無制限');
+});
+
+check('名前: 書字方向の上書きと幅ゼロを落とす', () => {
+  eq(cleanNick('a\u202eb'), 'ab', '右書き上書き');
+  eq(cleanNick('a\u200bb'), 'ab', '幅ゼロ');
+  eq(cleanNick('a\n\n  b'), 'a b', '改行は空白1つ');
+});
+check('頻度の鍵: IPv6 は /64 まで', () => {
+  eq(clientKey('203.0.113.9'), '203.0.113.9', 'IPv4 はそのまま');
+  eq(clientKey('2001:db8::1'), '2001:db8:0:0::', '下位は捨てる');
+  eq(clientKey('2001:0db8:85a3:0000:0000:8a2e:0370:7334'), '2001:db8:85a3:0::', '展開ずみ');
+  eq(clientKey('2001:db8::2'), clientKey('2001:db8::9999'), '同じ /64 は同じ鍵');
+  eq(clientKey(''), 'unknown', '不明');
+});
+check('接続ごとの送信量: 溜めを使い切ったら断り、時間で戻る', () => {
+  const t0 = 1000000;
+  const b = newBucket(t0);
+  for (let i = 0; i < MSG_BUCKET.capacity; i++) eq(takeToken(b, 1, t0), true, `${i + 1}通目`);
+  eq(takeToken(b, 1, t0), false, '溜めを使い切った');
+  eq(b.strikes, 1, '空を叩いた回数');
+  eq(takeToken(b, 1, t0 + 1000), true, '1秒で戻る');
+  eq(b.strikes, 0, '通れば数え直し');
+  eq(takeToken(b, 5, t0 + 1000), false, '重いものは通らない');
 });
 
 console.log(`\n不一致 ${failures} 件`);

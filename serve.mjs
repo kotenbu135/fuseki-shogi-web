@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { siteHeaders } from './scripts/site_headers.mjs';
 
 // 既定は dist/（公開用のビルド。models/ の重みが入っているのでそのまま指せる）。
 // 第1引数でディレクトリ、第2引数でポートを変えられる。
@@ -28,6 +29,9 @@ const TYPES = {
   '.json': 'application/json', '.map': 'application/json',
 };
 
+// 本番（Cloudflare Pages）と同じ見出し。CSP もここから来る。
+const SITE_HEADERS = siteHeaders(ROOT);
+
 http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html';
@@ -41,6 +45,7 @@ http.createServer((req, res) => {
     'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Embedder-Policy': 'require-corp',
     'Cache-Control': 'no-store',
+    ...SITE_HEADERS,
   });
   fs.createReadStream(file).pipe(res);
 }).listen(PORT, () => console.log(`http://localhost:${PORT}/  (${path.basename(ROOT)}/ を配信中)`));
