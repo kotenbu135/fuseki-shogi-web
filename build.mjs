@@ -220,6 +220,26 @@ for (const lang of LANGS) {
   write(`${dir}404.html`, nf);
 }
 
+// sitemap.xml と robots.txt。検索エンジンとAIエージェント向け。play.html は index の
+// 写しなので載せない。Cloudflare の管理 robots.txt（Content-Signal、AI クローラの
+// Disallow）は配信時に src/robots.txt の前へ継ぎ足されるので、ここは Sitemap 行だけ。
+{
+  const SITE = 'https://fusekishogi.com';
+  const paths = ['', 'rules/', 'story/'];
+  const urls = [];
+  for (const lang of LANGS)
+    for (const p of paths) {
+      const alt = l => `${SITE}${langVars(l).self_href}${p}`;
+      urls.push(`  <url>\n    <loc>${alt(lang)}</loc>\n`
+        + LANGS.map(l => `    <xhtml:link rel="alternate" hreflang="${l}" href="${alt(l)}"/>\n`).join('')
+        + `    <xhtml:link rel="alternate" hreflang="x-default" href="${alt('ja')}"/>\n  </url>`);
+    }
+  write('sitemap.xml', '<?xml version="1.0" encoding="UTF-8"?>\n'
+    + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n'
+    + urls.join('\n') + '\n</urlset>\n');
+  copy(path.join(HERE, 'src', 'robots.txt'), OUT);
+}
+
 // 起動時に「約15MB」と出しているのは onnxruntime-web の .wasm と重みの合計。
 // 片方だけ差し替えると表示だけ古くなるので、ここで突き合わせる。
 {

@@ -1,0 +1,4 @@
+# Cloudflare の管理 robots.txt（Content-Signal と AI クローラの Disallow）は
+# ダッシュボードの設定で、配信時にこのファイルの前に継ぎ足される。
+# ここには配信側が持たない行だけ置く。
+Sitemap: https://fusekishogi.com/sitemap.xml

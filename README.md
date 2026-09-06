@@ -110,6 +110,11 @@ Emscriptenはビルド環境に無いので、`wasm/dist/*` はコミットし�
 対局画面はどちらの場合も `play.html` にも置かれる（重みを載せていなかった頃のURLが
 404にならないようにするため）。
 
+`sitemap.xml`（日英6ページ、hreflang 付き）と `robots.txt` もビルドが出す。
+Cloudflare の管理 robots.txt（Content-Signal と AI クローラの Disallow。ダッシュボードの
+AI Crawl Control で決める）は配信時に `src/robots.txt` の前へ継ぎ足されるので、
+リポジトリ側は `Sitemap:` 行だけを持つ。Content-Signal の値を変えるのはダッシュボード。
+
 ## オンライン対局（worker/）
 
 静的配信は崩さない。部屋だけを別の Worker（`ws.fusekishogi.com`）に置き、ブラウザは WebSocket で
