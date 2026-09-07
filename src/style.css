@@ -1512,6 +1512,23 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .stat b { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; line-height: 1.2; }
 .stat span { font-size: .75rem; color: var(--ink-soft); }
 
+/* コラムの図。SVGはページに直接書き、色は必ずトークンか currentColor から取る。
+   片方のテーマにしか無い色を使うと、もう片方で図が消える。 */
+.page svg.fig { display: block; width: 100%; height: auto; margin: .2rem 0 0; overflow: visible; }
+.page svg.fig text { fill: currentColor; font-family: inherit; font-size: 12px; }
+.page svg.fig .t-soft { fill: var(--ink-soft); font-size: 11px; }
+.page svg.fig .t-num { font-variant-numeric: tabular-nums; }
+.page svg.fig .t-head { font-weight: 600; }
+.page svg.fig .bar { fill: currentColor; opacity: .2; }
+.page svg.fig .bar-on { fill: var(--accent); opacity: .85; }
+.page svg.fig .dot { fill: currentColor; fill-opacity: .35; }
+.page svg.fig .dot-on { fill: var(--accent); fill-opacity: .45; }
+.page svg.fig .box { fill: var(--paper-raised); stroke: var(--rule); }
+.page svg.fig .rule { stroke: var(--rule); fill: none; }
+.page svg.fig .axis { stroke: currentColor; opacity: .45; fill: none; }
+.page svg.fig .mid { stroke: var(--accent); stroke-dasharray: 3 3; opacity: .7; }
+.page svg.fig .link { stroke: currentColor; opacity: .3; fill: none; }
+
 /* hidden 属性は作者スタイルの display に負ける。詳細度が同じなら後に書いた方が、
    高ければそちらが勝つ。ここは「隠す」という一点だけの規則なので !important で押し切る。
    落とさないと、見えないまま場所を取り、クリックまで横取りする。 */

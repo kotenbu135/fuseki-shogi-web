@@ -1,88 +1,128 @@
 <h1>How Balance Shogi came to be</h1>
-<p class="lead">I trained an AI for Fuseki Shogi and Sente won far too often. This is how I stopped chasing a magic number in the rules and let the players balance the game themselves.</p>
+<p class="lead">I trained an AI for Fuseki Shogi and Sente won 60% of the time. This is how I stopped hunting for a magic number in the rules and let the players balance the game themselves.</p>
 
-<h2>1. The problem</h2>
+<h2>1. Sente wins too much</h2>
 <p>Fuseki Shogi is a variant in which both sides place 20 pieces on an empty board, one at a time, before anything moves. Instead of a single starting position there are about 10<sup>37</sup> of them. I wanted a shogi that does not feel researched to death, so I built an AI you can play in the browser: a network that places the pieces, trained by self-play, and YaneuraOu for everything from move 41 on.</p>
-<p>As the network improved, one thing became impossible to ignore. <b>Sente won too much.</b> Across all promotion gates of the training run (games between equally strong policies, 10,767 in total) Sente scored 62.1%, and more training did not bring it down.</p>
+<p>As the network improved, one thing became impossible to ignore. Sente won too much, and more training did not bring it down. Nor, it turned out, is this special to Fuseki Shogi.</p>
+<figure>
+<svg class="fig" viewBox="0 0 640 212" role="img" aria-label="Sente wins more the stronger the players are: 52 to 53 per cent among human professionals, 91 per cent in a computer shogi final, 62 per cent for the Fuseki Shogi AI.">
+<text x="230" y="36" text-anchor="end">Human professional games</text><rect x="240" y="24" width="199.5" height="16" rx="2" class="bar"/><text x="445.5" y="36" class="t-soft t-num">52–53%</text><text x="230" y="70" text-anchor="end">Fuseki Shogi AI (training games)</text><rect x="240" y="58" width="236.0" height="16" rx="2" class="bar-on"/><text x="482.0" y="70" class="t-soft t-num">62%</text><text x="230" y="104" text-anchor="end">Computer shogi, 2023 final</text><rect x="240" y="92" width="258.0" height="16" rx="2" class="bar"/><text x="504.0" y="104" class="t-soft t-num">68%</text><text x="230" y="138" text-anchor="end">Computer shogi, 2026 final</text><rect x="240" y="126" width="346.9" height="16" rx="2" class="bar"/><text x="592.9" y="138" class="t-soft t-num">91%</text><text x="230" y="172" text-anchor="end">Denryu-sen, top four</text><rect x="240" y="160" width="357.2" height="16" rx="2" class="bar"/><text x="603.2" y="172" class="t-soft t-num">94%</text>
+<path d="M430,18 V180" class="mid"/>
+<path d="M240,186 H620" class="axis"/>
+<text x="240" y="202" text-anchor="middle" class="t-soft t-num">0%</text>
+<text x="430" y="202" text-anchor="middle" class="t-soft t-num">50%</text>
+<text x="620" y="202" text-anchor="middle" class="t-soft t-num">100%</text>
+</svg>
+<figcaption>Sente&#39;s share of the wins; the dashed line is even. Human professionals are barely ahead, but between engines the advantage grows with strength. The Fuseki Shogi figure comes from 10,767 training games.</figcaption>
+</figure>
+<p>Within the same tournament the number rises from the qualifiers to the final. The advantage grows with the strength of whoever is playing, and cutting Sente&#39;s clock did not close it.</p>
 
-<h2>2. First-move advantage in ordinary shogi</h2>
-<p>This is not special to Fuseki Shogi. In professional human games Sente wins 52–53%, but the stronger the engines, the more Sente wins.</p>
+<h2>2. The rule text cannot fix it</h2>
+<p>My first instinct was to fix it in the text of the rules: restrict the first move to an edge pawn, forbid placements where pieces attack each other, reduce the number of ranks. The only change that really helped was a geometry close to ordinary shogi — place within three ranks, pawns on the third — and even that left Sente ahead.</p>
 <div class="scroll"><table>
-  <tr><th>Games</th><th class="n">Sente wins</th><th>Notes</th></tr>
-  <tr><td>Professional human games</td><td class="n">52–53%</td><td></td></tr>
-  <tr><td>World Computer Shogi Championship 2023, final</td><td class="n">67.9%</td><td></td></tr>
-  <tr><td>World Computer Shogi Championship 2026, final</td><td class="n">91.3%</td><td>excluding repetitions and impasse</td></tr>
-  <tr><td>Denryu-sen TSEC7, top four</td><td class="n">94%</td><td>even with Sente on 0 minutes vs. Gote on 10</td></tr>
+  <tr><th>Rule tried</th><th class="n">Sente wins</th><th>Notes</th></tr>
+  <tr><td>Current (four ranks, 20 pieces)</td><td class="n">62.1%</td><td>trained placement network</td></tr>
+  <tr><td>No piece may attack another</td><td class="n">62.4%</td><td>no effect</td></tr>
+  <tr><td>Three ranks, 15 pieces</td><td class="n">59.4%</td><td>random placement</td></tr>
+  <tr><td>Three ranks, pawns on the third</td><td class="n">53.8%</td><td>random placement; the best of them</td></tr>
 </table></div>
-<p>Within the same tournament the number rises from the qualifiers to the final. The advantage is <b>a function of strength</b>, and a time handicap did not close it.</p>
+<p>Removing contact or changing the ranks barely touches the core of the advantage. What is left is <b>the value of a tempo</b>, and that depends on the strength of whoever is playing, not on the geometry. A rule that looks even at one strength will be off at another.</p>
+<p>Chess also favours White, but at the top the draw rate rises and absorbs the advantage. Shogi has pieces in hand and almost no draws, so that escape route is closed. Even if I found a rule that measured 50% in my environment, nothing guarantees the same number for the newest engines. <b>A fixed rule cannot follow strength.</b> I stopped looking for a number.</p>
+<p class="note">Awkwardly, going deeper with the same engine pushed ordinary shogi down: Sente scored 54.0% at 200k nodes and 50.1% at 1M. That suggests the rising tournament figures owe more to opening books and modern evaluations than to depth alone. Either way, a rule calibrated here carries no guarantee over there.</p>
 
-<h2>3. Things I tried in the rules</h2>
-<p>My first instinct was to fix it in the text of the rules: restrict the first move to an edge pawn, forbid placements where pieces attack each other, reduce the number of ranks. Of everything I measured, the only change that helped was “place within three ranks, pawns on the third rank” — a geometry close to ordinary shogi — and even that still gave Sente 53.8% with random placement.</p>
-<p>Then it clicked. Removing contact or changing the ranks does not touch the core of the advantage. What moves is <b>the value of a tempo</b>, and that depends on the strength of whoever is playing, not on the geometry. A rule that looks like 50% at one strength will be off at another.</p>
+<h2>3. The placer and the chooser</h2>
+<p>Only one mechanism is known to stay balanced regardless of strength: <b>one player divides, the other picks first</b>. It is how two people share a cake, and it is standard in Hex and in Gomoku. Gomoku&#39;s Swap2 opening — the first player puts down two black stones and one white, the second player takes a colour — brought the first player&#39;s 67% down to about 52%.</p>
+<p>Applied naively to Fuseki Shogi it breaks. If a player may pick a camp after the placement phase, they simply build their own camp badly and take the opponent&#39;s. The one who divides is also the one who picks. That is why I had rejected the pie rule earlier.</p>
+<p>This time I added a single step at the start of the placement phase, which splits the job three ways: <b>place the kings, choose a side, build the camp</b>.</p>
+<figure>
+<svg class="fig" viewBox="0 0 640 284" role="img" aria-label="The Balance Shogi procedure. In step 1 the placer puts down both kings; in step 2 the chooser takes Sente or Gote. Steps 3 and 4 are Fuseki Shogi unchanged: 19 pieces each, then ordinary shogi from move 41.">
+<rect x="16" y="10" width="608" height="140" rx="8" class="box"/>
+<path d="M48,58 V248" class="link"/>
+<text x="608" y="30" text-anchor="end" class="t-soft">added by Balance Shogi</text>
+<circle cx="48" cy="58" r="11" class="bar-on"/><text x="48" y="62" text-anchor="middle" fill="#fff" class="t-num">1</text>
+<text x="76" y="54" class="t-head">Place both kings</text>
+<text x="76" y="72" class="t-soft">The placer. Which side they will play is not settled yet</text>
+<circle cx="48" cy="116" r="11" class="bar-on"/><text x="48" y="120" text-anchor="middle" fill="#fff" class="t-num">2</text>
+<text x="76" y="112" class="t-head">Choose a side</text>
+<text x="76" y="130" class="t-soft">The chooser. Not one piece stands in either camp</text>
+<circle cx="48" cy="192" r="11" class="bar"/><text x="48" y="196" text-anchor="middle" class="t-num">3</text>
+<text x="76" y="188" class="t-head">Place 19 pieces each, alternately</text>
+<text x="76" y="206" class="t-soft">Sente first. Unchanged from Fuseki Shogi</text>
+<circle cx="48" cy="248" r="11" class="bar"/><text x="48" y="252" text-anchor="middle" class="t-num">4</text>
+<text x="76" y="244" class="t-head">Play from move 41</text>
+<text x="76" y="262" class="t-soft">Ordinary shogi</text>
+</svg>
+<figcaption>Only the first two steps are new; the rest is Fuseki Shogi as it was.</figcaption>
+</figure>
+<p>The placer is neutral because they do not know their side; the chooser cannot sandbag because they have not built anything. Whatever advantage Sente still has is cancelled every game by the placer putting the Sente king on a slightly worse square.</p>
+<p>One pan of the scale carries the first move, the other carries king safety, and the placer has no choice but to level them. Hence Balance Shogi.</p>
 
-<h2>4. A fixed rule cannot follow strength</h2>
-<p>Chess also favours White, but at the top the draw rate rises and absorbs the advantage. Shogi has pieces in hand and almost no draws. So even if I found a rule that measured 50% in my environment (YaneuraOu with an older evaluation), it would not hold for the newest engines. I stopped looking for a number.</p>
-<p>Awkwardly, going deeper with the same engine pushed ordinary shogi <b>down</b>: Sente scored 54.0% at 200k nodes and 50.1% at 1M. That suggests the rising tournament figures owe more to opening books and modern evaluations than to depth alone. Either way, a rule calibrated here carries no guarantee over there.</p>
-
-<h2>5. Cut and choose</h2>
-<p>Only one mechanism is known to stay balanced regardless of strength: <b>one player cuts, the other chooses</b>. It is how two people share a cake, and it is standard in Hex and in Gomoku. Gomoku’s Swap2 opening — the first player puts down two black stones and one white, the second player picks a colour — brought the first player’s 67% down to about 52%.</p>
-<p>It breaks, though, when the cutter is also the one who eats. If a player may choose a camp after the placement phase, they simply build their own camp badly and take the opponent’s. That is why I had rejected the pie rule earlier.</p>
-<p>Fuseki Shogi, however, has a boundary between placing and moving, and that allows cutting, choosing and building to be separated.</p>
-<div class="roles">
-  <div><b>Cut</b>At the very start, one player places both kings, not knowing which side they will get.</div>
-  <div><b>Choose</b>The other player looks at the two kings and takes Sente or Gote. Nothing has been built yet.</div>
-  <div><b>Build</b>The remaining 19 pieces each are placed alternately, Sente first. This part is unchanged.</div>
-</div>
-<p>The cutter is neutral because they do not know their side; the chooser cannot sandbag because they have not built anything. Whatever advantage Sente still has is cancelled every game by the cutter putting the Sente king on a slightly worse square.</p>
-
-<h2>6. Why the kings</h2>
-<p>Is cutting with the kings alone enough? Do king squares carry enough value to cancel the first-move advantage? That can be measured. For every pair of squares (36 for the Sente king × 36 for the Gote king) I let the placement network finish the placement from that position and had YaneuraOu score the move-41 position — 128 rollouts per pair for the published table, about 14 minutes in total.</p>
-<div class="stat" id="stat">
-  <div><b>95 pt</b><span>range between the best and the worst pair</span></div>
-  <div><b>156 pairs</b><span>in the balanced band (50% ± error)</span></div>
-  <div><b>9.5%</b><span>Sente’s score with the worst pair, 4f·2a (400 real games)</span></div>
-  <div><b>99.5%</b><span>Sente’s score with the best pair, 5i·1d (400 real games)</span></div>
-</div>
-<p>The range is 95 percentage points — far more than the first-move advantage in this environment (about 12 points). Checked against real games (6 pairs × 400 games) the table was off by 2.2 points on average.</p>
-<p>But <b>the number of pairs in the band reflects our measurement precision, not the board.</b> The band is defined as “|V − 0.5| within the error (2·SE)”, so halving the rollouts widens the error by about 1.4× and widens the band with it. The earlier table, built with 256 rollouts per pair, had 104 pairs in its band. The jump to 156 is not the game changing. That distinction matters in the next section.</p>
+<h2>4. Are the kings enough?</h2>
+<p>Whether the kings alone suffice depends on whether king squares carry enough value to cancel the first-move advantage. That can be measured. For every pair of squares — 36 for the Sente king by 36 for the Gote king — I let the placement network finish the placement and had the engine score the move-41 position.</p>
 <figure>
   <div class="heat" id="heat"></div>
-  <figcaption>Value of each king square in winning-rate points from Sente’s point of view. Left: the Sente king; right: the Gote king. Positive favours Sente, negative favours Gote. For both kings the front rank is the worst and the back-rank corners are the best. Drawn from the published table <code>{{king_table}}</code>.</figcaption>
+  <figcaption>The value of each king square, in win-rate points from Sente&#39;s side. Sente&#39;s king on the left, Gote&#39;s on the right; positive favours Sente. Drawn from the published table <code>{{king_table}}</code>.</figcaption>
 </figure>
-<p>A king on the front rank (closest to the opponent) loses a lot; a back-rank corner is best. This table is exactly what the AI’s placer and chooser consult.</p>
+<p>A king on the front rank, closest to the opponent, is a heavy loss; the corner of the back rank is best. The gap between the best and worst pair is 95 points, several times the first-move advantage. <b>The kings are enough, with room to spare.</b> The site&#39;s AI reads this table both when placing and when choosing.</p>
 
-<h2>7. Does it actually balance?</h2>
-<p>Games between AIs that both consult the same table, with YaneuraOu at 200k nodes from move 41 on both sides.</p>
-<div class="scroll"><table>
-  <tr><th>How the placer picks</th><th class="n">Games</th><th class="n">Sente wins</th><th class="n">Placer wins</th></tr>
-  <tr><td>at random (36×36)</td><td class="n">800</td><td class="n">64.5%</td><td class="n">23.8% ± 1.5</td></tr>
-  <tr><td>uniformly from the 156-pair band</td><td class="n">4,000</td><td class="n">49.9%</td><td class="n">46.3% ± 0.8</td></tr>
-  <tr><td>from the 21 most balanced pairs</td><td class="n">4,200</td><td class="n">50.2%</td><td class="n">49.2% ± 0.8</td></tr>
-</table></div>
-<p>A placer who does not think about the kings loses three games in four. The design goal — the only way for the placer not to lose out is to balance the kings — shows up directly in the numbers.</p>
-<p>But <b>drawing uniformly from the band scored only 46.3% over 4,000 games.</b> That is 3.7 points to the chooser, 4.6 times the standard error: too large to be chance.</p>
-<p>The cause was the width of the band. As the previous section notes, most of that width is our own measurement error — ±4.4 points in the published table. Draw uniformly from it and you hand over a pair that is tilted by 3 points on average, and <b>the chooser only has to read the sign.</b> What was unbalanced was neither the rule nor the geometry of the kings, but the way the placer drew. There is no reason for the placer to use room that measurement error opened up.</p>
-<p>So the placer now draws from the <b>21 pairs inside the design tolerance (±1 point)</b> rather than the whole 156-pair band. Over 4,200 games the placer scored 49.2% ± 0.8 — 1.0σ from the null point, no longer distinguishable. With 21 pairs across 11 classes, the kings still differ from game to game.</p>
-<p>It is not perfect. The table calls all 21 of those pairs “50.0%”, yet real games spread them from 43.0% to 56.5%. Subtracting sampling error leaves about 1.6 points of genuine error in the table. <b>Part of why this looks balanced is that the placer and the chooser read the same table.</b> A chooser with a better table could exploit that residue. The precision of the table is the ceiling on fairness.</p>
+<h2>5. How do you measure balance?</h2>
+<p>Here I was wrong for a long time. <b>I was looking at the placer&#39;s win rate</b>, and treating a number near 50% as balanced.</p>
+<p>That measures nothing. The placer&#39;s score moves with the quality of the opponent&#39;s choice: against a poor chooser the placer comes out ahead, against a good one behind. In fact the table whose placer win rate looked closest to even turned out to be the most exploitable of the three I tried.</p>
+<p>The right question is <b>how much a chooser playing perfectly can take</b>. Handed one pair of king squares, there is really only one thing for the chooser to do.</p>
+<figure>
+<svg class="fig" viewBox="0 0 640 112" role="img" aria-label="If a pair of king squares sits to the right of even, the chooser takes Sente. The distance from even is exactly what the chooser gains.">
+<text x="60" y="22" class="t-head">Sente&#39;s win rate for one pair of king squares</text>
+<path d="M60,76 H580" class="axis"/>
+<text x="60" y="96" text-anchor="middle" class="t-soft t-num">30%</text><path d="M60,76 v6" class="axis"/><text x="190" y="96" text-anchor="middle" class="t-soft t-num">40%</text><path d="M190,76 v6" class="axis"/><text x="320" y="96" text-anchor="middle" class="t-soft t-num">50%</text><path d="M320,76 v6" class="axis"/><text x="450" y="96" text-anchor="middle" class="t-soft t-num">60%</text><path d="M450,76 v6" class="axis"/><text x="580" y="96" text-anchor="middle" class="t-soft t-num">70%</text><path d="M580,76 v6" class="axis"/>
+<path d="M320,34 V88" class="mid"/>
+<path d="M320,52 V46 H411 V52" class="axis"/>
+<text x="365" y="40" text-anchor="middle" class="t-soft">what the chooser takes</text>
+<circle cx="411" cy="76" r="6" class="bar-on"/>
+<text x="424" y="80" class="t-soft">this pair</text>
+</svg>
+<figcaption>Which side of even the pair falls on, and by how much. The chooser only has to read the sign and take the better side.</figcaption>
+</figure>
+<p>Whatever the gap is, the chooser collects it. Nothing the placer does afterwards changes that distance — and balance means making it small. The placer&#39;s win rate is no way to measure it.</p>
 
-<h2>8. The name</h2>
-<p>One player places both kings, the other takes whichever they prefer. On one pan of the scale sits the first move, on the other the safety of the kings, and the placer has no choice but to balance them. Hence <b>Balance Shogi</b> — in Japanese <em>tenbin shōgi</em> (天秤将棋), “scale shogi”.</p>
+<h2>6. Fixing the yardstick</h2>
+<p>Measured that way, the pairs the placer was handing over were not balanced at all.</p>
+<p>The fault lay not in the geometry of the kings but in the <b>yardstick</b> the table used. I was scoring the move-41 position with the engine&#39;s evaluation and converting it to a win rate through a formula that had no justification behind it. Calibrated against actual results, the conversion had been reading Sente far too high. That fixed the tilt.</p>
+<p>The scatter between pairs remained. Scoring is a proxy; it never looks at balance directly. So I <b>dropped the scoring and put tens of thousands of real games into the table instead</b>, playing the candidates out and re-picking the 48 pairs closest to even.</p>
+<figure>
+<svg class="fig" viewBox="0 0 640 190" role="img" aria-label="The 48 pairs picked by the table's prediction scatter from 34 to 64 per cent in real games. The 48 re-picked from real games sit between 44 and 56 per cent.">
+<text x="60" y="38" class="t-head">48 pairs picked by the table&#39;s prediction</text>
+<text x="580" y="38" text-anchor="end" class="t-soft t-num">mean gap from even 6.6pt</text>
+<path d="M60,62 H580" class="axis"/>
+<g class="dot"><circle cx="115.9" cy="62" r="4.5"/><circle cx="118.5" cy="62" r="4.5"/><circle cx="154.9" cy="62" r="4.5"/><circle cx="161.4" cy="62" r="4.5"/><circle cx="179.6" cy="62" r="4.5"/><circle cx="179.6" cy="62" r="4.5"/><circle cx="192.6" cy="62" r="4.5"/><circle cx="197.8" cy="62" r="4.5"/><circle cx="197.8" cy="62" r="4.5"/><circle cx="206.9" cy="62" r="4.5"/><circle cx="208.2" cy="62" r="4.5"/><circle cx="209.5" cy="62" r="4.5"/><circle cx="219.9" cy="62" r="4.5"/><circle cx="222.5" cy="62" r="4.5"/><circle cx="232.9" cy="62" r="4.5"/><circle cx="234.2" cy="62" r="4.5"/><circle cx="235.5" cy="62" r="4.5"/><circle cx="240.7" cy="62" r="4.5"/><circle cx="249.8" cy="62" r="4.5"/><circle cx="264.1" cy="62" r="4.5"/><circle cx="266.7" cy="62" r="4.5"/><circle cx="268.0" cy="62" r="4.5"/><circle cx="283.6" cy="62" r="4.5"/><circle cx="294.0" cy="62" r="4.5"/><circle cx="300.5" cy="62" r="4.5"/><circle cx="305.7" cy="62" r="4.5"/><circle cx="307.0" cy="62" r="4.5"/><circle cx="314.8" cy="62" r="4.5"/><circle cx="322.6" cy="62" r="4.5"/><circle cx="326.5" cy="62" r="4.5"/><circle cx="333.0" cy="62" r="4.5"/><circle cx="338.2" cy="62" r="4.5"/><circle cx="339.5" cy="62" r="4.5"/><circle cx="343.4" cy="62" r="4.5"/><circle cx="348.6" cy="62" r="4.5"/><circle cx="364.2" cy="62" r="4.5"/><circle cx="370.7" cy="62" r="4.5"/><circle cx="373.3" cy="62" r="4.5"/><circle cx="392.8" cy="62" r="4.5"/><circle cx="395.4" cy="62" r="4.5"/><circle cx="404.5" cy="62" r="4.5"/><circle cx="433.1" cy="62" r="4.5"/><circle cx="455.2" cy="62" r="4.5"/><circle cx="459.1" cy="62" r="4.5"/><circle cx="460.4" cy="62" r="4.5"/><circle cx="485.1" cy="62" r="4.5"/><circle cx="492.9" cy="62" r="4.5"/><circle cx="498.1" cy="62" r="4.5"/></g>
+<text x="60" y="108" class="t-head">48 pairs re-picked from real games</text>
+<text x="580" y="108" text-anchor="end" class="t-soft t-num">same, 3.1pt</text>
+<path d="M60,132 H580" class="axis"/>
+<g class="dot-on"><circle cx="240.7" cy="132" r="4.5"/><circle cx="243.3" cy="132" r="4.5"/><circle cx="244.6" cy="132" r="4.5"/><circle cx="244.6" cy="132" r="4.5"/><circle cx="249.8" cy="132" r="4.5"/><circle cx="253.7" cy="132" r="4.5"/><circle cx="255.0" cy="132" r="4.5"/><circle cx="255.0" cy="132" r="4.5"/><circle cx="262.8" cy="132" r="4.5"/><circle cx="264.1" cy="132" r="4.5"/><circle cx="266.7" cy="132" r="4.5"/><circle cx="268.0" cy="132" r="4.5"/><circle cx="275.8" cy="132" r="4.5"/><circle cx="278.4" cy="132" r="4.5"/><circle cx="279.7" cy="132" r="4.5"/><circle cx="283.6" cy="132" r="4.5"/><circle cx="286.2" cy="132" r="4.5"/><circle cx="294.0" cy="132" r="4.5"/><circle cx="297.9" cy="132" r="4.5"/><circle cx="300.5" cy="132" r="4.5"/><circle cx="301.8" cy="132" r="4.5"/><circle cx="305.7" cy="132" r="4.5"/><circle cx="307.0" cy="132" r="4.5"/><circle cx="314.8" cy="132" r="4.5"/><circle cx="322.6" cy="132" r="4.5"/><circle cx="322.6" cy="132" r="4.5"/><circle cx="326.5" cy="132" r="4.5"/><circle cx="330.4" cy="132" r="4.5"/><circle cx="331.7" cy="132" r="4.5"/><circle cx="333.0" cy="132" r="4.5"/><circle cx="336.9" cy="132" r="4.5"/><circle cx="338.2" cy="132" r="4.5"/><circle cx="338.2" cy="132" r="4.5"/><circle cx="339.5" cy="132" r="4.5"/><circle cx="343.4" cy="132" r="4.5"/><circle cx="343.4" cy="132" r="4.5"/><circle cx="347.3" cy="132" r="4.5"/><circle cx="348.6" cy="132" r="4.5"/><circle cx="360.3" cy="132" r="4.5"/><circle cx="364.2" cy="132" r="4.5"/><circle cx="364.2" cy="132" r="4.5"/><circle cx="370.7" cy="132" r="4.5"/><circle cx="372.0" cy="132" r="4.5"/><circle cx="373.3" cy="132" r="4.5"/><circle cx="392.8" cy="132" r="4.5"/><circle cx="395.4" cy="132" r="4.5"/><circle cx="398.0" cy="132" r="4.5"/><circle cx="399.3" cy="132" r="4.5"/></g>
+<path d="M320,44 V152" class="mid"/>
+<path d="M60,158 H580" class="axis"/>
+<text x="60" y="177" text-anchor="middle" class="t-soft t-num">30%</text><path d="M60,158 v9" class="axis"/><text x="190" y="177" text-anchor="middle" class="t-soft t-num">40%</text><path d="M190,158 v9" class="axis"/><text x="320" y="177" text-anchor="middle" class="t-soft t-num">50%</text><path d="M320,158 v9" class="axis"/><text x="450" y="177" text-anchor="middle" class="t-soft t-num">60%</text><path d="M450,158 v9" class="axis"/><text x="580" y="177" text-anchor="middle" class="t-soft t-num">70%</text><path d="M580,158 v9" class="axis"/>
+</svg>
+<figcaption>One dot is one pair of king squares, placed at that pair&#39;s actual Sente win rate; the dashed line is even. Both rows are 48 pairs, each played out over 600 games or more (September 2026). The top row is what the table predicted would be balanced.</figcaption>
+</figure>
+<p>What the chooser can take is exactly how far the dots sit from the dashed line. <b>Halve the scatter and you halve the take.</b></p>
+<p class="note">The re-picked 48 were measured on the same games that selected them, so 3.1pt is an optimistic bound: select on a sample and score on the same sample and everything looks more balanced than it is. Confirmation on fresh games is under way.</p>
 
-<h2>9. What comes next</h2>
-<ul>
-  <li><b>The placement network has now been retrained under Balance Shogi.</b> Around a hundred generations made the policy clearly stronger, yet the width of the balanced band barely moved: 90.7 → 86.9 points. The structure of the balance does not seem to follow the strength of the policy. The table and the network are still updated as a pair.</li>
-  <li>Making the table more precise. Most of the band’s width comes from the rollout count, and so does the ceiling on fairness (about 1.6 points).</li>
-  <li>The newest engines have a much larger first-move advantage. If the kings alone stop being enough, the cut widens to “king and rook”.</li>
-  <li>A third option in the style of Gomoku’s Swap2: instead of choosing, add one piece to each camp and hand the choice back. Then a cutter cannot impose a placement only they have studied.</li>
-</ul>
+<h2>7. The placer cannot win</h2>
+<p>This mechanism has a ceiling that no measurement can move.</p>
+<p>A game that is finite, has no chance, and shows both players everything is <b>determined</b> (Zermelo&#39;s theorem, 1913): either the first player can force a win, or the second can, or both can force a draw. We may not know which, but we know it is one of them.</p>
+<p>Fix one pair of king squares and what follows is an ordinary perfect-information game, so that pair has one of those three values. The chooser reads the value and takes the winning side — Sente if the pair is a Sente win, Gote if it is a Gote win. <b>All the placer can do is look for a drawn pair. There is no path to a win anywhere.</b></p>
+<p>So the value of perfectly solved Balance Shogi is either a draw or a win for the chooser; a win for the placer cannot happen. Hex, which has the same mechanism and no draws, is settled: the chooser wins, proven. Shogi keeps repetition and impasse, and that is where the possibility of a genuine draw survives.</p>
+<p>This is not a design failure but something no rule can escape. Ordinary shogi is in the same position: if Sente can force a win, the toss decides the game. What you can aim at is not erasing the value but <b>making the difference invisible at the strengths people actually play at</b>. The whole job of Balance Shogi is to shrink the tilt of the pairs the placer hands over until neither a human nor an engine can see it. The precision of the table is the ceiling on fairness.</p>
+<p>The strongest engines show a larger first-move advantage still. If the kings stop being enough, there is room to widen what gets placed from the kings to the kings and rooks.</p>
 
 <h2>Sources</h2>
 <ul>
-  <li><a href="https://yaneuraou.yaneu.com/2026/07/23/shogi-ai-black-win-rate-94-percent/">Shogi AI tournaments reach a 94% first-player win rate</a> (YaneuraOu blog, Japanese)</li>
-  <li><a href="https://yaneuraou.yaneu.com/2023/12/22/first-player-advantage-in-shogi-ai/">How large is the first-player advantage among shogi AIs?</a> (YaneuraOu blog, Japanese)</li>
-  <li><a href="https://ykakinoki.hateblo.jp/entry/2026/05/09/032700">Win rates and openings at the 36th World Computer Shogi Championship</a> (Japanese)</li>
+  <li><a href="https://yaneuraou.yaneu.com/2026/07/23/shogi-ai-black-win-rate-94-percent/">Sente now wins 94% in shogi AI tournaments</a> (YaneuraOu, in Japanese)</li>
+  <li><a href="https://yaneuraou.yaneu.com/2023/12/22/first-player-advantage-in-shogi-ai/">How large is the first-move advantage in shogi AI today?</a> (YaneuraOu, in Japanese)</li>
+  <li><a href="https://ykakinoki.hateblo.jp/entry/2026/05/09/032700">Win rates and openings at the 36th World Computer Shogi Championship</a> (in Japanese)</li>
   <li><a href="https://en.wikipedia.org/wiki/Pie_rule">Pie rule</a>, <a href="https://en.wikipedia.org/wiki/Swap_opening_rule">Swap opening rule</a> (Wikipedia)</li>
   <li><a href="https://en.wikipedia.org/wiki/First-move_advantage_in_chess">First-move advantage in chess</a> (Wikipedia)</li>
+  <li><a href="https://en.wikipedia.org/wiki/Zermelo%27s_theorem_(game_theory)">Zermelo&#39;s theorem</a>, <a href="https://en.wikipedia.org/wiki/Hex_(board_game)">Hex</a> (Wikipedia)</li>
 </ul>
 
 <script type="module">
