@@ -32,7 +32,7 @@ const ASSETS = {
     ? 'fuseki_degct_b3_iter1177.onnx' : __MODEL_FILE__}`, import.meta.url).href,
   // 天秤将棋の価値表（src/kings.js）。重みと世代が対（build.mjs の KING_TABLE）。
   kingTable: new URL(`./models/${typeof __KING_TABLE_FILE__ === 'undefined'
-    ? 'king_pairs_iter1177.json' : __KING_TABLE_FILE__}`, import.meta.url).href,
+    ? 'king_pairs_iter1177_games.json' : __KING_TABLE_FILE__}`, import.meta.url).href,
   yaneuraou: new URL('./vendor/yaneuraou/yaneuraou.k-p.js', import.meta.url).href,
 };
 

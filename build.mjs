@@ -107,7 +107,7 @@ else if (custom) console.warn(`--model: ${path.basename(OUT)}/models/${MODEL} �
 // 天秤将棋の価値表（src/kings.js）。公開重みのロールアウトをやねうら王で採点した
 // もので、GCT由来の値は含まない（models/README.md）。重みと世代が対になっており、
 // --model で別の重みを当てたときは src/kings.js の照合が落として、そのモードだけ閉じる。
-const KING_TABLE = 'king_pairs_iter1177.json';
+const KING_TABLE = 'king_pairs_iter1177_games.json';
 
 // オンライン対局の部屋（worker/）の URL。手元で wrangler dev に向けるときは
 //   node build.mjs --rooms http://localhost:8787
