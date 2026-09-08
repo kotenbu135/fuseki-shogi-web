@@ -60,7 +60,7 @@
 <h2>4. 玉だけで足りるか</h2>
 <p>玉だけで足りるかどうかは、玉の置き場に先手の利を打ち消せるだけの幅があるかで決まる。これは測れるので測った。先手玉36マス × 後手玉36マスの組それぞれについて、両玉を置いた局面から布石ネットに残りを置かせ、41手目の局面を採点する。</p>
 <figure>
-  <div class="heat" id="heat"></div>
+  <div class="heat" id="heat" data-table="{{king_table}}" data-black="先手玉（先手陣、下が最下段）" data-white="後手玉（後手陣、上が最下段）" data-low="後手に有利" data-high="先手に有利" data-error="表を読み込めなかった"></div>
   <figcaption>玉のマスの価値（勝率ポイント、先手から見た値）。左が先手玉、右が後手玉。正なら先手に有利、負なら後手に有利。公開している表 <code>{{king_table}}</code> から描いている。</figcaption>
 </figure>
 <p>最前段（相手に近い段）に玉を置くと大きく損をし、隅の最下段がいちばん良い。最良の組と最悪の組の差は 95 ポイントあり、先手の利の何倍もある。<b>玉だけで釣り合わせて、まだ余る。</b>サイトのAIは、置く人も選ぶ人もこの表を引いて判断している。</p>
@@ -125,51 +125,4 @@
   <li><a href="https://en.wikipedia.org/wiki/Zermelo%27s_theorem_(game_theory)">Zermeloの定理</a>、<a href="https://en.wikipedia.org/wiki/Hex_(board_game)">Hex</a>（Wikipedia）</li>
 </ul>
 
-<script type="module">
-// 両玉の価値表のヒートマップ。公開している表（models/）をそのまま読む。
-// 表を作り直せば、このページも追従する。
-const el = document.getElementById('heat');
-try {
-  const d = await (await fetch('/models/{{king_table}}')).json();
-  const boards = [
-    { title: '先手玉（先手陣、下が最下段）', vals: d.black_king_value_pt, ranks: ['f', 'g', 'h', 'i'] },
-    { title: '後手玉（後手陣、上が最下段）', vals: d.white_king_value_pt, ranks: ['a', 'b', 'c', 'd'] },
-  ];
-  const lim = 50;
-  const color = v => {
-    const x = Math.max(-1, Math.min(1, v / lim));
-    // 青（後手に有利）〜 紙 〜 朱（先手に有利）
-    const mix = (a, b, t) => a.map((c, i) => Math.round(c + (b[i] - c) * t));
-    const paper = [244, 242, 234], blue = [78, 121, 196], red = [217, 84, 45];
-    const c = x < 0 ? mix(paper, blue, -x) : mix(paper, red, x);
-    return `rgb(${c.join(',')})`;
-  };
-  for (const b of boards) {
-    const box = document.createElement('div');
-    box.className = 'heat-board';
-    const title = document.createElement('div');
-    title.className = 'heat-title';
-    title.textContent = b.title;
-    const grid = document.createElement('div');
-    grid.className = 'heat-grid';
-    for (const r of b.ranks) for (let f = 9; f >= 1; f--) {
-      const v = b.vals[`${f}${r}`];
-      const cell = document.createElement('div');
-      cell.className = 'heat-cell';
-      cell.style.background = color(v);
-      cell.style.color = Math.abs(v) > 30 ? '#fff' : '#1d1b16';
-      cell.textContent = v > 0 ? `+${Math.round(v)}` : String(Math.round(v));
-      cell.title = `${f}${r}: ${v.toFixed(1)}pt`;
-      grid.appendChild(cell);
-    }
-    box.append(title, grid);
-    el.appendChild(box);
-  }
-  const scale = document.createElement('div');
-  scale.className = 'heat-scale';
-  scale.innerHTML = `<span>後手に有利 −${lim}</span><i></i><span>+${lim} 先手に有利</span>`;
-  el.after(scale);
-} catch (e) {
-  el.textContent = '表を読み込めなかった: ' + e.message;
-}
-</script>
+<script type="module" src="/heat.js"></script>

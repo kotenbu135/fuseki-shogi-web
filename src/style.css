@@ -1128,13 +1128,24 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .status-sub:empty { display: none; }
 /* 玉を置く・先後を選ぶあいだは説明が長い。行数の上限を緩め、下に天秤の図を出す。 */
 .status.scale .status-sub { -webkit-line-clamp: 4; }
+/* 天秤の図。前の版は梁が細い線・支柱が縦線・皿が枠だけで、天秤に見えるまで時間が
+   かかった（実際にそう言われた）。天秤だと形で分かるのは次の4つなので、全部描く。
+     ・三角の台に梁が載っている（傾く道具だと分かる）
+     ・支点の軸受け
+     ・皿が鎖で梁から吊り下がっている（V字の2本）
+     ・皿の上に錘が載っている
+   錘は塗り＝先手・白抜き＝後手で、盤の印（☗☖）と同じ約束にしてある。 */
 .scale-fig { display: block; width: 100%; max-width: 18rem; height: auto; margin: .4rem auto 0; }
 .scale-fig[hidden] { display: none; }
 .scale-fig path { fill: none; stroke: var(--ink-soft); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.scale-fig .frame path { stroke: var(--ink-soft); }
-.scale-fig .frame .fill { fill: var(--ink-soft); }
-.scale-fig .beam { stroke: var(--ink); stroke-width: 2; }
-.scale-fig .pan { fill: var(--paper); stroke: var(--ink); stroke-width: 1.2; }
+.scale-fig .stand { fill: var(--ink-soft); stroke: none; }
+.scale-fig .beam { stroke: var(--ink); stroke-width: 2.5; }
+.scale-fig .pivot { fill: var(--ink); stroke: none; }
+.scale-fig .chain { stroke: var(--ink-soft); stroke-width: 1.1; }
+.scale-fig .pan { fill: var(--paper-raised); stroke: var(--ink); stroke-width: 1.4; }
+.scale-fig .weight { stroke: var(--ink); stroke-width: 1.2; }
+.scale-fig .weight.solid { fill: var(--ink); }
+.scale-fig .weight.hollow { fill: var(--paper-raised); }
 .scale-fig text { fill: var(--ink-soft); font-family: var(--sans); font-size: 10.5px; text-anchor: middle; }
 .scale-fig text.h { fill: var(--ink); font-size: 12.5px; font-weight: 700; }
 
@@ -1528,6 +1539,181 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .page svg.fig .axis { stroke: currentColor; opacity: .45; fill: none; }
 .page svg.fig .mid { stroke: var(--accent); stroke-dasharray: 3 3; opacity: .7; }
 .page svg.fig .link { stroke: currentColor; opacity: .3; fill: none; }
+
+/* ---- ルールの図（盤・駒の帯・手順） ----
+
+   盤図は shogiground を使わない。対局盤は状態を持つ部品で、静的な図に持ち込むと
+   JSが要る。ここは 9×9 のCSSグリッドで、マス目を背景の格子で描き、駒だけを置く。
+   駒は対局盤とまったく同じ <piece class="sente pawn"> の絵（pieces/*.svg）なので、
+   図と実物で駒が食い違わない。置き場所は筋 .f1〜.f9 と段 .r1〜.r9 のクラスで、
+   盤の座標のまま書ける（例: 5八の先手玉は class="sente king f5 r8"）。
+   インラインの style= は使えない（CSPの style-src が 'self' のみ）ので、
+   位置も色もすべてクラスで持つ。 */
+
+.diag {
+  container-type: inline-size;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  grid-template-rows: repeat(9, 1fr);
+  aspect-ratio: 1;
+  background-color: var(--board);
+  background-image:
+    repeating-linear-gradient(to right, color-mix(in srgb, var(--line) 65%, transparent) 0 1px, transparent 1px calc(100% / 9)),
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--line) 65%, transparent) 0 1px, transparent 1px calc(100% / 9));
+  border: 2px solid var(--board-edge);
+  border-radius: 2px;
+}
+/* 自陣4段だけを描く図（二歩の禁じ手）。段は6〜9のまま書けるように読み替える。 */
+.diag.camp {
+  grid-template-rows: repeat(4, 1fr);
+  aspect-ratio: 9 / 4;
+  background-image:
+    repeating-linear-gradient(to right, color-mix(in srgb, var(--line) 65%, transparent) 0 1px, transparent 1px calc(100% / 9)),
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--line) 65%, transparent) 0 1px, transparent 1px calc(100% / 4));
+}
+.diag.camp .r6 { grid-row: 1; }
+.diag.camp .r7 { grid-row: 2; }
+.diag.camp .r8 { grid-row: 3; }
+.diag.camp .r9 { grid-row: 4; }
+
+.diag .f9 { grid-column: 1; }
+.diag .f8 { grid-column: 2; }
+.diag .f7 { grid-column: 3; }
+.diag .f6 { grid-column: 4; }
+.diag .f5 { grid-column: 5; }
+.diag .f4 { grid-column: 6; }
+.diag .f3 { grid-column: 7; }
+.diag .f2 { grid-column: 8; }
+.diag .f1 { grid-column: 9; }
+.diag .r1 { grid-row: 1; }
+.diag .r2 { grid-row: 2; }
+.diag .r3 { grid-row: 3; }
+.diag .r4 { grid-row: 4; }
+.diag .r5 { grid-row: 5; }
+.diag .r6 { grid-row: 6; }
+.diag .r7 { grid-row: 7; }
+.diag .r8 { grid-row: 8; }
+.diag .r9 { grid-row: 9; }
+
+/* 図の駒は掴めない。対局盤の piece は cursor:pointer なので戻す。 */
+.diag piece { width: 100%; height: 100%; cursor: default; }
+
+/* 打てる範囲の塗り。先手は朱、後手は墨（サイトの約束＝塗りが先手）。 */
+.diag .zone {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2%;
+}
+.diag .zone.b { grid-row: 6 / 10; background: color-mix(in srgb, var(--accent) 26%, transparent); }
+.diag .zone.w { grid-row: 1 / 5; background: color-mix(in srgb, var(--ink) 17%, transparent); }
+.diag .zone span {
+  font-size: 3.4cqi;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: #2a2018;
+  background: color-mix(in srgb, #fffdf8 82%, transparent);
+  border-radius: 3px;
+  padding: .15em .5em;
+  text-align: center;
+}
+
+/* 升の印。✕（打てない）・○（打てる）・輪（注目）。 */
+.diag .mk {
+  display: grid;
+  place-items: center;
+  font-size: 7.5cqi;
+  font-weight: 700;
+  line-height: 1;
+  /* 盤（朱でも墨でもない橙）の上に置くので、紙色の縁で浮かせる。 */
+  text-shadow: 0 0 .18em #fffdf8, 0 0 .35em #fffdf8, 0 0 .5em #fffdf8;
+}
+.diag .mk.bad { color: var(--accent); }
+.diag .mk.ok { color: var(--ok); }
+
+/* 利きの線。盤と同じ 9×9（自陣図は 9×4）の座標で引く。 */
+.diag .rays { grid-area: 1 / 1 / -1 / -1; width: 100%; height: 100%; pointer-events: none; }
+.diag .rays path { fill: none; stroke: var(--accent); stroke-width: .1; stroke-linecap: round; opacity: .9; }
+.diag .rays .head { fill: var(--accent); stroke: none; opacity: .9; }
+
+.page figure > .diag { max-width: 22rem; margin-inline: auto; }
+
+/* 図を横に並べる枠。狭い画面では縦に積む。 */
+.page .diag-row { display: grid; gap: .9rem; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); align-items: start; }
+.page .diag-row > figure { margin: 0; }
+.page .diag-row h4 { margin: 0 0 .3rem; font-size: .82rem; font-weight: 600; }
+.page .diag-row h4 .tag,
+.page figcaption .tag { font-weight: 700; margin-right: .15em; }
+.page .diag-row h4 .tag.bad,
+.page figcaption .tag.bad { color: var(--accent); }
+.page .diag-row h4 .tag.ok,
+.page figcaption .tag.ok { color: var(--ok); }
+
+/* 打つ20枚の内訳。駒の絵をそのまま並べ、枚数を下に置く。 */
+.page .piece-set { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; padding: 0; list-style: none; }
+.page .piece-set li {
+  margin: 0;
+  display: grid;
+  justify-items: center;
+  gap: .1rem;
+  padding: .4rem .3rem .3rem;
+  min-width: 3.2rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.page .piece-set piece { width: 2rem; height: 2rem; cursor: default; }
+.page .piece-set b { font-size: .8rem; font-variant-numeric: tabular-nums; }
+.page .piece-set li.total {
+  align-content: center;
+  padding-inline: .7rem;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper-raised));
+}
+.page .piece-set li.total b { font-family: var(--serif); font-size: 1.4rem; line-height: 1.1; }
+.page .piece-set li.total span { font-size: .7rem; color: var(--ink-soft); }
+
+/* 天秤将棋の手順。ミニ盤を役の札つきで並べる。 */
+.page .steps { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); margin: .8rem 0; padding: 0; list-style: none; }
+.page .steps > li { display: grid; gap: .3rem; align-content: start; margin: 0; }
+.page .steps .who {
+  justify-self: start;
+  font-size: .68rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  padding: .1rem .45rem;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  color: var(--ink-soft);
+}
+.page .steps .who.place { color: var(--paper-raised); background: var(--ink); border-color: var(--ink); }
+.page .steps .who.pick { color: var(--paper-raised); background: var(--accent); border-color: var(--accent); }
+.page .steps .what { font-size: .82rem; font-weight: 600; line-height: 1.5; }
+.page .steps .what em { font-style: normal; color: var(--ink-soft); font-weight: 400; }
+/* 先後の2択。手順3は局面が変わらないので、盤の下に札だけを出す。 */
+.page .steps .pick-row { display: flex; gap: .3rem; }
+.page .steps .pick-row span {
+  flex: 1;
+  text-align: center;
+  padding: .3rem .2rem;
+  font-size: .76rem;
+  font-weight: 600;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
+.page .steps .pick-row span.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* 天秤の図（対局画面の #scale-fig と同じ絵）。文章のページでは常に出す。 */
+.page .scale-fig { max-width: 22rem; margin: .6rem auto 0; }
+
+/* 棋譜の分解。1文字ずつに意味の札を付ける。 */
+.page .usi { display: flex; gap: .35rem; align-items: flex-start; margin: .6rem 0; flex-wrap: wrap; }
+.page .usi > div { display: grid; justify-items: center; gap: .25rem; }
+.page .usi code { font-size: 1.15rem; padding: .2em .45em; background: var(--paper-raised); border: 1px solid var(--rule); }
+.page .usi span { font-size: .72rem; color: var(--ink-soft); text-align: center; line-height: 1.4; }
 
 /* hidden 属性は作者スタイルの display に負ける。詳細度が同じなら後に書いた方が、
    高ければそちらが勝つ。ここは「隠す」という一点だけの規則なので !important で押し切る。

@@ -60,7 +60,7 @@
 <h2>4. Are the kings enough?</h2>
 <p>Whether the kings alone suffice depends on whether king squares carry enough value to cancel the first-move advantage. That can be measured. For every pair of squares — 36 for the Sente king by 36 for the Gote king — I let the placement network finish the placement and had the engine score the move-41 position.</p>
 <figure>
-  <div class="heat" id="heat"></div>
+  <div class="heat" id="heat" data-table="{{king_table}}" data-black="Sente king (Sente’s camp, back rank at the bottom)" data-white="Gote king (Gote’s camp, back rank at the top)" data-low="favours Gote" data-high="favours Sente" data-error="Could not load the table"></div>
   <figcaption>The value of each king square, in win-rate points from Sente&#39;s side. Sente&#39;s king on the left, Gote&#39;s on the right; positive favours Sente. Drawn from the published table <code>{{king_table}}</code>.</figcaption>
 </figure>
 <p>A king on the front rank, closest to the opponent, is a heavy loss; the corner of the back rank is best. The gap between the best and worst pair is 95 points, several times the first-move advantage. <b>The kings are enough, with room to spare.</b> The site&#39;s AI reads this table both when placing and when choosing.</p>
@@ -125,50 +125,4 @@
   <li><a href="https://en.wikipedia.org/wiki/Zermelo%27s_theorem_(game_theory)">Zermelo&#39;s theorem</a>, <a href="https://en.wikipedia.org/wiki/Hex_(board_game)">Hex</a> (Wikipedia)</li>
 </ul>
 
-<script type="module">
-// Heat map of the king-pair value table, read straight from the published table in models/.
-// Rebuild the table and this page follows.
-const el = document.getElementById('heat');
-try {
-  const d = await (await fetch('/models/{{king_table}}')).json();
-  const boards = [
-    { title: 'Sente king (Sente’s camp, back rank at the bottom)', vals: d.black_king_value_pt, ranks: ['f', 'g', 'h', 'i'] },
-    { title: 'Gote king (Gote’s camp, back rank at the top)', vals: d.white_king_value_pt, ranks: ['a', 'b', 'c', 'd'] },
-  ];
-  const lim = 50;
-  const color = v => {
-    const x = Math.max(-1, Math.min(1, v / lim));
-    const mix = (a, b, t) => a.map((c, i) => Math.round(c + (b[i] - c) * t));
-    const paper = [244, 242, 234], blue = [78, 121, 196], red = [217, 84, 45];
-    const c = x < 0 ? mix(paper, blue, -x) : mix(paper, red, x);
-    return `rgb(${c.join(',')})`;
-  };
-  for (const b of boards) {
-    const box = document.createElement('div');
-    box.className = 'heat-board';
-    const title = document.createElement('div');
-    title.className = 'heat-title';
-    title.textContent = b.title;
-    const grid = document.createElement('div');
-    grid.className = 'heat-grid';
-    for (const r of b.ranks) for (let f = 9; f >= 1; f--) {
-      const v = b.vals[`${f}${r}`];
-      const cell = document.createElement('div');
-      cell.className = 'heat-cell';
-      cell.style.background = color(v);
-      cell.style.color = Math.abs(v) > 30 ? '#fff' : '#1d1b16';
-      cell.textContent = v > 0 ? `+${Math.round(v)}` : String(Math.round(v));
-      cell.title = `${f}${r}: ${v.toFixed(1)} pt`;
-      grid.appendChild(cell);
-    }
-    box.append(title, grid);
-    el.appendChild(box);
-  }
-  const scale = document.createElement('div');
-  scale.className = 'heat-scale';
-  scale.innerHTML = `<span>favours Gote −${lim}</span><i></i><span>+${lim} favours Sente</span>`;
-  el.after(scale);
-} catch (e) {
-  el.textContent = 'Could not load the table: ' + e.message;
-}
-</script>
+<script type="module" src="/heat.js"></script>

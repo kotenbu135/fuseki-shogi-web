@@ -1,53 +1,250 @@
 <h1>Rules</h1>
-<p class="lead">Fuseki Shogi is a shogi variant in which both players place 20 pieces on an empty board, one at a time, before the game begins. Balance Shogi adds a short opening procedure that lets the players weigh the first-move advantage against king safety themselves.</p>
+<p class="lead">Fuseki Shogi starts from a bare board: the players build their own opening position first. Once the 40 placements are done it is ordinary shogi. Balance Shogi adds a short procedure at the very start that weighs the first-move advantage against king safety.</p>
+
+<div class="stat">
+  <div><b>Empty</b><span>nothing on the board</span></div>
+  <div><b>20</b><span>pieces each, king included</span></div>
+  <div><b>40</b><span>placements before anything moves</span></div>
+  <div><b>41</b><span>ordinary shogi from here</span></div>
+</div>
+
+<h2>How a game runs</h2>
+<figure>
+<svg class="fig" viewBox="0 0 640 162" role="img" aria-label="How a game runs. In Fuseki Shogi the players place 20 pieces each over moves 1 to 40, then play ordinary shogi from move 41. Balance Shogi puts both kings down in the first two moves, the other player picks a side, and the remaining 19 pieces each are placed; move 41 onwards is the same.">
+  <text x="102" y="14" class="t-soft t-num">Move 1</text>
+  <text x="446" y="14" class="t-soft t-num">Move 41</text>
+  <path d="M436,18 V128" class="mid"/>
+
+  <text x="90" y="43" text-anchor="end" class="t-head">Fuseki Shogi</text>
+  <rect x="102" y="24" width="328" height="28" rx="3" class="bar"/>
+  <text x="266" y="43" text-anchor="middle">20 pieces each, placed alternately</text>
+  <rect x="442" y="24" width="194" height="28" rx="3" class="box"/>
+  <text x="539" y="43" text-anchor="middle">Ordinary shogi</text>
+
+  <text x="90" y="105" text-anchor="end" class="t-head">Balance Shogi</text>
+  <rect x="102" y="86" width="16" height="28" rx="2" class="bar-on"/>
+  <rect x="122" y="86" width="7" height="28" rx="2" class="bar-on"/>
+  <rect x="132" y="86" width="298" height="28" rx="3" class="bar"/>
+  <text x="281" y="105" text-anchor="middle">19 pieces each, placed alternately</text>
+  <rect x="442" y="86" width="194" height="28" rx="3" class="box"/>
+  <text x="539" y="105" text-anchor="middle">Ordinary shogi</text>
+
+  <path d="M102,120 v6 H129 v-6" class="axis"/>
+  <path d="M115,126 V140" class="link"/>
+  <text x="102" y="154" class="t-soft">All that is added: two king placements and one choice of side</text>
+</svg>
+<figcaption>The axis is the move number. Balance Shogi adds only the very beginning; move 41 onwards is unchanged.</figcaption>
+</figure>
 
 <h2>Fuseki Shogi</h2>
 <ol>
-  <li>The board starts empty. Starting with Sente, the players alternately place their 20 pieces (9 pawns, 2 lances, 2 knights, 2 silvers, 2 golds, 1 bishop, 1 rook, 1 king) <b>within their own first four ranks</b>.</li>
+  <li>The board starts empty. Starting with Sente, the players alternately place their 20 pieces (9 pawns, 2 lances, 2 knights, 2 silvers, 2 golds, 1 bishop, 1 rook, 1 king) <b>within their own first four ranks</b>, one per turn.</li>
   <li>Until both players have placed all 20 pieces (40 moves), nothing moves. Only placements.</li>
-  <li>To avoid a double pawn (nifu), <b>filling all four squares of a file with your own non-pawn pieces is illegal</b>. All nine pawns must end up on nine different files, so filling a file with other pieces would force a double pawn somewhere else. The rule stops it one move early.</li>
+  <li>To avoid a double pawn (nifu), <b>filling all four squares of a file with your own non-pawn pieces is illegal</b>.</li>
   <li>From move 41 it is ordinary shogi. Sente moves first. Checkmate wins.</li>
 </ol>
 
-<h3>The move-41 adjudication and the move-40 restriction</h3>
-<p>Check and checkmate are not considered during placement, so after 40 placements a king may already be attacked. This site handles it as follows.</p>
-<ul>
-  <li><b>Adjudication at move 41</b>: if the side to move (Sente) could capture the opposing king after the 40th placement, Sente wins.</li>
-  <li><b>Restriction on move 40</b>: Gote’s last placement may not leave Gote’s own king attacked. The only exception is when Gote’s king was already in check after move 39 and one piece cannot cover it; then the restriction is lifted and the adjudication decides.</li>
+<h3>The 20 pieces</h3>
+<p>The same 20 pieces as the ordinary opening position, placed by you. The king is one of them and may go down at any time.</p>
+<ul class="piece-set">
+  <li><piece class="sente pawn"></piece><b>×9</b></li>
+  <li><piece class="sente lance"></piece><b>×2</b></li>
+  <li><piece class="sente knight"></piece><b>×2</b></li>
+  <li><piece class="sente silver"></piece><b>×2</b></li>
+  <li><piece class="sente gold"></piece><b>×2</b></li>
+  <li><piece class="sente bishop"></piece><b>×1</b></li>
+  <li><piece class="sente rook"></piece><b>×1</b></li>
+  <li><piece class="sente king"></piece><b>×1</b></li>
+  <li class="total"><b>20</b><span>each</span></li>
 </ul>
-<p class="note">Sente’s last placement (move 39) has no such restriction. Sente being in check at move 41 is an ordinary check, not an illegal position.</p>
+
+<h3>Where you may place</h3>
+<figure>
+<div class="diag">
+  <div class="zone w"><span>Gote places here (four ranks)</span></div>
+  <div class="zone b"><span>Sente places here (four ranks)</span></div>
+</div>
+<figcaption>Only your own first four ranks. Neither player may place on the middle rank.</figcaption>
+</figure>
+
+<h3>The nifu-avoidance rule</h3>
+<p>There are nine pawns and, as in ordinary shogi, two pawns may not share a file — so the nine pawns end up on nine different files. Fill a file with other pieces and no pawn can go there, which forces a double pawn somewhere else. The rule stops it one move early.</p>
+<div class="diag-row">
+  <figure>
+    <h4><span class="tag bad">✕</span>Filling the fourth square</h4>
+    <div class="diag camp">
+      <piece class="sente gold f7 r6"></piece>
+      <piece class="sente silver f7 r7"></piece>
+      <piece class="sente knight f7 r8"></piece>
+      <div class="mk bad f7 r9">✕</div>
+    </div>
+    <figcaption>Three squares of file 7 are already taken by non-pawns. Filling the last one is illegal, whatever the piece.</figcaption>
+  </figure>
+  <figure>
+    <h4><span class="tag ok">○</span>One pawn per file</h4>
+    <div class="diag camp">
+      <piece class="sente pawn f9 r7"></piece>
+      <piece class="sente pawn f8 r7"></piece>
+      <piece class="sente pawn f7 r6"></piece>
+      <piece class="sente pawn f6 r7"></piece>
+      <piece class="sente pawn f5 r8"></piece>
+      <piece class="sente pawn f4 r7"></piece>
+      <piece class="sente pawn f3 r6"></piece>
+      <piece class="sente pawn f2 r7"></piece>
+      <piece class="sente pawn f1 r8"></piece>
+    </div>
+    <figcaption>The ranks may differ. Only two pawns on one file are forbidden.</figcaption>
+  </figure>
+</div>
+<p class="note">The diagrams show Sente’s four ranks only. Gote’s side works the same way.</p>
+
+<h3>The move-40 restriction and the move-41 adjudication</h3>
+<p>Check and checkmate are not considered during placement: nothing moves, so a player under attack could simply keep placing pieces. That means a king can already be attacked once the 40 placements are done. This site handles it as follows.</p>
+<div class="diag-row">
+  <figure>
+    <h4>Restriction on move 40</h4>
+    <div class="diag">
+      <piece class="gote king f5 r2"></piece>
+      <piece class="sente rook f5 r6"></piece>
+      <div class="mk ok f5 r4">○</div>
+      <div class="mk bad f1 r1">✕</div>
+      <svg class="rays" viewBox="0 0 9 9" aria-hidden="true"><path d="M4.5,5.4 V1.95"/><path class="head" d="M4.5,1.6 L4.27,2.05 L4.73,2.05 Z"/></svg>
+    </div>
+    <figcaption>Sente’s rook bears on the Gote king. Gote’s last placement must block that line (<span class="tag ok">○</span>); placing anywhere else (<span class="tag bad">✕</span>) is illegal.</figcaption>
+  </figure>
+  <figure>
+    <h4>Adjudication at move 41</h4>
+    <div class="diag">
+      <piece class="gote king f5 r2"></piece>
+      <piece class="sente rook f5 r6"></piece>
+      <piece class="sente bishop f1 r6"></piece>
+      <svg class="rays" viewBox="0 0 9 9" aria-hidden="true"><path d="M4.5,5.4 V1.95"/><path class="head" d="M4.5,1.6 L4.27,2.05 L4.73,2.05 Z"/><path d="M8.4,5.4 L4.95,1.95"/><path class="head" d="M4.68,1.68 L5.15,1.84 L4.84,2.15 Z"/></svg>
+    </div>
+    <figcaption>Rook and bishop both bear on the king and no single square blocks both. Only then is the move-40 restriction lifted, and Sente wins by taking the king at move 41.</figcaption>
+  </figure>
+</div>
+<div class="scroll"><table>
+  <tr><th>After the 40th placement</th><th>Result</th></tr>
+  <tr><td>Gote’s king is attacked</td><td>Normally impossible: the <b>move-40 restriction</b> forbids it. It arises only when Gote was already in check after move 39 and one piece cannot cover it — then <b>Sente wins at move 41</b> (the adjudication).</td></tr>
+  <tr><td>Sente’s king is attacked</td><td>An ordinary check. Sente’s last placement (move 39) carries no restriction, and Sente answers the check at move 41.</td></tr>
+</table></div>
 
 <h2>Balance Shogi</h2>
-<p>Fuseki Shogi favours Sente: between AIs Sente wins a little over 60%, and the gap widens as the engines get stronger. Balance Shogi weighs that first-move advantage against king safety. One player places both kings; the other decides between moving first with the thinner king and moving second with the sturdier one. It is the pie rule (one divides, the other picks first) applied to the kings, so the balance holds at whatever strength the players have.</p>
-
-<div class="roles">
-  <div><b>Place the kings</b>Put the Sente king in Sente’s camp and the Gote king in Gote’s camp, without knowing yet which side you will play.</div>
-  <div><b>Choose a side</b>Look at both kings and decide whether to play Sente or Gote.</div>
-  <div><b>Sente ☗ / Gote ☖</b>are fixed by that choice. The remaining 19 pieces each are placed alternately from Sente, and Sente plays move 41.</div>
-</div>
+<p>Fuseki Shogi favours Sente: between AIs, Sente wins a little over 60% of games, and the stronger the engines, the wider the gap. Fixing that in the rulebook does not hold — a rule tuned at one strength is wrong at another. Balance Shogi drops the numeric compensation and lets <b>the players themselves weigh the first move against king safety</b>.</p>
+<p>The mechanism is how two people share a cake: one cuts, the other picks first (the pie rule). Here, instead of cutting, <b>one player places both kings</b>; instead of picking a slice, <b>the other player chooses to be Sente or Gote</b>. The placer does not yet know which side they will play, so they have no reason to favour either one.</p>
 
 <h3>Procedure</h3>
-<ol>
-  <li>Furigoma decides who <b>places the kings</b>. The other player <b>chooses the side</b>.</li>
-  <li>The placer puts the Sente king somewhere in Sente’s camp (the first four ranks) — move 1.</li>
-  <li>The same player then puts the Gote king in Gote’s camp — move 2.</li>
-  <li>The other player declares whether they <b>play Sente or Gote</b>. This fixes the sides for the game. The position does not change.</li>
-  <li>The remaining 19 pieces per side are placed alternately, Sente first (moves 3–40). The kings are already on the board.</li>
-  <li>After Gote’s 40th placement the placement ends. Sente plays move 41 and the game continues as ordinary shogi.</li>
+<p>Furigoma decides who <b>places the kings</b>. The other player <b>chooses the side</b>.</p>
+<ol class="steps">
+  <li>
+    <span class="who place">Placer</span>
+    <div class="diag">
+      <div class="zone b"></div>
+      <piece class="sente king f5 r8"></piece>
+    </div>
+    <span class="what">Move 1 — the Sente king<br><em>within Sente’s four ranks</em></span>
+  </li>
+  <li>
+    <span class="who place">Placer</span>
+    <div class="diag">
+      <div class="zone w"></div>
+      <piece class="sente king f5 r8"></piece>
+      <piece class="gote king f2 r2"></piece>
+    </div>
+    <span class="what">Move 2 — the Gote king<br><em>within Gote’s four ranks</em></span>
+  </li>
+  <li>
+    <span class="who pick">Chooser</span>
+    <div class="diag">
+      <piece class="sente king f5 r8"></piece>
+      <piece class="gote king f2 r2"></piece>
+    </div>
+    <div class="pick-row"><span class="on">☗ Take Sente</span><span>☖ Take Gote</span></div>
+    <span class="what">Choose a side<br><em>the position does not change</em></span>
+  </li>
+  <li>
+    <span class="who">Sente &amp; Gote</span>
+    <div class="diag">
+      <piece class="sente king f5 r8"></piece>
+      <piece class="gote king f2 r2"></piece>
+      <piece class="sente gold f6 r8"></piece>
+      <piece class="sente silver f4 r8"></piece>
+      <piece class="sente pawn f7 r7"></piece>
+      <piece class="sente pawn f5 r7"></piece>
+      <piece class="sente pawn f3 r7"></piece>
+      <piece class="sente rook f2 r8"></piece>
+      <piece class="gote gold f3 r2"></piece>
+      <piece class="gote pawn f7 r3"></piece>
+      <piece class="gote pawn f5 r3"></piece>
+      <piece class="gote pawn f3 r3"></piece>
+      <piece class="gote rook f8 r2"></piece>
+    </div>
+    <span class="what">Moves 3–40 — the rest<br><em>19 each, alternately from Sente</em></span>
+  </li>
 </ol>
-<p>The placement zone, the nifu-avoidance restriction, the move-40 restriction and the move-41 adjudication are unchanged. Only the first two moves and the choice are new.</p>
+<p>The placement zone, the nifu-avoidance rule, the move-40 restriction and the move-41 adjudication are unchanged. Only the first two moves and the choice are new. The kings are already on the board, so 19 pieces each remain from move 3.</p>
 
 <h3>Who places, and who is Sente</h3>
-<p>Who places the kings is decided by furigoma; the sides (Sente, Gote) are decided by the choice. The placer is not necessarily Sente. The game record keeps both.</p>
+<p>Furigoma decides who places the kings; the choice decides the sides. <b>The placer is not necessarily Sente.</b> The game record keeps both.</p>
 
 <h3>Why it balances</h3>
-<p>On one pan of the scale sits the first move, on the other the gap in king safety. Kings of equal safety leave the first move unpaid, so the chooser takes Sente; too thin a Sente king and the chooser takes Gote. The placer breaks even only when the gap in safety matches the first move, and that judgement is made by the placer at their own strength. No measurement and no numeric compensation is needed. Read more in <a href="{{self_href}}story/">How Balance Shogi came to be</a>.</p>
+<p>One pan of the scale carries the first move; the other carries the gap in king safety.</p>
+<figure>
+<svg class="scale-fig" viewBox="0 0 260 112" role="img" aria-label="{{scale_label}}. The left pan holds Sente (moving first, with a thinner king), the right pan holds Gote (a safer king), and the beam is level.">
+  <path class="stand" d="M130 30 L113 86 H147 Z"/>
+  <rect class="stand" x="106" y="86" width="48" height="6" rx="3"/>
+  <path class="beam" d="M30 28 H230"/>
+  <circle class="pivot" cx="130" cy="28" r="4.5"/>
+  <g class="side"><path class="chain" d="M64 28 L46 52 M64 28 L82 52"/>
+    <path class="pan" d="M42 52 H86 L78 64 Q64 69 50 64 Z"/>
+    <rect class="weight solid" x="56" y="42" width="16" height="10" rx="2"/>
+    <text x="64" y="80" class="h">{{scale_sente}} ☗</text>
+    <text x="64" y="93">{{scale_sente_1}}</text><text x="64" y="105">{{scale_sente_2}}</text></g>
+  <g class="side"><path class="chain" d="M196 28 L178 52 M196 28 L214 52"/>
+    <path class="pan" d="M174 52 H218 L210 64 Q196 69 182 64 Z"/>
+    <rect class="weight hollow" x="188" y="42" width="16" height="10" rx="2"/>
+    <text x="196" y="80" class="h">{{scale_gote}} ☖</text>
+    <text x="196" y="93">{{scale_gote_1}}</text></g>
+</svg>
+<figcaption>The placer looks for the point where these two balance. The same drawing appears on the board screen while the kings are being placed and the side chosen.</figcaption>
+</figure>
+<p>Kings of equal safety leave the first move unpaid: the chooser takes Sente and the placer is worse off. Make the Sente king too thin and the chooser takes Gote instead. The placer breaks even only when the gap in safety matches the first move exactly.</p>
+<p>So the balance point is set by <b>the placer’s own judgement on the day</b>, not by the rulebook. A stronger opponent moves that point, but no rule has to be rewritten: no measurement, no numeric compensation. The road to this design is in <a href="{{self_href}}story/">How Balance Shogi came to be</a>.</p>
 
 <h3>What the AI does</h3>
-<p>On this site the AI consults a table of Sente’s winning rate for every pair of king squares, both when placing and when choosing. When placing it draws a random pair from those closest to 50%; when choosing it takes Sente whenever the table value exceeds 50%. From move 3 the placement engine continues as usual. There is no search.</p>
+<p>The AI on this site <b>does not search</b>, either when placing or when choosing. It reads a table once. The table gives Sente’s winning rate for a king pair — Sente’s king here, Gote’s king there, both sides then playing on to the end — for all 36 × 36 = 1,296 pairs.</p>
+<ul>
+  <li><b>Placing</b>: draw one pair at random from the 48 closest to even. Not narrower, so the AI does not open the same way every game.</li>
+  <li><b>Choosing</b>: take Sente if the pair’s value is above 50%, Gote if below.</li>
+  <li><b>From move 3</b>: the placement policy network puts down the rest.</li>
+</ul>
+<p>Those 48 pairs are valued by real games rather than by an engine score — over 600 games each. The table itself is below.</p>
+<figure>
+  <div class="heat" id="heat" data-table="{{king_table}}" data-black="Sente king (Sente’s camp, back rank at the bottom)" data-white="Gote king (Gote’s camp, back rank at the top)" data-low="favours Gote" data-high="favours Sente" data-error="Could not load the table"></div>
+  <figcaption>The value of a single king square, in winning-rate points from Sente’s side. Sente’s king on the left, Gote’s on the right; positive favours Sente, negative favours Gote. Drawn straight from the published table <code>{{king_table}}</code>.</figcaption>
+</figure>
+<p>A king on the front rank (nearest the opponent) is by far the worst square, and the back-rank corners are the best. The spread between the best and worst pair is several times the first-move advantage, so <b>the king squares alone are enough to balance it, with room to spare</b>. How the table was built — and where it was wrong — is in the <a href="{{self_href}}story/">column</a>.</p>
+
+<h2>The three rule sets side by side</h2>
+<div class="scroll"><table>
+  <tr><th></th><th>Ordinary shogi</th><th>Fuseki Shogi</th><th>Balance Shogi</th></tr>
+  <tr><th>Opening position</th><td>fixed (one)</td><td colspan="2">built by the players (about 10<sup>37</sup>)</td></tr>
+  <tr><th>First 40 moves</th><td>played</td><td colspan="2">placements only; nothing moves</td></tr>
+  <tr><th>King square</th><td>5i and 5a</td><td>anywhere in your four ranks</td><td>the placer decides both</td></tr>
+  <tr><th>Choosing sides</th><td>furigoma</td><td>furigoma</td><td>look at both kings, then choose</td></tr>
+  <tr><th>From move 41</th><td>—</td><td colspan="2">ordinary shogi</td></tr>
+  <tr><th>First-move advantage</th><td>remains</td><td>remains (over 60% between AIs)</td><td>the placer balances it each game</td></tr>
+</table></div>
 
 <h2>Game record format</h2>
-<p>A game is written as USI drops (such as <code>P*7f</code>) separated by spaces. In Balance Shogi, one extra token follows move 2: <code>choose:sente</code> or <code>choose:gote</code>. Paste a sequence under “Game record” in the menu to replay it.</p>
+<p>A game is written as USI drops separated by spaces.</p>
+<div class="usi">
+  <div><code>P</code><span>piece<br>pawn</span></div>
+  <div><code>*</code><span>drop</span></div>
+  <div><code>7</code><span>file<br>7th from the right</span></div>
+  <div><code>f</code><span>rank<br>6th from the top</span></div>
+</div>
+<p><code>P*7f</code> means “drop a pawn on 7f”. In Balance Shogi, one extra token follows move 2: <code>choose:sente</code> or <code>choose:gote</code>. Paste a sequence under “Game record” in the menu to replay it.</p>
 <p class="note">SFEN during placement is a Fuseki Shogi extension with kings in hand and cannot be read by ordinary shogi software. From move 41 it is standard SFEN.</p>
 
 <h2>Sources</h2>
@@ -55,3 +252,5 @@
   <li>Fuseki Shogi rules: <a href="https://shogitter.com/rule/布石将棋">shogitter</a> (Japanese)</li>
   <li>Balance Shogi: this site’s own rule (<a href="https://github.com/kotenbu135/fuseki-shogi-web">source</a>)</li>
 </ul>
+
+<script type="module" src="/heat.js"></script>

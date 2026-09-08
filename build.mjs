@@ -50,6 +50,9 @@ fs.mkdirSync(OUT, { recursive: true });
 
 copy(path.join(HERE, 'src', 'style.css'), OUT);
 copy(path.join(HERE, 'src', 'favicon.svg'), OUT);
+// 両玉の価値表のヒートマップ（文章のページが読む小さなモジュール）。app.js の
+// バンドルには入れない。ルールとコラムの2ページ × 2言語で同じものを使う。
+copy(path.join(HERE, 'src', 'heat.js'), OUT);
 // 共有プレビューの画像（scripts/og.mjs が描いてコミットしてある。ここでは写すだけ）。
 for (const f of ['og-ja.png', 'og-en.png'])
   if (!copy(path.join(HERE, 'src/og', f), path.join(OUT, 'og'))) console.warn(`警告: src/og/${f} が無い。node scripts/og.mjs で作る`);

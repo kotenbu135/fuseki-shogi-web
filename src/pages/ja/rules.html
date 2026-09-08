@@ -1,53 +1,250 @@
 <h1>ルール</h1>
-<p class="lead">布石将棋は、空の盤に双方が交互に20枚ずつ打ってから指し始める変則将棋。天秤将棋は、その先手番の得を対局者自身が釣り合わせるための手順を冒頭に足したもの。</p>
+<p class="lead">布石将棋は、駒の並んでいない盤から始める将棋。初期配置を自分たちで作るところが違うだけで、40手を打ち終えたあとは本将棋そのもの。天秤将棋は、そこに先手番の得を釣り合わせる手順を足したもの。</p>
+
+<div class="stat">
+  <div><b>空</b><span>盤には何も置かれていない</span></div>
+  <div><b>20枚</b><span>玉を含めて一人ぶん</span></div>
+  <div><b>40手</b><span>打ち終わるまで駒は動かない</span></div>
+  <div><b>41手目</b><span>ここから本将棋</span></div>
+</div>
+
+<h2>一局の流れ</h2>
+<figure>
+<svg class="fig" viewBox="0 0 640 162" role="img" aria-label="一局の流れ。布石将棋は1手目から40手目まで20枚ずつ交互に打ち、41手目から本将棋。天秤将棋は冒頭の2手で両玉を置き、先後を選んでから、残り19枚ずつを打つ。41手目から本将棋なのは同じ。">
+  <text x="84" y="14" class="t-soft t-num">1手目</text>
+  <text x="440" y="14" class="t-soft t-num">41手目</text>
+  <path d="M436,18 V128" class="mid"/>
+
+  <text x="72" y="43" text-anchor="end" class="t-head">布石将棋</text>
+  <rect x="84" y="24" width="346" height="28" rx="3" class="bar"/>
+  <text x="257" y="43" text-anchor="middle">20枚ずつ、交互に打つ</text>
+  <rect x="442" y="24" width="194" height="28" rx="3" class="box"/>
+  <text x="539" y="43" text-anchor="middle">本将棋</text>
+
+  <text x="72" y="105" text-anchor="end" class="t-head">天秤将棋</text>
+  <rect x="84" y="86" width="17" height="28" rx="2" class="bar-on"/>
+  <rect x="104" y="86" width="7" height="28" rx="2" class="bar-on"/>
+  <rect x="114" y="86" width="316" height="28" rx="3" class="bar"/>
+  <text x="272" y="105" text-anchor="middle">残り19枚ずつ、交互に打つ</text>
+  <rect x="442" y="86" width="194" height="28" rx="3" class="box"/>
+  <text x="539" y="105" text-anchor="middle">本将棋</text>
+
+  <path d="M84,120 v6 H111 v-6" class="axis"/>
+  <path d="M97,126 V140" class="link"/>
+  <text x="84" y="154" class="t-soft">足したのは、両玉を置く2手と、先後を選ぶ1回だけ</text>
+</svg>
+<figcaption>横軸は手数。天秤将棋が布石将棋に足したのは冒頭のごく一部で、41手目から本将棋になるところは変わらない。</figcaption>
+</figure>
 
 <h2>布石将棋</h2>
 <ol>
-  <li>空の盤から始める。最初の20枚（歩9・香2・桂2・銀2・金2・角1・飛1・玉1）を、先手から交互に<b>自陣四段目以内</b>へ打つ。</li>
-  <li>双方が20枚を打ち終える（40手）までは、駒を動かせない。打つだけ。</li>
-  <li>二歩を避けるため、<b>ある筋の4マスすべてを歩以外の自分の駒で埋める手は禁じ手</b>。歩は9枚を9筋に1枚ずつ置くことになるので、ある筋を歩以外で埋めると、どこかの筋で二歩になる。それを手前で止める規定。</li>
+  <li>空の盤から始める。20枚（歩9・香2・桂2・銀2・金2・角1・飛1・玉1）を、先手から交互に1枚ずつ、<b>自陣の四段目以内</b>へ打つ。</li>
+  <li>双方が20枚を打ち終える40手目までは、駒を動かせない。打つだけ。</li>
+  <li>二歩を避けるため、<b>ある筋の4マスすべてを歩以外の自分の駒で埋める手は禁じ手</b>。</li>
   <li>41手目から本将棋。先手が指す。玉を詰ませば勝ち。</li>
 </ol>
 
-<h3>41手目の裁定と40手目の制限</h3>
-<p>布石の最中は王手も詰みも見ない。そのため、40手を打ち終えた時点で片方の玉が相手の利きに当たっていることがある。このサイトでは次のように扱う。</p>
-<ul>
-  <li><b>41手目の裁定</b>：40手完了時に手番側（先手）が相手玉を取れる形なら、先手の勝ち。</li>
-  <li><b>40手目の制限</b>：後手の最後の一枚（40手目）で、打った結果自玉が先手の利きに当たる手は非合法。ただし39手目の時点で既に王手されていて一枚では防げないときだけ、制限を外して裁定に委ねる。</li>
+<h3>打つ20枚</h3>
+<p>本将棋の初期配置と同じ20枚を、そのまま自分で置く。玉も打つ駒のひとつで、いつ置いてもよい。</p>
+<ul class="piece-set">
+  <li><piece class="sente pawn"></piece><b>×9</b></li>
+  <li><piece class="sente lance"></piece><b>×2</b></li>
+  <li><piece class="sente knight"></piece><b>×2</b></li>
+  <li><piece class="sente silver"></piece><b>×2</b></li>
+  <li><piece class="sente gold"></piece><b>×2</b></li>
+  <li><piece class="sente bishop"></piece><b>×1</b></li>
+  <li><piece class="sente rook"></piece><b>×1</b></li>
+  <li><piece class="sente king"></piece><b>×1</b></li>
+  <li class="total"><b>20</b><span>枚／人</span></li>
 </ul>
-<p class="note">先手の最後の一枚（39手目）にこの制限は無い。41手目に先手が王手されているのは普通の王手で、非合法ではないため。</p>
+
+<h3>置ける範囲</h3>
+<figure>
+<div class="diag">
+  <div class="zone w"><span>後手が打てる範囲（後手陣の四段）</span></div>
+  <div class="zone b"><span>先手が打てる範囲（先手陣の四段）</span></div>
+</div>
+<figcaption>打てるのは自陣の四段目以内だけ。中央の五段目には、どちらも打てない。</figcaption>
+</figure>
+
+<h3>二歩を避ける禁じ手</h3>
+<p>歩は9枚あり、二歩は本将棋と同じく禁じ手なので、9筋に1枚ずつ置くことになる。ある筋を歩以外の駒で埋めてしまうと、その筋に歩を置けなくなり、どこかの筋で二歩が起きる。それを手前で止める規定。</p>
+<div class="diag-row">
+  <figure>
+    <h4><span class="tag bad">✕</span>4マス目を歩以外で埋める手</h4>
+    <div class="diag camp">
+      <piece class="sente gold f7 r6"></piece>
+      <piece class="sente silver f7 r7"></piece>
+      <piece class="sente knight f7 r8"></piece>
+      <div class="mk bad f7 r9">✕</div>
+    </div>
+    <figcaption>7筋はすでに3マスが歩以外で埋まっている。残る1マスを歩以外で埋める手は、駒の種類にかかわらず禁じ手。</figcaption>
+  </figure>
+  <figure>
+    <h4><span class="tag ok">○</span>歩は9筋に1枚ずつ</h4>
+    <div class="diag camp">
+      <piece class="sente pawn f9 r7"></piece>
+      <piece class="sente pawn f8 r7"></piece>
+      <piece class="sente pawn f7 r6"></piece>
+      <piece class="sente pawn f6 r7"></piece>
+      <piece class="sente pawn f5 r8"></piece>
+      <piece class="sente pawn f4 r7"></piece>
+      <piece class="sente pawn f3 r6"></piece>
+      <piece class="sente pawn f2 r7"></piece>
+      <piece class="sente pawn f1 r8"></piece>
+    </div>
+    <figcaption>段はばらばらでよい。同じ筋に2枚が来なければよい。</figcaption>
+  </figure>
+</div>
+<p class="note">図は先手陣の四段だけを描いている。後手も同じ。</p>
+
+<h3>40手目の制限と41手目の裁定</h3>
+<p>布石の最中は王手も詰みも見ない。駒を動かさないので、王手をかけても相手はそれを無視して打ち続けられてしまう。そのぶん、40手を打ち終えた時点で片方の玉が相手の利きに当たっていることが起こりうる。このサイトでは次のように扱う。</p>
+<div class="diag-row">
+  <figure>
+    <h4>40手目の制限</h4>
+    <div class="diag">
+      <piece class="gote king f5 r2"></piece>
+      <piece class="sente rook f5 r6"></piece>
+      <div class="mk ok f5 r4">○</div>
+      <div class="mk bad f1 r1">✕</div>
+      <svg class="rays" viewBox="0 0 9 9" aria-hidden="true"><path d="M4.5,5.4 V1.95"/><path class="head" d="M4.5,1.6 L4.27,2.05 L4.73,2.05 Z"/></svg>
+    </div>
+    <figcaption>先手の飛が後手玉に当たっている。後手の最後の一枚（40手目）は、この利きを遮る手（<span class="tag ok">○</span>）でなければならない。関係のないところへ打つ手（<span class="tag bad">✕</span>）は非合法。</figcaption>
+  </figure>
+  <figure>
+    <h4>41手目の裁定</h4>
+    <div class="diag">
+      <piece class="gote king f5 r2"></piece>
+      <piece class="sente rook f5 r6"></piece>
+      <piece class="sente bishop f1 r6"></piece>
+      <svg class="rays" viewBox="0 0 9 9" aria-hidden="true"><path d="M4.5,5.4 V1.95"/><path class="head" d="M4.5,1.6 L4.27,2.05 L4.73,2.05 Z"/><path d="M8.4,5.4 L4.95,1.95"/><path class="head" d="M4.68,1.68 L5.15,1.84 L4.84,2.15 Z"/></svg>
+    </div>
+    <figcaption>飛と角の二枚から当たっていて、どこに1枚打っても両方は遮れない。このときだけ40手目の制限を外し、41手目に先手が玉を取って勝ちとする。</figcaption>
+  </figure>
+</div>
+<div class="scroll"><table>
+  <tr><th>40手を打ち終えた時点</th><th>扱い</th></tr>
+  <tr><td>後手玉が先手の利きに当たっている</td><td>ふつうは<b>40手目の制限</b>で起こらない。39手目の時点で既に王手されていて一枚では防げないときだけ生じ、<b>41手目に先手の勝ち</b>（41手目の裁定）。</td></tr>
+  <tr><td>先手玉が後手の利きに当たっている</td><td>ふつうの王手。先手の最後の一枚（39手目）に制限は無く、先手は41手目でこれに対応する。</td></tr>
+</table></div>
 
 <h2>天秤将棋</h2>
-<p>布石将棋は先手が有利で、AI同士では先手が6割強勝つ。探索を強めるほど差は開く。天秤将棋は、この先手番の得を先手玉の薄さで釣り合わせる。一方が両方の玉を置き、もう一方が「先に動ける先手」と「玉の堅い後手」のどちらを持つか決める。ケーキを一人が二つに分け、もう一人が先に取るのと同じ仕組み（pie rule）で、対局者の強さが変わっても釣り合いはそのまま保たれる。</p>
-
-<div class="roles">
-  <div><b>両玉を置く</b>先手玉を先手陣に、後手玉を後手陣に置く。この時点では、自分の先後はまだ決まっていない。</div>
-  <div><b>先後を選ぶ</b>置かれた両玉を見て、先手を持つか後手を持つかを決める。</div>
-  <div><b>先手 ☗／後手 ☖</b>選択で決まる。以後は残りの19枚ずつを先手から交互に打ち、41手目から先手が指す。</div>
-</div>
+<p>布石将棋は先手が有利で、AI同士では先手が6割強勝つ。強いAIほど差は開く。この得を条文で打ち消そうとすると、対局者の強さが変わるたびに合わなくなる。天秤将棋は数字で補正するのをやめて、<b>先手番の得と玉の堅さの差を、対局者自身に釣り合わせてもらう</b>。</p>
+<p>仕組みはケーキの分け方と同じで、一人が二つに切り、もう一人が先に取る（pie rule）。ここでは切るかわりに<b>一方が両方の玉を置き</b>、取るかわりに<b>もう一方が先手か後手かを選ぶ</b>。置く人は自分がどちらを持つか知らないまま置くので、どちらかに寄せる理由が無い。</p>
 
 <h3>手順</h3>
-<ol>
-  <li>振り駒で、<b>両玉を置く人</b>を決める。もう一方が<b>先後を選ぶ</b>。</li>
-  <li>置く人が、先手玉を先手陣（自陣四段目以内）に置く（1手目）。</li>
-  <li>続けて同じ人が、後手玉を後手陣に置く（2手目）。</li>
-  <li>もう一方が、<b>先手を持つか後手を持つか</b>を宣言する。ここで対局の先手・後手が確定する。局面は変わらない。</li>
-  <li>残りの19枚ずつを先手から交互に打つ（3〜40手目）。玉は既に盤上にある。</li>
-  <li>後手が40手目を打ったら布石が終わる。41手目から先手が指し、本将棋。</li>
+<p>振り駒で、<b>両玉を置く人</b>を決める。もう一方が<b>先後を選ぶ</b>。</p>
+<ol class="steps">
+  <li>
+    <span class="who place">置く人</span>
+    <div class="diag">
+      <div class="zone b"></div>
+      <piece class="sente king f5 r8"></piece>
+    </div>
+    <span class="what">1手目 先手玉を置く<br><em>先手陣の四段以内</em></span>
+  </li>
+  <li>
+    <span class="who place">置く人</span>
+    <div class="diag">
+      <div class="zone w"></div>
+      <piece class="sente king f5 r8"></piece>
+      <piece class="gote king f2 r2"></piece>
+    </div>
+    <span class="what">2手目 後手玉を置く<br><em>後手陣の四段以内</em></span>
+  </li>
+  <li>
+    <span class="who pick">選ぶ人</span>
+    <div class="diag">
+      <piece class="sente king f5 r8"></piece>
+      <piece class="gote king f2 r2"></piece>
+    </div>
+    <div class="pick-row"><span class="on">☗ 先手を持つ</span><span>☖ 後手を持つ</span></div>
+    <span class="what">先後を選ぶ<br><em>局面は変わらない</em></span>
+  </li>
+  <li>
+    <span class="who">先手・後手</span>
+    <div class="diag">
+      <piece class="sente king f5 r8"></piece>
+      <piece class="gote king f2 r2"></piece>
+      <piece class="sente gold f6 r8"></piece>
+      <piece class="sente silver f4 r8"></piece>
+      <piece class="sente pawn f7 r7"></piece>
+      <piece class="sente pawn f5 r7"></piece>
+      <piece class="sente pawn f3 r7"></piece>
+      <piece class="sente rook f2 r8"></piece>
+      <piece class="gote gold f3 r2"></piece>
+      <piece class="gote pawn f7 r3"></piece>
+      <piece class="gote pawn f5 r3"></piece>
+      <piece class="gote pawn f3 r3"></piece>
+      <piece class="gote rook f8 r2"></piece>
+    </div>
+    <span class="what">3〜40手目 残りを打つ<br><em>先手から交互に19枚ずつ</em></span>
+  </li>
 </ol>
-<p>置ける範囲・二歩回避の禁じ手・40手目の制限・41手目の裁定は、布石将棋と同じ。違うのは冒頭の2手と選択だけ。</p>
+<p>置ける範囲・二歩回避の禁じ手・40手目の制限・41手目の裁定は、布石将棋と同じ。違うのは冒頭の2手と選択だけ。玉は既に盤上にあるので、3手目以降に打つのは19枚ずつになる。</p>
 
 <h3>置く人と先後</h3>
-<p>誰が両玉を置くかは振り駒で決まり、先後（先手・後手）は選択で決まる。置いた人が先手になるとは限らない。棋譜には両方を残す。</p>
+<p>誰が両玉を置くかは振り駒で決まり、先後（先手・後手）は選択で決まる。<b>置いた人が先手になるとは限らない</b>。棋譜には両方を残す。</p>
 
 <h3>なぜ釣り合うのか</h3>
-<p>天秤の一方に先手番の得、もう一方に玉の堅さの差が載る。置く人が両玉を同じ堅さに置けば手番の得が丸ごと残り、選ぶ人は先手を持つ。先手玉を薄くしすぎれば選ぶ人は後手を持つ。置く人が損をしないのは、堅さの差が手番の得とちょうど釣り合うときだけで、その判断は置く人自身がその強さで行う。測定も数値の補正も要らない。詳しくは <a href="{{self_href}}story/">天秤将棋ができるまで</a>。</p>
+<p>天秤の一方に先手番の得が載り、もう一方に玉の堅さの差が載る。</p>
+<figure>
+<svg class="scale-fig" viewBox="0 0 260 112" role="img" aria-label="{{scale_label}}。左の皿に先手（先に動ける得と薄い玉）、右の皿に後手（堅い玉）が載り、梁は水平。">
+  <path class="stand" d="M130 30 L113 86 H147 Z"/>
+  <rect class="stand" x="106" y="86" width="48" height="6" rx="3"/>
+  <path class="beam" d="M30 28 H230"/>
+  <circle class="pivot" cx="130" cy="28" r="4.5"/>
+  <g class="side"><path class="chain" d="M64 28 L46 52 M64 28 L82 52"/>
+    <path class="pan" d="M42 52 H86 L78 64 Q64 69 50 64 Z"/>
+    <rect class="weight solid" x="56" y="42" width="16" height="10" rx="2"/>
+    <text x="64" y="80" class="h">{{scale_sente}} ☗</text>
+    <text x="64" y="93">{{scale_sente_1}}</text><text x="64" y="105">{{scale_sente_2}}</text></g>
+  <g class="side"><path class="chain" d="M196 28 L178 52 M196 28 L214 52"/>
+    <path class="pan" d="M174 52 H218 L210 64 Q196 69 182 64 Z"/>
+    <rect class="weight hollow" x="188" y="42" width="16" height="10" rx="2"/>
+    <text x="196" y="80" class="h">{{scale_gote}} ☖</text>
+    <text x="196" y="93">{{scale_gote_1}}</text></g>
+</svg>
+<figcaption>置く人は、この二つが釣り合うところを探す。対局画面でも、置く番と選ぶ番のあいだ同じ図が出る。</figcaption>
+</figure>
+<p>両玉を同じ堅さに置けば、手番の得がそのまま残る。選ぶ人は先手を取り、置く人が損をする。先手玉を薄くしすぎれば、今度は選ぶ人が後手を取る。置く人が損をしないのは、堅さの差が手番の得とちょうど釣り合うときだけ。</p>
+<p>だから、どこで釣り合うのかを決めるのは条文ではなく、<b>置く人自身のその日の判断</b>になる。強い相手なら釣り合いの点も変わるが、規則を書き直す必要は無い。測定も数値の補正も要らない。ここに至るまでの経緯は <a href="{{self_href}}story/">天秤将棋ができるまで</a>に書いた。</p>
 
 <h3>AIが担う判断</h3>
-<p>このサイトのAIは、両玉を置くときも先後を選ぶときも「両玉のマスの組ごとの先手勝率の表」を引く。置くときは勝率が50%に近い組の中から1つを無作為に引き、選ぶときは表の値が50%を超えていれば先手を持つ。3手目以降は布石エンジンがそのまま打つ。どちらも探索はしない。</p>
+<p>このサイトのAIは、置くときも選ぶときも<b>探索をしない</b>。あらかじめ作った表を1回引くだけで、その表は「先手玉を◯、後手玉を◯に置いて最後まで指したときの先手勝率」を、36×36＝1,296通りの組すべてについて並べたもの。</p>
+<ul>
+  <li><b>置くとき</b>：勝率が五分にいちばん近い48組の中から、1組を無作為に引く。毎局同じ置き方にならないよう、絞りすぎない。</li>
+  <li><b>選ぶとき</b>：置かれた組の値が50%を超えていれば先手を、下回っていれば後手を持つ。</li>
+  <li><b>3手目以降</b>：布石を打つ方策ネットが、そのまま残りを打つ。</li>
+</ul>
+<p>この48組だけは、採点ではなく実際の対局の勝敗で値を決めている（1組あたり600局以上）。表そのものは下のとおり。</p>
+<figure>
+  <div class="heat" id="heat" data-table="{{king_table}}" data-black="先手玉（先手陣、下が最下段）" data-white="後手玉（後手陣、上が最下段）" data-low="後手に有利" data-high="先手に有利" data-error="表を読み込めなかった"></div>
+  <figcaption>玉のマスひとつの価値（勝率ポイント、先手から見た値）。左が先手玉、右が後手玉。正なら先手に有利、負なら後手に有利。公開している表 <code>{{king_table}}</code> をそのまま描いている。</figcaption>
+</figure>
+<p>最前段（相手に近い段）に玉を置くと大きく損をし、隅の最下段がいちばん良い。最良の組と最悪の組の差は先手の利の何倍もあるので、<b>玉の置き場所だけで釣り合わせて、まだ余る</b>。表がどう作られ、どこで間違えたかは <a href="{{self_href}}story/">コラム</a>に書いた。</p>
+
+<h2>三つのルールの違い</h2>
+<div class="scroll"><table>
+  <tr><th></th><th>本将棋</th><th>布石将棋</th><th>天秤将棋</th></tr>
+  <tr><th>初期配置</th><td>決まっている（1通り）</td><td colspan="2">自分たちで打つ（約10<sup>37</sup>通り）</td></tr>
+  <tr><th>最初の40手</th><td>指す</td><td colspan="2">打つだけ。駒は動かない</td></tr>
+  <tr><th>玉の位置</th><td>5九・5一</td><td>自陣四段のどこでも</td><td>置く人が両方を決める</td></tr>
+  <tr><th>先後の決め方</th><td>振り駒</td><td>振り駒</td><td>置かれた両玉を見て選ぶ</td></tr>
+  <tr><th>41手目から</th><td>—</td><td colspan="2">本将棋</td></tr>
+  <tr><th>先手の得</th><td>残る</td><td>残る（AI同士で6割強）</td><td>置く人が毎局その場で釣り合わせる</td></tr>
+</table></div>
 
 <h2>棋譜の書き方</h2>
-<p>手順は USI の駒打ち（<code>P*7f</code> など）を空白で区切って並べる。天秤将棋では2手目の直後に選択が1トークン、<code>choose:sente</code> または <code>choose:gote</code> として挟まる。メニューの「棋譜」から貼り付けて再現できる。</p>
+<p>手順は USI の駒打ちを空白で区切って並べる。</p>
+<div class="usi">
+  <div><code>P</code><span>駒<br>歩</span></div>
+  <div><code>*</code><span>打つ</span></div>
+  <div><code>7</code><span>筋<br>右から7</span></div>
+  <div><code>f</code><span>段<br>上から6</span></div>
+</div>
+<p><code>P*7f</code> は「7六に歩を打つ」。天秤将棋では2手目の直後に選択が1トークン、<code>choose:sente</code> または <code>choose:gote</code> として挟まる。メニューの「棋譜」から貼り付けて再現できる。</p>
 <p class="note">布石の途中の SFEN は、持ち駒に玉が入る布石将棋の拡張で、ふつうの将棋ソフトでは読めない。41手目以降は標準の SFEN。</p>
 
 <h2>出典</h2>
@@ -55,3 +252,5 @@
   <li>布石将棋のルール：<a href="https://shogitter.com/rule/布石将棋">shogitter</a></li>
   <li>天秤将棋：このサイトの追加ルール（<a href="https://github.com/kotenbu135/fuseki-shogi-web">ソース</a>）</li>
 </ul>
+
+<script type="module" src="/heat.js"></script>

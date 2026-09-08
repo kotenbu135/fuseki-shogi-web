@@ -231,13 +231,21 @@
         <!-- 天秤の図。玉を置く・先後を選ぶあいだだけ出す（main.js の renderStatus）。
              文で言っても伝わらなかったところを絵で言う: 左の皿に先手（先に動ける得＋薄い玉）、
              右の皿に後手（堅い玉）、梁は水平（釣り合いが目標）。判定（傾き）は出さない。 -->
-        <svg class="scale-fig" id="scale-fig" viewBox="0 0 260 82" role="img" aria-label="{{scale_label}}" hidden>
-          <g class="frame"><path d="M130 20v46" /><path d="M116 66h28" /><path d="M130 20l-6 8h12z" class="fill" /></g>
-          <path class="beam" d="M36 20h188" />
-          <g class="side"><path d="M62 20v13" /><path class="pan" d="M20 33h84l-7 9H27z" />
-            <text x="62" y="58" class="h">{{scale_sente}} ☗</text><text x="62" y="72">{{scale_sente_1}} {{scale_sente_2}}</text></g>
-          <g class="side"><path d="M198 20v13" /><path class="pan" d="M156 33h84l-7 9h-70z" />
-            <text x="198" y="58" class="h">{{scale_gote}} ☖</text><text x="198" y="72">{{scale_gote_1}}</text></g>
+        <svg class="scale-fig" id="scale-fig" viewBox="0 0 260 112" role="img" aria-label="{{scale_label}}" hidden>
+          <path class="stand" d="M130 30 L113 86 H147 Z"/>
+          <rect class="stand" x="106" y="86" width="48" height="6" rx="3"/>
+          <path class="beam" d="M30 28 H230"/>
+          <circle class="pivot" cx="130" cy="28" r="4.5"/>
+          <g class="side"><path class="chain" d="M64 28 L46 52 M64 28 L82 52"/>
+            <path class="pan" d="M42 52 H86 L78 64 Q64 69 50 64 Z"/>
+            <rect class="weight solid" x="56" y="42" width="16" height="10" rx="2"/>
+            <text x="64" y="80" class="h">{{scale_sente}} ☗</text>
+            <text x="64" y="93">{{scale_sente_1}}</text><text x="64" y="105">{{scale_sente_2}}</text></g>
+          <g class="side"><path class="chain" d="M196 28 L178 52 M196 28 L214 52"/>
+            <path class="pan" d="M174 52 H218 L210 64 Q196 69 182 64 Z"/>
+            <rect class="weight hollow" x="188" y="42" width="16" height="10" rx="2"/>
+            <text x="196" y="80" class="h">{{scale_gote}} ☖</text>
+            <text x="196" y="93">{{scale_gote_1}}</text></g>
         </svg>
       </div>
 
