@@ -112,6 +112,11 @@ else if (custom) console.warn(`--model: ${path.basename(OUT)}/models/${MODEL} �
 // --model で別の重みを当てたときは src/kings.js の照合が落として、そのモードだけ閉じる。
 const KING_TABLE = 'king_pairs_iter1177_games.json';
 
+// 布石フェーズの評価値を出すネット（src/value.js）。方策と同じ特徴量を食べる別の重みで、
+// 乱数初期化から学習してあり GCT 由来の値は入っていない（models/README.md）。
+// 無くても対局はできる——main.js が読み込みに失敗したら布石の評価だけ出さない。
+const VALUE_MODEL = 'value_mid_iter1400_t40.onnx';
+
 // オンライン対局の部屋（worker/）の URL。手元で wrangler dev に向けるときは
 //   node build.mjs --rooms http://localhost:8787
 // 本番は ws.fusekishogi.com（worker/wrangler.toml の routes）。
@@ -119,6 +124,8 @@ const roomsArg = process.argv.indexOf('--rooms');
 const ROOMS_URL = (roomsArg >= 0 ? process.argv[roomsArg + 1] : (process.env.ROOMS_URL || 'https://ws.fusekishogi.com')).replace(/\/+$/, '');
 const hasTable = copy(path.join(HERE, 'models', KING_TABLE), path.join(OUT, 'models'));
 if (!hasTable) console.warn(`警告: models/${KING_TABLE} が無いので含めていない。天秤将棋は使えない`);
+const hasValue = copy(path.join(HERE, 'models', VALUE_MODEL), path.join(OUT, 'models'));
+if (!hasValue) console.warn(`警告: models/${VALUE_MODEL} が無いので含めていない。布石の評価値は出ない`);
 
 // ビルドの素性。GPL v3 の「対応するソースの提供」は、配ったバイナリと対応するソースを
 // 指せて初めて意味を持つ。wasm/dist/ をコミットしている以上、成果物とソースが食い違って
@@ -293,7 +300,7 @@ for (const lang of LANGS) {
   const shown = (src('main.js').match(/const LOAD_MB = (\d+);/) ?? [])[1];
   // 重みは --model で差し替わるので、置いた実物（MODEL）を見る。
   const actual = mb(path.join(OUT, 'vendor/ort/ort-wasm-simd-threaded.wasm'))
-    + mb(path.join(OUT, 'models', MODEL));
+    + mb(path.join(OUT, 'models', MODEL)) + mb(path.join(OUT, 'models', VALUE_MODEL));
   if (shown && Math.abs(Number(shown) - actual) > 3)
     console.warn(`起動時の表示「約${shown}MB」が実物（${actual.toFixed(1)}MB）とずれている。`
       + ' src/main.js の LOAD_MB を直すこと。');
@@ -354,6 +361,7 @@ const options = {
   // --model で差し替えたときに片方だけが古い名前を指す。
   define: {
     __MODEL_FILE__: JSON.stringify(MODEL), __KING_TABLE_FILE__: JSON.stringify(KING_TABLE),
+    __VALUE_MODEL_FILE__: JSON.stringify(VALUE_MODEL),
     __ROOMS_URL__: JSON.stringify(ROOMS_URL),
   },
   logLevel: 'info',

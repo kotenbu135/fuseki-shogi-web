@@ -8,6 +8,7 @@
 // test/pipeline_smoke.mjs は同じモジュールをNodeから別のパスで起こしている。
 import { Fuseki } from './fuseki.js';
 import { FusekiPolicy } from './policy.js';
+import { FusekiValue } from './value.js';
 import { NormalEngine, loadYaneuraOuFactory } from './normal.js';
 import { Game, SENTE, GOTE, positionMoveDests, positionDropDests, promotionConfig, usiDropSquare } from './game.js';
 import { parseSquareName, parseUsi, makeSquareName } from 'shogiops/util';
@@ -33,12 +34,16 @@ const ASSETS = {
   // 天秤将棋の価値表（src/kings.js）。重みと世代が対（build.mjs の KING_TABLE）。
   kingTable: new URL(`./models/${typeof __KING_TABLE_FILE__ === 'undefined'
     ? 'king_pairs_iter1177_games.json' : __KING_TABLE_FILE__}`, import.meta.url).href,
+  // 布石フェーズの評価値（src/value.js）。方策と同じ特徴量を食べる別のネット。
+  // 無くても対局はできるので、読み込みに失敗したら布石の評価だけ出さない。
+  valueModel: new URL(`./models/${typeof __VALUE_MODEL_FILE__ === 'undefined'
+    ? 'value_mid_iter1400_t40.onnx' : __VALUE_MODEL_FILE__}`, import.meta.url).href,
   yaneuraou: new URL('./vendor/yaneuraou/yaneuraou.k-p.js', import.meta.url).href,
 };
 
-// 起動時に「約15MB」と出す量。内訳は onnxruntime-web の .wasm 13.3MB と重み 1.9MB
-// （dist/ の実測）。build.mjs がこの定数と実物を突き合わせる。
-const LOAD_MB = 15;
+// 起動時に「約17MB」と出す量。内訳は onnxruntime-web の .wasm 13.3MB と方策 1.9MB と
+// 布石の価値ネット 2.4MB（dist/ の実測）。build.mjs がこの定数と実物を突き合わせる。
+const LOAD_MB = 17;
 
 // オンライン対局の部屋（worker/）。build.mjs が define で渡す（--rooms で手元の wrangler dev へ向けられる）。
 const ROOMS_URL = typeof __ROOMS_URL__ === 'undefined' ? 'https://ws.fusekishogi.com' : __ROOMS_URL__;
@@ -659,7 +664,15 @@ async function boot() {
       renderModeControls();
     }
 
-    engines = { fuseki, policy, engine, kingTable };
+    // 布石フェーズの評価値。落ちても対局はできるので、止めずにグラフだけ諦める。
+    let valueNet = null;
+    try {
+      valueNet = await FusekiValue.load({ model: ASSETS.valueModel });
+    } catch (e) {
+      console.warn('布石の評価値は出せない:', e.message);
+    }
+
+    engines = { fuseki, policy, engine, kingTable, valueNet };
     ui.newGame.disabled = false;
     renderModeControls();   // 招待のボタンも開く
     renderSeeks();          // 待合の「参加」も開く
@@ -1063,6 +1076,7 @@ function handleDrop(piece, key) {
     setStatus(t('status_illegal'), e.message);
   }
   render();
+  scoreFuseki();
   drive();
 }
 
@@ -1366,9 +1380,16 @@ function syncTokens(tokens, initial = false) {
  * ——部屋は続くので、相手は時間切れか不在で勝てる。負けている側が「合わない」と
  * 言うだけで対局を無かったことにできてはいけない。
  */
+/** 布石の評価値を書き足して、付いたら描き直す。着手のたびに1回だけ呼ぶ。 */
+function scoreFuseki() {
+  const g = game;
+  g?.scoreFuseki().then(ok => { if (ok && game === g) render(); });
+}
+
 function applyRemoteToken(x) {
   try {
     game.play(x);
+    scoreFuseki();
   } catch (e) {
     console.error('不整合:', x, e);
     online.desyncTries = (online.desyncTries ?? 0) + 1;
@@ -2119,8 +2140,10 @@ function renderEngine() {
   if (!ev || !evalVisible()) { ui.engine.hidden = true; return; }
   ui.engine.hidden = false;
   ui.evaluation.textContent = formatEval(ev);
-  if (ev.kind === 'policy' || ev.kind === 'kings') {
-    ui.engineHead.textContent = `· ${t(ev.kind === 'policy' ? 'engine_policy_random' : 'engine_table')}`;
+  if (ev.kind === 'policy' || ev.kind === 'kings' || ev.kind === 'value') {
+    const head = ev.kind === 'kings' ? 'engine_table'
+      : ev.kind === 'value' ? 'engine_fuseki_value' : 'engine_policy_random';
+    ui.engineHead.textContent = `· ${t(head)}`;
     ui.enginePv.textContent = '';
     return;
   }
@@ -2155,21 +2178,24 @@ function formatNps(n) {
  */
 function winRateOf(ev) {
   if (!ev) return null;
-  if (ev.kind === 'kings') return ev.winRate;
+  // 表の値（kings）と布石の価値ネット（value、および policy に書き足された winRate）は
+  // どちらも勝率そのもの。価値ネットが無ければ winRate は付かないので null に落ちる。
+  if (ev.kind === 'kings' || ev.kind === 'value' || ev.kind === 'policy') return ev.winRate ?? null;
   if (ev.kind !== 'search' || ev.score == null) return null;
   const cp = ev.scoreKind === 'mate' ? (ev.score > 0 ? 1e5 : -1e5) : ev.score;
   return 1 / (1 + Math.exp(-cp / 400));
 }
 
 /**
- * 評価ゲージ。通常フェーズだけ出す。
+ * 評価ゲージ。勝率が出せる評価にだけ付ける。
  *
  * 布石フェーズの「採用手の確率」は方策が自分の手にどれだけ自信があるかであって
- * 優劣ではない。両側に振れる帯に載せると「先手が良い」と読めてしまうので載せない。
+ * 優劣ではないので、これは載せない（winRateOf が null を返す）。載せるのは
+ * 価値ネットが出した勝率と、両玉の表の値と、やねうら王の評価値。
  */
 function renderGauge() {
   const ev = shownEval();
-  const show = ev && ev.kind === 'search' && ev.score != null && evalVisible();
+  const show = ev && winRateOf(ev) != null && evalVisible();
   ui.gauge.hidden = !show;
   if (!show) return;
   const p = winRateOf(ev);
@@ -2560,7 +2586,10 @@ function renderChart() {
   add('line', { class: 'mid', x1: x(0), x2: x(n), y1: mid, y2: mid });
 
   // 値の並び。連続した区間ごとに面と線を描く。
-  const vals = rows.map(e => (e.eval?.kind === 'search' ? winRateOf(e.eval) : null));
+  // 布石の区間も引く。価値ネット（src/value.js）が入っていれば winRateOf が勝率を返し、
+  // 入っていなければ null で従来どおり空欄になる。41手目の段差は実測 −0.007 なので、
+  // 布石とやねうら王を同じ目盛りで繋いでよい（開発リポジトリの M0）。
+  const vals = rows.map(e => winRateOf(e.eval));
   let run = [];
   const flush = () => {
     if (run.length < 1) { run = []; return; }
@@ -2831,14 +2860,17 @@ function formatEval(evaluation) {
   if (!evaluation) return '—';
   // 天秤将棋の置く役・選ぶ役が引いた表の値。先手から見た勝率。
   if (evaluation.kind === 'kings') return t('eval_table', { p: (evaluation.winRate * 100).toFixed(1) });
+  // 布石の価値ネットが書き足した勝率（src/value.js）。**先手から見た**値。
+  if (evaluation.kind === 'value') return t('eval_fuseki', { p: (evaluation.winRate * 100).toFixed(0) });
   if (evaluation.kind === 'policy') {
-    // 布石専用ネットは価値ヘッドを持たない（採点はやねうら王がやる）ので勝率が出ない。
-    // その場合は方策が採用手に与えた確率を出す。undefinedを%にして "NaN%" と
-    // 表示させないこと。
+    // 布石専用ネットは価値ヘッドを持たない（採点はやねうら王がやる）ので、この
+    // kind の winRate は価値ネットが後から書き足したもの＝先手視点である。
+    // 価値ネットが無ければ winRate が付かないので、方策が採用手に与えた確率を出す。
+    // undefinedを%にして "NaN%" と表示させないこと。
     // 布石の合法手は序盤で288手あるので、整数%だと採用手が "0%" になる。小数1桁にする。
     if (evaluation.winRate == null)
       return t('eval_policy_prob', { p: (evaluation.probability * 100).toFixed(1) });
-    return t('eval_policy_win', { p: (evaluation.winRate * 100).toFixed(0) });
+    return t('eval_fuseki', { p: (evaluation.winRate * 100).toFixed(0) });
   }
   if (evaluation.scoreKind === 'mate')
     return t('eval_mate', { n: `${evaluation.score > 0 ? '' : '-'}${Math.abs(evaluation.score)}` });

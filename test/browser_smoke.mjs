@@ -601,6 +601,14 @@ try {
 // 本番でも同じものが止まり、エンジンや盤が黙って動かなくなる。
 check('CSP が止めたものが無い', cspViolations.length === 0, cspViolations.slice(0, 3).join(' / '));
 
+// 布石の価値ネット（src/value.js）は読み込みに失敗しても対局は続く——main.js が
+// warn を出して黙って諦める設計なので、例外の一覧には出てこない。ここで拾わないと
+// 「重みを配布物に入れ忘れた」が本番まで気づかれない。
+{
+  const bad = logs.filter(l => /布石の評価/.test(l));
+  check('布石の価値ネットが読み込めている', bad.length === 0, bad.slice(0, 2).join(' / '));
+}
+
 console.log(`\n不一致 ${failures} 件`);
 process.exit(failures ? 1 : 0);
 

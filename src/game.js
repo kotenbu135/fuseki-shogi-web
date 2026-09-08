@@ -42,10 +42,13 @@ export class Game {
    * @param {boolean} [spectate] 観戦（AI同士）。人間はおらず、色も役も持たない
    * @param {'ai'|'remote'} [opponent] 相手。remote はオンラインの人間で、手は main.js が
    *   部屋から受けて play() で入れる。AIは指さない（playAiMove は呼ばれない）
+   * @param {import('./value.js').FusekiValue|null} [valueNet] 布石フェーズの評価値を出すネット。
+   *   無ければ布石の区間は評価なしのまま（従来どおりの見え方に戻る）
    */
   constructor({ fuseki, policy, engine, humanColor = SENTE, movetimeMs = 1000, temperature = 1,
                 mode = 'standard', humanRole = null, kingTable = null, rng = Math.random,
-                notation = 'ja', spectate = false, opponent = 'ai' }) {
+                notation = 'ja', spectate = false, opponent = 'ai', valueNet = null }) {
+    this.valueNet = valueNet;
     this.notation = notation === 'en' ? 'en' : 'ja';
     this.MARK = MARKS[this.notation];
     this.fuseki = fuseki;
@@ -222,6 +225,41 @@ export class Game {
     this._recordFusekiMove(move);
   }
 
+  /**
+   * 布石の最後の行に評価値（先手勝率）を書き足す。**呼ぶのは着手のたび1回だけ。**
+   *
+   * 待ったの作り直し（_rebuild）では呼ばない。あそこは40手を再生するので、
+   * 呼ぶと前向き計算が40回走るうえ、残してある評価を上書きしてしまう。
+   *
+   * 40手目も採点する。40手打ち終えた局面は41手目の局面そのもので、そこだけ
+   * 評価が欠けるとグラフが布石と通常の境目で途切れる。学習側もこの手番を
+   * 教師に含めてある（含めないと勝率の水準が 0.15 ずれた。開発リポジトリ
+   * docs の M0）。_transitionToNormal のあとでも fuseki は最終形を持っている。
+   *
+   * @returns {Promise<boolean>} 書き足したら true（呼び手はこれを見て描き直す）
+   */
+  async scoreFuseki() {
+    const row = this.kifu[this.kifu.length - 1];
+    // 1手目は採点しない。教師の手番は 2〜40 で、1手だけ置いた盤は学習に出てこない。
+    // 天秤将棋の2手目は表（実対局）の値が入るので、そちらが優先される。
+    if (!this.valueNet || !row || row.ply < 2 || row.ply > 40 || row.eval?.winRate != null) return false;
+    const epoch = this.epoch;
+    let winRate;
+    try {
+      winRate = await this.valueNet.winRate(this.fuseki);
+    } catch (e) {
+      console.warn('布石の評価に失敗:', e.message);
+      this.valueNet = null;                   // 一度落ちたら以後は出さない（毎手警告を出さない）
+      return false;
+    }
+    // 考えている間に待ったや投了が入っていたら捨てる。行そのものを掴んでいるので
+    // 添字のずれは起きないが、作り直された局面の値を古い行に書いてはいけない。
+    if (this.epoch !== epoch || this.kifu[this.kifu.length - 1] !== row) return false;
+    row.eval = { ...(row.eval ?? { kind: 'value' }), winRate };
+    this.lastEval = row.eval;
+    return true;
+  }
+
   /** 天秤将棋の選択。選ぶ役が先手側か後手側かを宣言する。局面は変わらない。 */
   choose(side) {
     this._assertTurn('choose');
@@ -319,11 +357,13 @@ export class Game {
     this.fuseki.drop(picked.move);
     this._recordFusekiMove(picked.move);
     // 40手目なら _recordFusekiMove の中で通常フェーズへ移っている（_transitionToNormal）。
-    // その場合は布石の評価を残さない。残すと、41手目の人間の手番でフェーズだけ「通常」に
-    // 変わり、評価には布石の「採用手の確率」が出たままになる。
-    if (this.phase !== 'fuseki') return null;
+    // 候補の一覧は残さない——41手目の人間の手番でフェーズだけ「通常」に変わり、
+    // 「採用手の確率」が出たままになる。評価値（勝率）のほうは40手目にも付けてよく、
+    // むしろ付けないとグラフが境目で途切れる。
+    if (this.phase !== 'fuseki') { await this.scoreFuseki(); return null; }
     this.lastEval = { kind: 'policy', winRate: picked.value, probability: picked.probability, candidates: picked.candidates };
     this.kifu[this.kifu.length - 1].eval = this.lastEval;
+    await this.scoreFuseki();      // 価値ネットがあれば winRate を書き足す
     return this.lastEval;
   }
 

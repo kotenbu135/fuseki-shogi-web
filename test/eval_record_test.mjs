@@ -179,5 +179,57 @@ await check('2手目の行に表の値が入る（置いたのが人間でも）
   eq(g.kifu[1].eval.winRate, 0.62, '値');
 });
 
+console.log('--- 布石フェーズの評価値（src/value.js） ---');
+
+// 本物の ONNX は要らない。見たいのは「誰の視点の値が、どの行に、いつ入るか」だけ。
+const stubValue = (p = 0.62) => ({ calls: 0, async winRate() { this.calls++; return p; } });
+
+await check('布石の手を打って scoreFuseki を呼ぶと、その行に先手勝率が入る', async () => {
+  const v = stubValue();
+  const g = new Game({ fuseki, policy: null, engine: null, humanColor: 'sente', valueNet: v });
+  g.playFusekiDrop('P*5g');
+  eq(await g.scoreFuseki(), false, '1手目は採点しない（教師の手番は2〜40）');
+  g.playFusekiDrop('P*5c');
+  eq(await g.scoreFuseki(), true, '2手目は採点する');
+  eq(g.kifu[1].eval.kind, 'value', '種別');
+  eq(g.kifu[1].eval.winRate, 0.62, '値');
+  eq(g.lastEval, g.kifu[1].eval, 'lastEval も同じものを指す');
+  eq(await g.scoreFuseki(), false, '二度目は何もしない（冪等）');
+  eq(v.calls, 1, '前向き計算は1回だけ');
+});
+
+await check('天秤将棋の2手目は表の値が勝ち、価値ネットで上書きされない', async () => {
+  const pairs = {};
+  for (const fb of '123456789') for (const rb of 'fghi')
+    for (const fw of '123456789') for (const rw of 'abcd') pairs[`${fb}${rb},${fw}${rw}`] = { v: 0.5 };
+  pairs['5i,5a'] = { v: 0.62 };
+  const table = new KingTable({ format: 'king_pair_table/1', model: 'iter538.npz', band: ['9i,1a'], pairs });
+  const v = stubValue(0.31);
+  const g = new Game({ fuseki, policy: null, engine: null, mode: 'kings-first',
+                       humanRole: 'placer', kingTable: table, valueNet: v });
+  g.playFusekiDrop('K*5i');
+  g.playFusekiDrop('K*5a');
+  eq(await g.scoreFuseki(), false, '表が入っている行は触らない');
+  eq(g.kifu[1].eval.kind, 'kings', '種別は表のまま');
+  eq(g.kifu[1].eval.winRate, 0.62, '表の値');
+});
+
+await check('価値ネットが無ければ従来どおり評価なし', async () => {
+  const g = new Game({ fuseki, policy: null, engine: null, humanColor: 'sente' });
+  g.playFusekiDrop('P*5g');
+  g.playFusekiDrop('P*5c');
+  eq(await g.scoreFuseki(), false, '呼んでも何も起きない');
+  eq(g.kifu[1].eval, undefined, '評価は付かない');
+});
+
+await check('前向き計算が落ちたら、以後は黙って出さない', async () => {
+  const g = new Game({ fuseki, policy: null, engine: null, humanColor: 'sente',
+                       valueNet: { async winRate() { throw new Error('壊れた'); } } });
+  g.playFusekiDrop('P*5g');
+  g.playFusekiDrop('P*5c');
+  eq(await g.scoreFuseki(), false, '失敗しても例外を投げない');
+  eq(g.valueNet, null, '2度目以降は呼ばない');
+});
+
 console.log(`\n不一致 ${failures} 件`);
 process.exit(failures ? 1 : 0);

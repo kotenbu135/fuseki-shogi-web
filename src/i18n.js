@@ -217,6 +217,8 @@ const DICT = {
   status_paused_sub: { ja: '「再開」で続きを見る。', en: 'Press Resume to continue.' },
   engine_table: { ja: '天秤の表', en: 'king-pair table' },
   engine_policy: { ja: '布石エンジン', en: 'placement engine' },
+  engine_fuseki_value: { ja: '布石の価値ネット（序盤は当てにならない）',
+    en: 'placement value net (unreliable in the early plies)' },
   engine_policy_random: { ja: '布石エンジン（確率で選ぶ。低い手も出る）', en: 'placement engine (sampled; low-probability moves happen)' },
   engine_yaneuraou: { ja: 'やねうら王', en: 'YaneuraOu' },
   status_reviewing: { ja: '{n}手目までを表示中', en: 'Showing the position after move {n}' },
@@ -283,6 +285,9 @@ const DICT = {
   // 方策の自信であって優劣ではない。「採用手の確率 0.3%」は観る人に「0.3%の手を指した」と読めた。
   eval_policy_prob: { ja: 'この手を選ぶ確率 {p}%', en: 'chance of this move {p}%' },
   eval_policy_win: { ja: '勝率 {p}%（手番側）', en: 'win rate {p}% (side to move)' },
+  // 布石の価値ネットが出す勝率。表（eval_table）と同じく**先手から見た**値なので、
+  // eval_policy_win（手番側）を使い回さないこと。符号が黙って裏返る。
+  eval_fuseki: { ja: '見立て 先手 {p}%', en: 'estimate: Sente {p}%' },
   eval_mate: { ja: '{n}手詰', en: 'mate in {n}' },
   eval_cp: { ja: '{cp}（深さ{d}）', en: '{cp} (depth {d})' },
   engine_depth: { ja: '深さ{d}', en: 'depth {d}' },

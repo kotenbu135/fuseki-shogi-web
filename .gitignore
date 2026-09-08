@@ -15,6 +15,8 @@ models/*
 !models/fuseki_degct_b3_iter1177.onnx
 # 両玉先置きモードの価値表。上の重みのロールアウトをやねうら王で採点したもの（GCT由来ゼロ）
 !models/king_pairs_iter1177_games.json
+# 布石フェーズの評価値（src/value.js）。ゲートの実対局から乱数初期化で学習（GCT由来ゼロ）
+!models/value_mid_iter1400_t40.onnx
 
 # 参照データ（test/gen_parity_ref.py が生成する）
 parity_ref.json
