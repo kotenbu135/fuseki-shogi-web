@@ -1207,8 +1207,10 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 /* 先後の2択。同じ大きさで並べ、押した（仮）ほうだけ縁を立てる。 */
 .choice-row { display: flex; gap: .4rem; }
 .choice-row button.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); color: var(--ink); }
-/* 終局後の行き先。4つを2×2に。 */
+/* 終局後の行き先。4つを2×2にし、5つ目（本将棋以降のKIF）は1行を使う。 */
 .result-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+.result-actions > #btn-copy-kif41 { grid-column: 1 / -1; }
+.result-actions > button:disabled { opacity: .45; cursor: not-allowed; }
 .result-note { margin: 0; font-size: .72rem; color: var(--ink-soft); line-height: 1.4; }
 .result-note:empty { display: none; }
 

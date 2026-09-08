@@ -298,6 +298,8 @@
             <button type="button" id="btn-analyze">{{btn_analyze}}</button>
             <button type="button" id="btn-replay">{{btn_replay}}</button>
             <button type="button" id="btn-copy-kifu">{{btn_copy_kifu}}</button>
+            <!-- 41手目以降だけのKIF。布石で終わった対局には無いので、そのときは押せない。 -->
+            <button type="button" id="btn-copy-kif41" title="{{btn_copy_kif41_title}}">{{btn_copy_kif41}}</button>
           </div>
         </div>
         <!-- 検討。終局後だけ。見ている局面をやねうら王が読み続け、盤の駒を動かして変化を試せる。 -->
@@ -373,6 +375,10 @@
       <input type="text" id="io-sfen" readonly spellcheck="false" value="">
     </label>
     <p class="io-note">{{io_sfen_note}}</p>
+    <div class="moves-io-actions">
+      <button type="button" id="btn-io-kif41" title="{{btn_copy_kif41_title}}">{{btn_copy_kif41}}</button>
+    </div>
+    <p class="io-note">{{io_kif_note}}</p>
   </dialog>
 
   <!-- 対局中にホームへ戻るときの確認。局面は保存しない（決定）。 -->

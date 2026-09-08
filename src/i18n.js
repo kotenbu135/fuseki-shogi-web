@@ -240,6 +240,12 @@ const DICT = {
   btn_again: { ja: 'もう一局', en: 'Play again' },
   btn_replay: { ja: '並べ直す', en: 'Replay' },
   btn_copy_kifu: { ja: '棋譜をコピー', en: 'Copy record' },
+  // 41手目の局面から先だけのKIF。ShogiGUI などへ貼って検討するためのもの。
+  btn_copy_kif41: { ja: '本将棋以降をKIFでコピー', en: 'Copy KIF from move 41' },
+  btn_copy_kif41_title: {
+    ja: '41手目の局面を初期局面にしたKIF。ShogiGUI などの将棋ソフトに貼って検討できる',
+    en: 'KIF starting from the position at move 41, for pasting into ShogiGUI or other shogi software',
+  },
   // ホームへ戻るボタンは無い（ロゴとメニューの「対局」から）。
   btn_analyze: { ja: '検討', en: 'Analyze' },
   btn_var_back: { ja: '本譜へ戻る', en: 'Back to the game' },
@@ -325,6 +331,11 @@ const DICT = {
   io_moves_placeholder: { ja: 'P*5g P*5c G*4h … と空白区切りで貼る', en: 'Paste moves separated by spaces: P*5g P*5c G*4h …' },
   io_load: { ja: 'この手順から始める', en: 'Start from these moves' },
   io_copy: { ja: '手順をコピー', en: 'Copy moves' },
+  io_kif_note: {
+    ja: '布石が終わった41手目の局面を初期局面にしたKIF。布石の40手は入らない（KIFに書き方が無い）。ShogiGUI などに「棋譜貼り付け」で貼ると、手数1が本将棋の1手目として検討できる。',
+    en: 'A KIF whose starting position is the position at move 41, after placement. The 40 placement moves are not included (KIF has no way to write them). Paste it into ShogiGUI or similar with “paste record”; move 1 there is the first move of the shogi phase.',
+  },
+  kif_you: { ja: 'あなた', en: 'You' },
   io_sfen: { ja: 'SFEN（出力のみ）', en: 'SFEN (output only)' },
   io_sfen_note: {
     ja: '布石のSFENは持ち駒に玉が入る布石将棋の拡張で、ふつうの将棋ソフトでは読めない。41手目以降は標準のSFEN。',

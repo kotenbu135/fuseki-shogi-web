@@ -48,6 +48,9 @@ jobs:
       - name: 棋譜の行ごとの評価
         run: node test/eval_record_test.mjs
 
+      - name: 41手目からのKIF（読み戻すと局面が一致する）
+        run: node test/kif_export_test.mjs
+
       - name: オンライン対局の部屋のルール
         run: node worker/test/rules_test.mjs
 

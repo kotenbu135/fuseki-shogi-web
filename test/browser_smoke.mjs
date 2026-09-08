@@ -498,6 +498,9 @@ try {
   // 局面の受け渡しのダイアログを開いても崩れない。
   await evaluate(page, 'document.getElementById("btn-io-open").click()');
   await layoutCheck('受け渡しダイアログを開いた');
+  // 41手目以降のKIFは布石が終わるまで作れないので、押せない。
+  check('布石の途中では「本将棋以降をKIFでコピー」が押せない',
+    await evaluate(page, 'document.getElementById("btn-io-kif41").disabled') === true);
   await evaluate(page, 'document.getElementById("io-dialog").close()');
 
   // 待った。自分の1手とAIの応手が消える。
@@ -527,6 +530,9 @@ try {
     exceptions().length === beforeResign && afterResign.phase === 'over' && afterResign.state === 'over'
       && afterResign.againVisible && afterResign.allDone,
     `${JSON.stringify(afterResign)} / 例外 ${exceptions().length - beforeResign} 件`);
+  // 布石のまま終わった局には41手目の局面が無い。終局後の操作にボタンは出るが押せない。
+  if (!FULL) check('布石のまま終わった局では「本将棋以降をKIFでコピー」が押せない', await evaluate(page,
+    '(b => b.getBoundingClientRect().width > 0 && b.disabled)(document.getElementById("btn-copy-kif41"))') === true);
   await layoutCheck('終局');
   await shot('04-over');
 
@@ -1443,6 +1449,21 @@ async function playWholeGame(page) {
     check('盤の縁が将棋の色に変わる', await evaluate(page,
       'document.querySelector(".sg-wrap").classList.contains("phase-normal")'));
     await layoutCheck('41手目');
+    // 41手目の局面ができたので、本将棋以降のKIFが作れる。クリップボードを差し替えて中身を見る。
+    const kif = await evaluate(page, `(async () => {
+      navigator.clipboard.writeText = t => { window.__kif = t; return Promise.resolve(); };
+      document.getElementById('btn-io-open').click();
+      const b = document.getElementById('btn-io-kif41');
+      if (b.disabled) return 'disabled';
+      b.click();
+      await new Promise(r => setTimeout(r, 200));
+      document.getElementById('io-dialog').close();
+      return window.__kif ?? 'none';
+    })()`);
+    check('「本将棋以降をKIFでコピー」が41手目局面の盤面図を持つKIFを出す',
+      typeof kif === 'string' && kif.startsWith('#KIF') && kif.includes('手合割：その他')
+        && kif.includes('先手：') && kif.includes('|') && kif.includes('手数----指手'),
+      String(kif).slice(0, 80));
 
     // ---- 通常フェーズ ----
     await evaluate(page, `(() => {

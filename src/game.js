@@ -11,6 +11,7 @@ import { pieceCanPromote, pieceForcePromote, promote, unpromote } from 'shogiops
 import { makeJapaneseMoveOrDrop } from 'shogiops/notation/japanese';
 import { makeWesternMoveOrDrop } from 'shogiops/notation/western';
 import { makeJapaneseSquare, roleToKanji, roleToWestern } from 'shogiops/notation/util';
+import { makeKifPositionHeader, makeKifMoveOrDrop } from 'shogiops/notation/kif';
 import { BLACK, WHITE } from './fuseki.js';
 
 export const SENTE = 'sente';
@@ -388,6 +389,50 @@ export class Game {
     return pos;
   }
 
+  /**
+   * 41手目の局面を初期局面とするKIF。ShogiGUI などの将棋ソフトへ貼って検討するためのもの。
+   *
+   * 布石の40手は入れない。KIFには「空の盤＋持ち駒20枚」を表す書き方が無く、布石込みの
+   * 棋譜はどのKIFリーダーも読めない。41手目の局面は普通の将棋の局面なので、これを
+   * 「手合割：その他」の盤面図で置き、通常フェーズの手を1手目から並べれば標準のKIFになる。
+   * KIFの手数 n は、この対局の (n + 40) 手目。
+   *
+   * 布石が終わる前（41手目の局面が無い）は null。
+   *
+   * @param {{sente?: string, gote?: string, notes?: string[]}} [head] 対局者の名前と、
+   *   先頭にコメント（#）として残す行
+   */
+  kifFromMove41({ sente = '先手', gote = '後手', notes = [] } = {}) {
+    if (!this.finalSfen) return null;
+    const pos = parseSfen('standard', this.finalSfen, false).unwrap();
+    const lines = [
+      '#KIF version=2.0 encoding=UTF-8',
+      ...notes.map(n => `# ${n}`),
+      `先手：${sente}`,
+      `後手：${gote}`,
+      // 手合割は盤面図の前に置く。Kifu for Windows と ShogiGUI が任意の局面を書くときの形。
+      '手合割：その他　',
+      makeKifPositionHeader(pos),
+      '手数----指手---------消費時間--',
+    ];
+    let lastDest;
+    for (const [i, usi] of this.normalMoves.entries()) {
+      const md = parseUsi(usi);
+      const text = makeKifMoveOrDrop(pos, md, lastDest);
+      if (!text) throw new Error(`KIFに書けない手: ${usi}`);
+      lines.push(kifMoveLine(i + 1, text));
+      pos.play(md);
+      lastDest = md.to;
+    }
+    const n = this.normalMoves.length;
+    if (this.phase === 'over') {
+      const term = kifTerminal(this.result, pos.turn);
+      lines.push(kifMoveLine(n + 1, term.token));
+      lines.push(`まで${n}手で${term.tail}`);
+    }
+    return `${lines.join('\n')}\n`;
+  }
+
   // ---- 内部 ----
 
   _assertTurn(phase) {
@@ -760,4 +805,41 @@ function boardMapToSfen(pieces) {
     ranks.push(row);
   }
   return ranks.join('/');
+}
+
+/** KIFの指し手の行。「   1 ７六歩(77)   ( 0:00/00:00:00)」。消費時間は持っていないので0。 */
+function kifMoveLine(n, text) {
+  return `${String(n).padStart(4, ' ')} ${text.padEnd(11, ' ')}( 0:00/00:00:00)`;
+}
+
+/**
+ * 終局をKIFの終端の手に直す。終端の手は「手番側の手」として書くので、反則と入玉宣言は
+ * 手番側が勝ったか負けたかで語が変わる。投了・時間切れはどの手番で書いても読める。
+ * 布石将棋にしか無い終わり方（41手目の裁定・観戦の中断・部屋の期限など）は 中断。
+ *
+ * @param {{winner: string|null, reason: string}} result
+ * @param {'sente'|'gote'} turn 終局時の手番
+ * @returns {{token: string, tail: string}} 終端の手と「まで◯手で…」の末尾
+ */
+function kifTerminal(result, turn) {
+  const { winner, reason } = result;
+  const wins = w => `${w === 'sente' ? '先手' : '後手'}の勝ち`;
+  const R = reason;
+  if (R === 'human_resign' || R === 'ai_resign' || R === 'opponent_resign')
+    return { token: '投了', tail: winner ? wins(winner) : '中断' };
+  if (R === 'checkmate' || R === 'stalemate')
+    return { token: '詰み', tail: winner ? wins(winner) : '中断' };
+  if (R === 'human_timeout' || R === 'opponent_timeout')
+    return { token: '時間切れ', tail: winner ? wins(winner) : '中断' };
+  if (R === 'sennichite') return { token: '千日手', tail: '千日手' };
+  if (R === 'draw' || R === 'agreement') return { token: '持将棋', tail: '持将棋' };
+  if (R === 'perpetual_check' || R === 'illegal' || R === 'engine_illegal_move') {
+    if (!winner) return { token: '中断', tail: '中断' };
+    return winner === turn
+      ? { token: '反則勝ち', tail: wins(winner) }
+      : { token: '反則負け', tail: wins(winner) };
+  }
+  if (R === 'ai_nyugyoku_declaration' && winner)
+    return { token: '入玉勝ち', tail: wins(winner) };
+  return { token: '中断', tail: '中断' };
 }

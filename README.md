@@ -15,7 +15,8 @@
 
 - **AIと対局**（5段階）／**友達と対局**（招待リンク）／**待合**（相手を待つ）／**観戦**（AI同士）
 - **天秤将棋** —— 先手番の得を先手玉の薄さで釣り合わせる、このサイトの追加ルール
-- **検討** —— 終局後にやねうら王で読ませ、候補手と変化を並べる。評価グラフは棋譜の行ごと
+- **検討** —— 終局後にやねうら王で読ませ、候補手と変化を並べる。評価グラフは棋譜の行ごと。
+  41手目の局面から先だけのKIFをコピーして、ShogiGUI などの将棋ソフトでも検討できる
 - 日本語 / English（`/en/`）
 
 <details>
@@ -286,6 +287,9 @@ node build.mjs && node test/browser_smoke.mjs --kings-first
 
 # 棋譜の行ごとの評価（先手から見た値への正規化、探索1回で2行、待ったで残る、positionAt）
 node test/eval_record_test.mjs
+
+# 41手目の局面から先だけのKIF（盤面図と指し手を shogiops で読み戻して局面が一致する、終端の手）
+node test/kif_export_test.mjs
 
 # 観戦（AI同士）の Game。人間の手番が来ない、中断、色が付かない
 node test/spectate_test.mjs

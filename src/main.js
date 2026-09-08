@@ -80,6 +80,7 @@ const ui = {
   chart: el('eval-chart'), chartSvg: el('eval-chart-svg'),
   resultActions: el('result-actions'), resultNote: el('result-note'),
   again: el('btn-again'), replay: el('btn-replay'), copyKifu: el('btn-copy-kifu'), analyze: el('btn-analyze'),
+  copyKif41: el('btn-copy-kif41'), ioKif41: el('btn-io-kif41'),
   varBack: el('btn-var-back'), analyzeAll: el('btn-analyze-all'), flipAnalyze: el('btn-flip-analyze'),
   analyzeEnd: el('btn-analyze-end'), candidates: el('candidates'), variation: el('variation'),
   newGame: el('btn-new'), resign: el('btn-resign'), flip: el('btn-flip'), undo: el('btn-undo'),
@@ -700,6 +701,8 @@ el('board').addEventListener('pointerdown', () => sound.unlock());
 ui.replay.addEventListener('click', () => goToPly(0));
 ui.copyKifu.addEventListener('click', () => game && copyText(kifuText(), ui.copyKifu, t('btn_copy_kifu')));
 ui.ioCopy.addEventListener('click', () => game && copyText(movesText(), ui.ioCopy, t('io_copy')));
+ui.copyKif41.addEventListener('click', () => game?.finalSfen && copyText(kif41Text(), ui.copyKif41, t('btn_copy_kif41')));
+ui.ioKif41.addEventListener('click', () => game?.finalSfen && copyText(kif41Text(), ui.ioKif41, t('btn_copy_kif41')));
 ui.ioLoad.addEventListener('click', loadMoves);
 
 // 待った。AI相手なので相手の合意は要らない。自分の直前の一手を取り消す。
@@ -1869,6 +1872,7 @@ function render() {
     ui.undo.hidden = ui.resign.hidden = false;
     ui.pause.hidden = ui.abort.hidden = true;
     ui.ioSfen.value = '';
+    ui.copyKif41.disabled = ui.ioKif41.disabled = true;
     ui.seatTopRole.hidden = ui.seatBottomRole.hidden = true;
     renderKifuHead();
     renderNav();
@@ -1906,6 +1910,8 @@ function render() {
   ui.varBack.disabled = !analysis?.variation.moves.length;
   ui.analyzeAll.textContent = t(analysis?.pass ? 'btn_analyze_stop' : 'btn_analyze_all');
   ui.ioSfen.value = game.sfen();
+  // 41手目以降のKIFは、布石が終わって初めて作れる。
+  ui.copyKif41.disabled = ui.ioKif41.disabled = !game.finalSfen;
   ui.undo.disabled = busy || viewPly !== null || game.phase === 'over' || undoTarget() < 0;
   // 観戦では待った・投了の代わりに一時停止・中断。オンラインでは待ったは無い（相手の同意が要る。段3）。
   ui.undo.hidden = game.spectate || !!online;
@@ -2664,6 +2670,32 @@ function kifuText() {
     lines.push(t('kifu_result', { who, why }));
   }
   return lines.join('\n');
+}
+
+/**
+ * 41手目の局面から先だけのKIF（ShogiGUI などで検討する用）。中身は Game.kifFromMove41 で、
+ * ここでは対局者の名前と、布石の手順・41手目のSFENをコメントに添える。
+ */
+function kif41Text() {
+  const ai = online ? t('AI') : t('kifu_level', { n: aiLevel });
+  const you = t('kif_you');
+  let sente, gote;
+  if (online) {
+    const s = onlineColorSeat(SENTE), g = onlineColorSeat(GOTE);
+    sente = s ? onlineSeatName(s) : t('side_sente');
+    gote = g ? onlineSeatName(g) : t('side_gote');
+  } else if (game.spectate) {
+    sente = gote = ai;
+  } else {
+    sente = game.humanColor === SENTE ? you : ai;
+    gote = game.humanColor === GOTE ? you : ai;
+  }
+  const notes = [
+    kifuText().split('\n')[0],
+    t('kifu_sfen41', { sfen: game.finalSfen }),
+    `${t('io_moves')}: ${game.tokens().slice(0, game.tokens().length - game.normalMoves.length).join(' ')}`,
+  ];
+  return game.kifFromMove41({ sente, gote, notes });
 }
 
 /** クリップボードへ。押したボタンの文言で結果を返す。 */
