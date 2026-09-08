@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{site_title}}</title>
+<title>{{home_title}}</title>
 <meta name="description" content="{{meta_description}}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/style.css">
@@ -14,13 +14,14 @@
 <link rel="alternate" hreflang="en" href="https://fusekishogi.com/en/">
 <link rel="alternate" hreflang="x-default" href="https://fusekishogi.com/">
 <meta property="og:type" content="website">
-<meta property="og:title" content="{{site_title}}">
+<meta property="og:title" content="{{home_title}}">
 <meta property="og:description" content="{{meta_description}}">
 <meta property="og:url" content="https://fusekishogi.com{{self_href}}">
 <meta property="og:image" content="https://fusekishogi.com/og/{{og_image}}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
+{{jsonld}}
 </head>
 <body>
 <div class="app" id="app">
@@ -181,7 +182,7 @@
     <section class="intro">
       <h2>{{home_intro_head}}</h2>
       <p>{{home_intro}}</p>
-      <p><a href="{{self_href}}rules/">{{home_rules_link}}</a> · <a href="{{self_href}}story/">{{home_story_link}}</a></p>
+      <p><a href="{{self_href}}rules/">{{home_rules_link}}</a> · <a href="{{self_href}}balance/">{{home_balance_link}}</a> · <a href="{{self_href}}story/">{{home_story_link}}</a></p>
     </section>
   </main>
 

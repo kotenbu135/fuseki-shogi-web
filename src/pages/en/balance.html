@@ -1,0 +1,87 @@
+<h1>Balance Shogi</h1>
+<p class="lead">One player places both kings; the other chooses to be Sente or Gote. The first-move advantage is balanced by the players themselves, not by a number in the rulebook. Play it here, against the AI or a friend, right in the browser.</p>
+<p class="cta-row"><a class="cta" href="{{self_href}}#balance">Play Balance Shogi</a><span class="cta-note">Nothing to install. The home screen opens with Balance Shogi selected.</span></p>
+
+<h2>What it is</h2>
+<p>The base game is <a href="{{self_href}}rules/#fuseki">Fuseki Shogi</a>: both sides place 20 pieces each on an empty board, then ordinary shogi begins on move 41. Fuseki Shogi favours Sente, who wins a little over 60% of games between AIs. Balance Shogi does not cancel that with a numeric handicap; it balances it with the first two placements and one choice.</p>
+<p>Furigoma decides who <b>places both kings</b>; the other player <b>chooses the side</b>. Everything else is Fuseki Shogi.</p>
+<ol class="steps">
+  <li>
+    <span class="who place">Placer</span>
+    <div class="diag">
+      <div class="zone b"></div>
+      <piece class="sente king f5 r8"></piece>
+    </div>
+    <span class="what">Move 1 — the Sente king<br><em>within Sente’s four ranks</em></span>
+  </li>
+  <li>
+    <span class="who place">Placer</span>
+    <div class="diag">
+      <div class="zone w"></div>
+      <piece class="sente king f5 r8"></piece>
+      <piece class="gote king f2 r2"></piece>
+    </div>
+    <span class="what">Move 2 — the Gote king<br><em>within Gote’s four ranks</em></span>
+  </li>
+  <li>
+    <span class="who pick">Chooser</span>
+    <div class="diag">
+      <piece class="sente king f5 r8"></piece>
+      <piece class="gote king f2 r2"></piece>
+    </div>
+    <div class="pick-row"><span class="on">☗ Take Sente</span><span>☖ Take Gote</span></div>
+    <span class="what">Choose a side<br><em>the position does not change</em></span>
+  </li>
+  <li>
+    <span class="who">Sente &amp; Gote</span>
+    <div class="diag">
+      <piece class="sente king f5 r8"></piece>
+      <piece class="gote king f2 r2"></piece>
+      <piece class="sente gold f6 r8"></piece>
+      <piece class="sente silver f4 r8"></piece>
+      <piece class="sente pawn f7 r7"></piece>
+      <piece class="sente pawn f5 r7"></piece>
+      <piece class="sente pawn f3 r7"></piece>
+      <piece class="sente rook f2 r8"></piece>
+      <piece class="gote gold f3 r2"></piece>
+      <piece class="gote pawn f7 r3"></piece>
+      <piece class="gote pawn f5 r3"></piece>
+      <piece class="gote pawn f3 r3"></piece>
+      <piece class="gote rook f8 r2"></piece>
+    </div>
+    <span class="what">Moves 3–40 — the rest<br><em>19 each, alternately from Sente</em></span>
+  </li>
+</ol>
+<p>The placer does not yet know which side they will play. Put the Sente king in a safe spot and the chooser takes Sente; make it too thin and they take Gote. The placer only breaks even when the gap in king safety exactly matches the first move. It is the pie rule — one cuts, the other picks first — and the balance point is set by the players on the day.</p>
+<figure>
+<svg class="scale-fig" viewBox="0 0 260 112" role="img" aria-label="{{scale_label}}. The left pan holds Sente (moving first, with a thinner king), the right pan holds Gote (a safer king), and the beam is level.">
+  <path class="stand" d="M130 30 L113 86 H147 Z"/>
+  <rect class="stand" x="106" y="86" width="48" height="6" rx="3"/>
+  <path class="beam" d="M30 28 H230"/>
+  <circle class="pivot" cx="130" cy="28" r="4.5"/>
+  <g class="side"><path class="chain" d="M64 28 L46 52 M64 28 L82 52"/>
+    <path class="pan" d="M42 52 H86 L78 64 Q64 69 50 64 Z"/>
+    <rect class="weight solid" x="56" y="42" width="16" height="10" rx="2"/>
+    <text x="64" y="80" class="h">{{scale_sente}} ☗</text>
+    <text x="64" y="93">{{scale_sente_1}}</text><text x="64" y="105">{{scale_sente_2}}</text></g>
+  <g class="side"><path class="chain" d="M196 28 L178 52 M196 28 L214 52"/>
+    <path class="pan" d="M174 52 H218 L210 64 Q196 69 182 64 Z"/>
+    <rect class="weight hollow" x="188" y="42" width="16" height="10" rx="2"/>
+    <text x="196" y="80" class="h">{{scale_gote}} ☖</text>
+    <text x="196" y="93">{{scale_gote_1}}</text></g>
+</svg>
+<figcaption>One pan carries the first move, the other the gap in king safety. The placer levels them. That is where the name comes from.</figcaption>
+</figure>
+
+<h2>What you can do here</h2>
+<ul>
+  <li><b>Play the AI.</b> Take either role, placer or chooser, or let furigoma decide. The AI places and chooses from a table that measured all 1,296 king pairs. Pick its strength and the time control.</li>
+  <li><b>Play a friend.</b> Send an invite link. Nothing to install on their side either, and the same link brings you back.</li>
+  <li><b>Lobby.</b> Post a seek anyone can join, or join one.</li>
+  <li><b>Game record and analysis.</b> An evaluation graph and analysis after the game. Export the record; it keeps both who placed the kings and who was Sente.</li>
+</ul>
+<p class="cta-row"><a class="cta" href="{{self_href}}#balance">Play Balance Shogi</a></p>
+
+<h2>Read more</h2>
+<p>The placement zone, the nifu-avoidance restriction, the move-41 adjudication and the AI's table are in the <a href="{{self_href}}rules/#balance">rules</a>. Why the king squares alone are enough, and how the balance was measured, is in <a href="{{self_href}}story/">How Balance Shogi came to be</a>.</p>
+<p class="note">Japanese name: 天秤将棋 (tenbin shōgi, "scale shogi"). Fuseki Shogi and Balance Shogi share one board screen; switch between them on the home page.</p>

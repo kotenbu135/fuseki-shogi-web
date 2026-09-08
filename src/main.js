@@ -539,6 +539,7 @@ function route() {
   showView('home');
   openKifuIfAsked();
   openLobbyIfAsked();
+  openBalanceIfAsked();
 }
 
 // ホームへ戻る確認の後に入る部屋（対局中に別の部屋のリンクを開いたとき）。
@@ -555,6 +556,14 @@ function openKifuIfAsked() {
   if (location.hash.replace(/^#\/?/, '') !== 'kifu') return;
   history.replaceState(null, '', '#/');
   if (!ui.ioDialog.open) ui.ioDialog.showModal();
+}
+/** 案内のページ（/balance/）の「天秤将棋で対局する」は #balance でホームへ来る。札を選んで URL は戻す。 */
+function openBalanceIfAsked() {
+  if (location.hash.replace(/^#\/?/, '') !== 'balance') return;
+  history.replaceState(null, '', '#/');
+  setMode('kings-first');
+  saveSetup();
+  ui.modeKings.closest('.mode-card')?.scrollIntoView({ block: 'center' });
 }
 addEventListener('hashchange', route);
 
@@ -597,6 +606,7 @@ ui.leaveOk.addEventListener('click', () => {
   if (currentView() !== 'home') history.replaceState(null, '', '#/');
   showView('home');
   openLobbyIfAsked();
+  openBalanceIfAsked();
 });
 ui.leaveCopy.addEventListener('click', () => game && copyText(kifuText(), ui.leaveCopy, t('leave_copy')));
 
@@ -615,6 +625,7 @@ async function boot() {
   if (location.hash.replace(/^#\/?/, '') === 'play') history.replaceState(null, '', '#/');
   openKifuIfAsked();
   openLobbyIfAsked();
+  openBalanceIfAsked();
   // 招待リンク（#room/<id>）。部屋の概要は先に取りに行き、参加はエンジンが起きてから。
   const roomId = roomIdFromHash();
   if (roomId) enterRoom(roomId);

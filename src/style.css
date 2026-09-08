@@ -1496,6 +1496,20 @@ sg-hp-wrap.last-dest { background-color: var(--last-dest); border-radius: 3px; }
 .page code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .86em; background: color-mix(in srgb, var(--rule) 45%, transparent); padding: .05em .3em; border-radius: 3px; }
 .page a { color: inherit; }
 .page .note { font-size: .82rem; color: var(--ink-soft); }
+/* 案内のページ（/balance/）の「対局する」。対局画面の primary ボタンと同じ見た目のリンク。 */
+.page .cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; margin: 1rem 0 1.4rem; }
+.page a.cta {
+  display: inline-block;
+  padding: .55rem 1.3rem;
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.page a.cta:hover { background: var(--ink-soft); border-color: var(--ink-soft); }
+.page .cta-note { font-size: .82rem; color: var(--ink-soft); }
 .page figure { margin: 1rem 0; }
 .page figcaption { font-size: .78rem; color: var(--ink-soft); margin-top: .3rem; }
 /* 両玉の価値表のヒートマップ。段×筋の升に色を塗る。 */

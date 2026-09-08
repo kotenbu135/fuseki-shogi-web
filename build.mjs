@@ -173,9 +173,51 @@ const leftovers = (html, name) => {
 // 重みが無いビルドは布石フェーズを指せない。その状態で対局画面をindexに置くと
 // 読み込みエラーが最初に見えるので、準備中ページ（疎通診断つき）をindexにする。
 // 重みが入った時点で index は自動的に対局画面へ戻る。
+// 構造化データ（JSON-LD）。検索エンジンに「サイトの名前」と「ここで遊べる二つの将棋」を
+// 伝える。alternateName に天秤将棋を入れるのは、メニューと片方のルールがその名で、
+// 「天秤将棋」で探した人にもこのサイトだと分かるようにするため。実行されない script なので
+// CSP のハッシュには入れない（下の hashes の正規表現が ld+json を除いている）。
+const SITE = 'https://fusekishogi.com';
+const jsonld = obj => `<script type="application/ld+json">${JSON.stringify(obj)}</script>`;
+const gameLd = (lang, which) => {
+  const ja = lang === 'ja';
+  const name = which === 'balance' ? (ja ? '天秤将棋' : 'Balance Shogi') : (ja ? '布石将棋' : 'Fuseki Shogi');
+  const alt = which === 'balance' ? (ja ? 'Balance Shogi' : '天秤将棋') : (ja ? 'Fuseki Shogi' : '布石将棋');
+  return {
+    '@type': 'VideoGame',
+    name, alternateName: alt,
+    url: `${SITE}${langVars(lang).self_href}${which === 'balance' ? 'balance/' : ''}`,
+    description: tr(which === 'balance' ? 'page_desc_balance' : 'mode_standard_desc', lang),
+    inLanguage: lang,
+    genre: ja ? '将棋の変則ルール' : 'Shogi variant',
+    gamePlatform: 'Web browser',
+    applicationCategory: 'GameApplication',
+    operatingSystem: 'Any',
+    playMode: ['SinglePlayer', 'MultiPlayer'],
+    numberOfPlayers: { '@type': 'QuantitativeValue', value: 2 },
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'JPY' },
+  };
+};
+const homeLd = lang => jsonld({
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'WebSite',
+      name: tr('site_title', lang),
+      alternateName: lang === 'ja' ? ['天秤将棋', 'Fuseki Shogi', 'Balance Shogi'] : ['Balance Shogi', '布石将棋', '天秤将棋'],
+      url: `${SITE}${langVars(lang).self_href}`,
+      description: tr('meta_description', lang),
+      inLanguage: lang,
+    },
+    gameLd(lang, 'standard'),
+    gameLd(lang, 'balance'),
+  ],
+});
+const balanceLd = lang => jsonld({ '@context': 'https://schema.org', ...gameLd(lang, 'balance') });
+
 const indexTpl = src('index.html');
 for (const lang of LANGS) {
-  const html = stamp(fill(indexTpl, lang, langVars(lang)));
+  const html = stamp(fill(indexTpl, lang, { ...langVars(lang), jsonld: homeLd(lang) }));
   leftovers(html, `index.html (${lang})`);
   const dir = lang === 'en' ? 'en/' : '';
   if (hasModel || lang === 'en') write(`${dir}index.html`, html);
@@ -190,6 +232,8 @@ const pageTpl = src('page.html');
 const PAGES = [
   { name: 'rules', title: 'page_title_rules', desc: 'page_desc_rules' },
   { name: 'story', title: 'page_title_story', desc: 'page_desc_story' },
+  // 天秤将棋の案内。「天秤将棋」で検索した人が最初に着くページ。head に VideoGame の JSON-LD。
+  { name: 'balance', title: 'page_title_balance', desc: 'page_desc_balance', head: balanceLd },
 ];
 for (const lang of LANGS) {
   const dir = lang === 'en' ? 'en/' : '';
@@ -200,7 +244,7 @@ for (const lang of LANGS) {
       page_path: `${p.name}/`,
       page_title: tr(p.title, lang),
       page_desc: tr(p.desc, lang),
-      head_extra: '',
+      head_extra: p.head ? p.head(lang) : '',
       content: fill(body, lang, langVars(lang)),
       nav_current: p.name,
     }));
@@ -227,8 +271,7 @@ for (const lang of LANGS) {
 // 写しなので載せない。Cloudflare の管理 robots.txt（Content-Signal、AI クローラの
 // Disallow）は配信時に src/robots.txt の前へ継ぎ足されるので、ここは Sitemap 行だけ。
 {
-  const SITE = 'https://fusekishogi.com';
-  const paths = ['', 'rules/', 'story/'];
+  const paths = ['', 'rules/', 'balance/', 'story/'];
   const urls = [];
   for (const lang of LANGS)
     for (const p of paths) {
@@ -271,7 +314,7 @@ for (const lang of LANGS) {
   walk(OUT);
   const hashes = new Set();
   for (const f of htmls)
-    for (const m of fs.readFileSync(f, 'utf8').matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g))
+    for (const m of fs.readFileSync(f, 'utf8').matchAll(/<script(?![^>]*\bsrc=)(?![^>]*ld\+json)[^>]*>([\s\S]*?)<\/script>/g))
       hashes.add(`'sha256-${crypto.createHash('sha256').update(m[1]).digest('base64')}'`);
   const rooms = new URL(ROOMS_URL);
   const csp = [

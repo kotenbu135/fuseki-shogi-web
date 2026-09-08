@@ -1332,7 +1332,7 @@ async function analyzeGame(page, kifuRows) {
 
 async function checkPages(page) {
   console.log('\n--- ルール・コラム ---');
-  for (const p of ['/rules/', '/story/', '/en/rules/', '/en/story/']) {
+  for (const p of ['/rules/', '/balance/', '/story/', '/en/rules/', '/en/balance/', '/en/story/']) {
     const r = await evaluate(page, `fetch(${JSON.stringify(p)}).then(r => r.status)`);
     check(`${p} が 200`, r === 200, String(r));
   }
@@ -1348,6 +1348,15 @@ async function checkPages(page) {
   await evalUntil(page, 'document.readyState', v => v === 'complete', 10000);
   check('英語のルールは lang=en で、言語リンクが日本語版の同じページを指す', await evaluate(page,
     'document.documentElement.lang === "en" && document.querySelector(".menu .lang").getAttribute("href") === "/rules/"'));
+  // 天秤将棋の案内。JSON-LD が読めて、「対局する」の先（#balance）でホームが天秤将棋を選んで開く。
+  await page.send('Page.navigate', { url: `http://localhost:${PORT}/balance/` });
+  await evalUntil(page, 'document.readyState', v => v === 'complete', 10000);
+  const ld = await evaluate(page, `(() => { try { return JSON.parse(document.querySelector('script[type="application/ld+json"]').textContent)['@type']; } catch (e) { return String(e); } })()`);
+  check('案内のページに VideoGame の JSON-LD がある', ld === 'VideoGame', String(ld));
+  check('案内の「対局する」が #balance を指す', await evaluate(page, 'document.querySelector(".page a.cta")?.getAttribute("href")') === '/#balance');
+  await page.send('Page.navigate', { url: `http://localhost:${PORT}/#balance` });
+  const picked = await evalUntil(page, 'document.getElementById("mode-kings")?.checked && location.hash', v => v === '#/', 10000);
+  check('#balance で開くとホームが天秤将棋を選んだ状態になり、URL は #/ に戻る', picked === '#/', String(picked));
 }
 
 /** 英語版。同じ app.js が lang を見て辞書を替え、棋譜は西洋式になる。 */

@@ -11,6 +11,9 @@
 const DICT = {
   // ---- サイト共通 ----
   site_title: { ja: '布石将棋', en: 'Fuseki Shogi' },
+  // 検索結果に出る題。site_title はロゴと h1、こちらは <title> と og:title。
+  // 「天秤将棋」で探した人にも、ここで遊べるサイトだと題だけで分かるようにする。
+  home_title: { ja: '布石将棋・天秤将棋をブラウザで対局', en: 'Fuseki Shogi & Balance Shogi — play in your browser' },
   meta_description: {
     ja: '空の盤に20枚ずつ打ってから指す変則将棋「布石将棋」と、先手の得を釣り合わせた「天秤将棋」を、ブラウザだけで対局する。',
     en: 'Play Fuseki Shogi in your browser: a shogi variant where both sides place 20 pieces on an empty board before the game begins, and Balance Shogi, its form with the first move balanced away.',
@@ -72,6 +75,7 @@ const DICT = {
   },
   home_rules_link: { ja: 'ルールの詳細', en: 'Full rules' },
   home_story_link: { ja: '天秤将棋ができるまで', en: 'How Balance Shogi came to be' },
+  home_balance_link: { ja: '天秤将棋とは', en: 'What is Balance Shogi?' },
   opt_color: { ja: 'あなたの手番', en: 'Your side' },
   color_sente: { ja: '先手 ☗', en: 'Sente ☗ (first)' },
   color_gote: { ja: '後手 ☖', en: 'Gote ☖ (second)' },
@@ -480,9 +484,15 @@ const DICT = {
   footer_build: { ja: 'ビルド', en: 'Build' },
   page_title_rules: { ja: 'ルール', en: 'Rules' },
   page_title_story: { ja: '天秤将棋ができるまで', en: 'How Balance Shogi came to be' },
+  // 天秤将棋の案内（/balance/）。「天秤将棋」で探した人が最初に着く場所。題は遊べることを言う。
+  page_title_balance: { ja: '天秤将棋をブラウザで対局', en: 'Play Balance Shogi in your browser' },
   page_desc_rules: {
     ja: '布石将棋と天秤将棋のルール。置ける範囲、二歩回避の禁じ手、41手目の裁定、天秤将棋の手順。',
     en: 'Rules of Fuseki Shogi and Balance Shogi: placement zone, the nifu-avoidance restriction, the move-41 adjudication, and the king-placement procedure.',
+  },
+  page_desc_balance: {
+    ja: '天秤将棋は、一方が両方の玉を置き、もう一方が先手か後手かを選ぶ将棋。先手の得を対局者自身が釣り合わせる。AIや友達と、ブラウザだけで対局できる。ルールの要点と始め方。',
+    en: 'Balance Shogi: one player places both kings, the other chooses Sente or Gote, so the players themselves balance the first move. Play the AI or a friend right in the browser. The rules in brief, and how to start.',
   },
   page_desc_story: {
     ja: '先手が勝ちすぎる布石将棋を、対局者自身が釣り合わせる仕組みに辿り着くまで。',
