@@ -6,6 +6,8 @@
 <title>{{home_title}}</title>
 <meta name="description" content="{{meta_description}}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#f6f2e9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17161a" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="/style.css">
 <!-- 保存した配色を描画前に当てる。main.js の applyTheme はモジュールの読み込み後なので、
      暗い配色を選んでいると一瞬明るく出る。page.html の head にも同じ行がある。 -->
@@ -25,6 +27,8 @@
 </head>
 <body>
 <div class="app" id="app">
+  <!-- Tabで最初に出る。上のバーを飛ばして、いま出ている main へ移る（href は showView が付け替える）。 -->
+  <a class="skip-link" id="skip-link" href="#view-home">{{skip_main}}</a>
   <!-- 上のバー。ロゴはホームへ、メニューは4つと言語。対局中も表示は変わらない。 -->
   <header class="topbar">
     <a class="logo" id="logo" href="{{self_href}}#/" aria-label="{{site_title}}">
@@ -69,7 +73,7 @@
   </header>
 
   <!-- ホーム。ルールを選び、対局の設定をして始める。 -->
-  <main class="home" id="view-home">
+  <main class="home" id="view-home" tabindex="-1">
     <h1>{{site_title}}</h1>
     <p class="tagline">{{home_tagline}}</p>
 
@@ -83,10 +87,10 @@
     <form class="setup" id="controls" data-opp="ai">
       <!-- 誰と指すか。AI／友達（招待リンク、非公開）／待合（誰でも入れる、公開）。
            選んだ相手に要る設定とボタンだけを出す（data-only 属性、main.js の setOpponent）。 -->
-      <div class="opp" id="opp" role="tablist" aria-label="{{opp_label}}">
-        <button type="button" role="tab" id="opp-ai" aria-selected="true" data-opp="ai"><span class="t">{{opp_ai}}</span><span class="s">{{opp_ai_sub}}</span></button>
-        <button type="button" role="tab" id="opp-friend" aria-selected="false" data-opp="friend"><span class="t">{{opp_friend}}</span><span class="s">{{opp_friend_sub}}</span></button>
-        <button type="button" role="tab" id="opp-lobby" aria-selected="false" data-opp="lobby"><span class="t">{{opp_lobby}}</span><span class="s">{{opp_lobby_sub}}</span><span class="badge" id="lobby-count" hidden></span></button>
+      <div class="opp" id="opp" role="radiogroup" aria-label="{{opp_label}}">
+        <button type="button" role="radio" id="opp-ai" aria-checked="true" data-opp="ai"><span class="t">{{opp_ai}}</span><span class="s">{{opp_ai_sub}}</span></button>
+        <button type="button" role="radio" id="opp-friend" aria-checked="false" tabindex="-1" data-opp="friend"><span class="t">{{opp_friend}}</span><span class="s">{{opp_friend_sub}}</span></button>
+        <button type="button" role="radio" id="opp-lobby" aria-checked="false" tabindex="-1" data-opp="lobby"><span class="t">{{opp_lobby}}</span><span class="s">{{opp_lobby_sub}}</span><span class="badge" id="lobby-count" hidden></span></button>
       </div>
 
       <!-- 待合。公開で募集している部屋（worker/src/lobby.js）。一覧は WebSocket で流れてくる。
@@ -187,7 +191,7 @@
   </main>
 
   <!-- 対局画面。盤と、固定スロットのパネル。 -->
-  <main class="layout" id="view-play" hidden>
+  <main class="layout" id="view-play" tabindex="-1" hidden>
     <section class="board-column">
       <!-- 評価ゲージ。通常フェーズだけ出す。布石フェーズの「採用手の確率」は
            方策の自信であって優劣ではないので、両側に振れる帯には載せない。 -->

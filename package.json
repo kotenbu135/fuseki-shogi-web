@@ -18,6 +18,7 @@
     "shogiops": "^0.21.0"
   },
   "devDependencies": {
+    "budoux": "^0.9.1",
     "wrangler": "^4.129.0",
     "ws": "^8.21.3"
   }

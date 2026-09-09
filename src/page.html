@@ -6,6 +6,8 @@
 <title>{{page_title}} — {{site_title}}</title>
 <meta name="description" content="{{page_desc}}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#f6f2e9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17161a" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="/style.css">
 <!-- 保存した配色を描画前に当てる。app.js を持たないページでも、ホームで選んだ配色が続く。
      index.html の head にも同じ4行がある（片方を変えたら両方直す）。 -->
@@ -25,6 +27,7 @@
 </head>
 <body>
 <div class="app">
+  <a class="skip-link" href="#page-main">{{skip_main}}</a>
   <header class="topbar">
     <a class="logo" href="{{self_href}}" aria-label="{{site_title}}">
       <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2" y="2" width="20" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8.7 2v20M15.3 2v20M2 8.7h20M2 15.3h20" stroke="currentColor" stroke-width="1" opacity=".45"/><circle cx="12" cy="18.6" r="2.3" class="logo-dot"/></svg>
@@ -55,7 +58,7 @@
     </div>
   </header>
 
-  <main class="page">
+  <main class="page" id="page-main" tabindex="-1">
 {{content}}
   </main>
 

@@ -14,6 +14,7 @@
 // 文章のページ（ルール・コラム）は言語ごとに src/pages/<lang>/ に書き、src/page.html の
 // 殻に入れて dist/<path>/index.html と dist/en/<path>/index.html に出す。
 import esbuild from 'esbuild';
+import { loadDefaultJapaneseParser } from 'budoux';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -155,9 +156,26 @@ const tr = (key, lang) => {
   const e = DICT[key];
   return e ? (e[lang] ?? e.ja) : null;
 };
-/** テンプレートの {{key}} を埋める。extra が辞書より優先。無いキーは残す（気づけるように）。 */
-const fill = (html, lang, extra = {}) =>
-  html.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in extra ? extra[k] : (tr(k, lang) ?? m)));
+// 日本語の折り返しを文節で切る（budoux）。ビルド時に <wbr> を埋めるので、
+// ブラウザに配るJSは1バイトも増えない。CSS の word-break: keep-all と対で効く
+// （keep-all が無いと日本語はどこでも折り返せてしまい、<wbr> は意味を持たない）。
+//
+// 対象は見出しとリード文だけ。中身にタグを含む場合は [^<]+ に合わないので触らない。
+// 棋譜・SFEN・時計・読み筋には**絶対に当てない**——<wbr> が textContent に混ざると
+// 書き出しと比較が壊れる。
+const jaParser = loadDefaultJapaneseParser();
+const phrase = t => jaParser.parse(t).join('<wbr>');
+const phraseJa = html => html
+  .replace(/<(h[1-3])(\s[^>]*)?>([^<]+)<\/\1>/g, (m, tag, attr, t) => `<${tag}${attr || ''}>${phrase(t)}</${tag}>`)
+  .replace(/<(p|span) class="(lead|tagline|mode-desc)">([^<]+)<\/\1>/g, (m, tag, cls, t) => `<${tag} class="${cls}">${phrase(t)}</${tag}>`);
+
+/** テンプレートの {{key}} を埋める。extra が辞書より優先。無いキーは残す（気づけるように）。
+    日本語のときは最後に文節で折り返し位置を入れる。入れ子で2回通っても、
+    1回目で <wbr> が入った箇所は [^<]+ に合わなくなるので二重には掛からない。 */
+const fill = (html, lang, extra = {}) => {
+  const out = html.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in extra ? extra[k] : (tr(k, lang) ?? m)));
+  return lang === 'ja' ? phraseJa(out) : out;
+};
 /** 言語ごとの URL の変数。 */
 const langVars = lang => ({
   lang,

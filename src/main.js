@@ -278,7 +278,12 @@ function setOpponent(v, { remember = true } = {}) {
   if (!OPPONENTS.includes(v)) v = 'ai';
   opponent = v;
   ui.setup.dataset.opp = v;
-  for (const b of ui.opp.querySelectorAll('[role="tab"]')) b.setAttribute('aria-selected', String(b.dataset.opp === v));
+  // 選んでいるものだけ Tab で止まる（roving tabindex）。3つを順に踏ませない。
+  for (const b of ui.opp.querySelectorAll('[role="radio"]')) {
+    const on = b.dataset.opp === v;
+    b.setAttribute('aria-checked', String(on));
+    b.tabIndex = on ? 0 : -1;
+  }
   for (const e of ui.setup.querySelectorAll('[data-only]')) e.hidden = !e.dataset.only.split(' ').includes(v);
   if (remember) { try { localStorage.setItem(OPP_KEY, v); } catch { /* 残せなくても動く */ } }
   renderModeControls();
@@ -287,10 +292,10 @@ function readOpponent() {
   try { return localStorage.getItem(OPP_KEY) ?? 'ai'; } catch { return 'ai'; }
 }
 ui.opp.addEventListener('click', e => {
-  const b = e.target.closest('[role="tab"]');
+  const b = e.target.closest('[role="radio"]');
   if (b) setOpponent(b.dataset.opp);
 });
-// 矢印キーでタブを移る（tablist の作法）。
+// 矢印キーで隣へ移り、その場で選ぶ（radiogroup の作法。tablist と同じ操作）。
 ui.opp.addEventListener('keydown', e => {
   if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
   const i = OPPONENTS.indexOf(opponent), n = OPPONENTS.length;
@@ -503,6 +508,8 @@ function showView(name) {
   ui.viewHome.hidden = name !== 'home';
   ui.viewPlay.hidden = name !== 'play';
   ui.app.dataset.view = name;
+  // 隠れている main へ飛ばさない。
+  document.getElementById('skip-link')?.setAttribute('href', name === 'play' ? '#view-play' : '#view-home');
   ui.navPlay.classList.toggle('current', name === 'home');
   if (name === 'play') {
     ensureBoard();
@@ -2036,7 +2043,8 @@ function announcePhase() {
   }
 }
 
-/** 盤の中央の幕。1.6秒出て0.35秒で消える。動きは状態変化にだけ使う（ほかは静かに）。 */
+/** 盤の中央の幕。1.6秒出て0.2秒で消える。動きは状態変化にだけ使う（ほかは静かに）。
+    消えるまでの秒数は style.css の .toast.leaving と対。片方だけ変えない。 */
 let toastTimer = null, toastTimer2 = null;
 function showToast(line, sub = '') {
   ui.toastLine.textContent = line;
@@ -2047,7 +2055,7 @@ function showToast(line, sub = '') {
   ui.toast.hidden = false;
   clearTimeout(toastTimer); clearTimeout(toastTimer2);
   toastTimer = setTimeout(() => { ui.toast.classList.add('leaving'); }, 1600);
-  toastTimer2 = setTimeout(() => { ui.toast.hidden = true; ui.toast.classList.remove('leaving'); }, 2000);
+  toastTimer2 = setTimeout(() => { ui.toast.hidden = true; ui.toast.classList.remove('leaving'); }, 1800);
 }
 
 // ---- 終局の帯 ----
@@ -2061,7 +2069,7 @@ function hideBanner(now = false) {
   if (ui.banner.hidden) return;
   if (now) { ui.banner.hidden = true; ui.banner.classList.remove('leaving'); return; }
   ui.banner.classList.add('leaving');
-  bannerTimer2 = setTimeout(() => { ui.banner.hidden = true; ui.banner.classList.remove('leaving'); }, 400);
+  bannerTimer2 = setTimeout(() => { ui.banner.hidden = true; ui.banner.classList.remove('leaving'); }, 200);
 }
 function renderBanner() {
   const over = !!game && game.phase === 'over' && !analysis && viewPly === null;

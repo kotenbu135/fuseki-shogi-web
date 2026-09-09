@@ -183,7 +183,7 @@ try {
       lobby: vis('lobby'), label: document.getElementById('btn-invite').textContent,
       note: document.getElementById('opp-note').textContent,
       spectate: document.querySelector('#opt-color option[value="spectate"]').hidden,
-      selected: [...document.querySelectorAll('#opp [role="tab"]')].filter(b => b.getAttribute('aria-selected') === 'true').map(b => b.dataset.opp).join(','),
+      selected: [...document.querySelectorAll('#opp [role="radio"]')].filter(b => b.getAttribute('aria-checked') === 'true').map(b => b.dataset.opp).join(','),
       hscroll: de.scrollWidth > de.clientWidth });
     const r = {};
     pick('opp-friend'); r.friend = snap();
@@ -728,7 +728,7 @@ async function playOnline(cdp, pageA) {
   check('AIタブに居ても、待合タブの札に募集の数が出る', badge === '1', String(badge));
   check('#lobby で開くと待合タブになる', await evaluate(pageB, `(() => {
     location.hash = '#lobby';
-    return new Promise(r => setTimeout(() => r(document.getElementById('opp-lobby').getAttribute('aria-selected') === 'true' && location.hash === '#/'), 200));
+    return new Promise(r => setTimeout(() => r(document.getElementById('opp-lobby').getAttribute('aria-checked') === 'true' && location.hash === '#/'), 200));
   })()`));
   const seek = await evalUntil(pageB, `(() => {
     const li = document.querySelector('#seeks li');
@@ -935,7 +935,7 @@ async function playOnline(cdp, pageA) {
   await click(pageA, await center(pageA, '#btn-again'));
   await evalUntil(pageA, 'document.getElementById("view-home").hidden', v => v === false, 5000);
   check('ホームへ戻ると最後に使ったタブ（待合）のまま',
-    await evaluate(pageA, 'document.getElementById("opp-lobby").getAttribute("aria-selected")') === 'true');
+    await evaluate(pageA, 'document.getElementById("opp-lobby").getAttribute("aria-checked")') === 'true');
   // 後の検査（英語版）は AI タブで始めたいので戻しておく。タブは localStorage に残る。
   await click(pageA, await center(pageA, '#opp-ai'));
   check('オンライン対局で未処理の例外が無い', exceptions().length === errorsAtStart, exceptions().slice(errorsAtStart).join(' / '));
@@ -1384,7 +1384,7 @@ async function checkEnglish(page) {
   check('英語の文言で始まる', await evaluate(page,
     'document.documentElement.lang === "en" && document.getElementById("btn-new").textContent.startsWith("Start")'));
   check('英語の3タブが1行に収まる', await evaluate(page, `(() => {
-    const tops = [...document.querySelectorAll('#opp [role="tab"]')].map(b => Math.round(b.getBoundingClientRect().top));
+    const tops = [...document.querySelectorAll('#opp [role="radio"]')].map(b => Math.round(b.getBoundingClientRect().top));
     const t = document.querySelector('#opp-ai .t').textContent;
     return t === 'Play the AI' && new Set(tops).size === 1 && document.documentElement.scrollWidth <= document.documentElement.clientWidth;
   })()`));

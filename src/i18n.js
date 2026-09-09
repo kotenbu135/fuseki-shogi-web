@@ -11,6 +11,8 @@
 const DICT = {
   // ---- サイト共通 ----
   site_title: { ja: '布石将棋', en: 'Fuseki Shogi' },
+  // Tabで最初に当たる隠しリンク。上のバーを飛ばして本文へ。
+  skip_main: { ja: '本文へ移動', en: 'Skip to main content' },
   // 検索結果に出る題。site_title はロゴと h1、こちらは <title> と og:title。
   // 「天秤将棋」で探した人にも、ここで遊べるサイトだと題だけで分かるようにする。
   home_title: { ja: '布石将棋・天秤将棋をブラウザで対局', en: 'Fuseki Shogi & Balance Shogi — play in your browser' },
