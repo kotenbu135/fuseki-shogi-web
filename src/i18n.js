@@ -13,6 +13,16 @@ const DICT = {
   site_title: { ja: '布石将棋', en: 'Fuseki Shogi' },
   // Tabで最初に当たる隠しリンク。上のバーを飛ばして本文へ。
   skip_main: { ja: '本文へ移動', en: 'Skip to main content' },
+  // Cookieの同意（EEA・英国・スイスからの訪問にだけ出す）。断るのも同じ手軽さで。
+  consent_label: { ja: 'Cookie の同意', en: 'Cookie consent' },
+  consent_text: {
+    ja: 'このサイトは、何人が来て何を見たかを数えるのに Google アナリティクスを使う。そのために Cookie を置いてよいか。断っても対局・検討・棋譜の書き出しはすべて同じように使える。',
+    en: 'This site uses Google Analytics to count visits and which pages are read. May we store cookies for that? Declining changes nothing — play, analysis and KIF export all work the same.',
+  },
+  consent_accept: { ja: '同意する', en: 'Accept' },
+  consent_reject: { ja: '同意しない', en: 'Decline' },
+  // 歯車の中。一度答えたあとで気が変わったときの口。
+  consent_opt: { ja: '利用状況の計測に協力する', en: 'Allow usage analytics' },
   // 検索結果に出る題。site_title はロゴと h1、こちらは <title> と og:title。
   // 「天秤将棋」で探した人にも、ここで遊べるサイトだと題だけで分かるようにする。
   home_title: { ja: '布石将棋・天秤将棋をブラウザで対局', en: 'Fuseki Shogi & Balance Shogi — play in your browser' },

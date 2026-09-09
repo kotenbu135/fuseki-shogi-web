@@ -54,6 +54,8 @@ copy(path.join(HERE, 'src', 'favicon.svg'), OUT);
 // 両玉の価値表のヒートマップ（文章のページが読む小さなモジュール）。app.js の
 // バンドルには入れない。ルールとコラムの2ページ × 2言語で同じものを使う。
 copy(path.join(HERE, 'src', 'heat.js'), OUT);
+// 同意の帯。index も文章のページも同じ1本を読む（文言は data-* で渡す）。
+copy(path.join(HERE, 'src', 'consent.js'), OUT);
 // 共有プレビューの画像（scripts/og.mjs が描いてコミットしてある。ここでは写すだけ）。
 for (const f of ['og-ja.png', 'og-en.png'])
   if (!copy(path.join(HERE, 'src/og', f), path.join(OUT, 'og'))) console.warn(`警告: src/og/${f} が無い。node scripts/og.mjs で作る`);
@@ -353,12 +355,15 @@ for (const lang of LANGS) {
     // Cloudflare Web Analytics のビーコンは Pages が**配信時に**注入するので、
     // 手元のビルドには存在しない（本番でだけ CSP に弾かれる。実ブラウザで踏んだ）。
     // 要らなくなったらダッシュボードの Web Analytics を切り、ここも消す。
-    `script-src 'self' 'wasm-unsafe-eval' https://static.cloudflareinsights.com ${[...hashes].join(' ')}`,
+    // gtag.js は googletagmanager から読み、計測は google-analytics へ送る。
+    // どちらも cross-origin-resource-policy: cross-origin を返すので、
+    // このサイトの COEP: require-corp（WASMのマルチスレッドに要る）を通る。
+    `script-src 'self' 'wasm-unsafe-eval' https://static.cloudflareinsights.com https://*.googletagmanager.com ${[...hashes].join(' ')}`,
     "style-src 'self'",
-    "img-src 'self'",
+    "img-src 'self' https://*.google-analytics.com https://*.googletagmanager.com",
     "font-src 'self'",
     // 対局の部屋（別ホストの Worker）。http と ws の両方を挙げる。
-    `connect-src 'self' ${rooms.origin} ${rooms.protocol === 'http:' ? 'ws:' : 'wss:'}//${rooms.host} https://cloudflareinsights.com`,
+    `connect-src 'self' ${rooms.origin} ${rooms.protocol === 'http:' ? 'ws:' : 'wss:'}//${rooms.host} https://cloudflareinsights.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com`,
     // onnxruntime-web と やねうら王 はスレッドを Worker で起こす。
     "worker-src 'self' blob:",
   ].join('; ');

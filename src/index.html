@@ -3,6 +3,40 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Google tag (gtag.js)。CSP の script-src と connect-src / img-src は
+     build.mjs が組む。このインラインの hash も build.mjs が数え直すので、
+     中身を1文字でも変えたら必ず npm run build を通すこと（手で書くと白くなる）。 -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-51EYQVBET8"></script>
+<script>
+  // Google Consent Mode v2。EEA・英国・スイスからの訪問は**同意を取るまで測らない**
+  // （既定で拒否）。それ以外の地域は既定で許可する。帯を出すのは consent.js で、
+  // 出す/出さないの判定にこの一覧を使うので window に置く。
+  //
+  // consent は config より先に dataLayer へ積むこと。逆にすると最初の1発が
+  // 拒否地域でも飛ぶ。gtag.js は async なので、この順序はここで決まる。
+  window.CONSENT_REGIONS = ['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR',
+    'HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE',
+    'IS','LI','NO','GB','CH'];
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function(){ dataLayer.push(arguments); };
+  gtag('consent', 'default', {
+    ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied',
+    analytics_storage: 'denied', wait_for_update: 500, region: window.CONSENT_REGIONS,
+  });
+  gtag('consent', 'default', {
+    ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied',
+    analytics_storage: 'granted',
+  });
+  // 前に答えていれば、帯を出す前に反映する。
+  try {
+    var c = localStorage.getItem('fuseki-consent');
+    if (c === 'granted' || c === 'denied') gtag('consent', 'update', { analytics_storage: c });
+  } catch (e) { /* 読めなくても既定で動く */ }
+  gtag('js', new Date());
+  // 手元（localhost / 127.0.0.1）とテスト、Pages のプレビュードメインでは数えない。
+  // 全部数えたいなら、この if を外して config を素で呼べばよい。
+  if (location.hostname === 'fusekishogi.com') gtag('config', 'G-51EYQVBET8');
+</script>
 <title>{{home_title}}</title>
 <meta name="description" content="{{meta_description}}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -413,7 +447,14 @@
     <p>{{footer_license}}</p>
     <p>{{footer_build}}: <!--BUILD_INFO--></p>
   </footer>
+  <!-- Cookieの同意。EEA・英国・スイスからの訪問にだけ consent.js が中身を組んで出す。
+       文言は data-* で渡す（consent.js は2言語で共有するため。heat.js と同じ作法）。 -->
+  <div class="consent" id="consent" hidden
+       data-label="{{consent_label}}" data-text="{{consent_text}}"
+       data-accept="{{consent_accept}}" data-reject="{{consent_reject}}"
+       data-opt="{{consent_opt}}"></div>
 </div>
+<script src="/consent.js" defer></script>
 <script type="module" src="/app.js"></script>
 </body>
 </html>
