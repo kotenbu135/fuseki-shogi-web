@@ -72,7 +72,7 @@ const DICT = {
   home_flow: { ja: '1局の流れ', en: 'How a game goes' },
   mode_kings: { ja: '天秤将棋', en: 'Balance Shogi' },
   mode_kings_desc: {
-    ja: '一方が両方の玉を置き、もう一方が好きな方を持つ。先手番の得を、先手玉の薄さで釣り合わせる。',
+    ja: '一方が両方の玉を置き、もう一方が好きな方を持つ。先手の利を、先手玉の薄さで釣り合わせる。',
     en: 'One player places both kings; the other takes whichever they prefer. The first move is paid for with a thinner Sente king.',
   },
   home_board_label: { ja: 'AIが打つ布石', en: 'A placement played by the AI' },
@@ -162,7 +162,7 @@ const DICT = {
   step_turn_you: { ja: 'あなたの番', en: 'your turn' },
   step_turn_ai: { ja: 'AIの番', en: 'AI’s turn' },
   step_title_kings: {
-    ja: '先手玉を先手陣に、後手玉を後手陣に置く。先手番の得と、玉の堅さの差を釣り合わせる',
+    ja: '先手玉を先手陣に、後手玉を後手陣に置く。先手の利と、玉の堅さの差を釣り合わせる',
     en: 'Put the Sente king in Sente’s camp and the Gote king in Gote’s camp, weighing the first move against king safety',
   },
   step_title_choose: {
@@ -185,7 +185,7 @@ const DICT = {
   },
   status_placer_second: { ja: '次に後手玉を後手陣に。', en: 'Now the Gote king in Gote’s camp.' },
   status_placer_second_sub: {
-    ja: '後手玉は先手玉より堅く（奥や隅寄り）。堅さの差が先手番の得と釣り合えば、{them}はどちらを持っても得をしない。',
+    ja: '後手玉は先手玉より堅く（奥や隅寄り）。堅さの差が先手の利と釣り合えば、{them}はどちらを持っても得をしない。',
     en: 'The Gote king goes safer than Sente’s (back or corner). If the safety gap matches the first move, {them} gains nothing either way.',
   },
   // 盤の陣に重ねる札。記号は紙地の上だけ（sente-gote-marks）。
@@ -194,7 +194,7 @@ const DICT = {
   king_tag_sente: { ja: '先手玉', en: 'Sente king' },
   king_tag_gote: { ja: '後手玉', en: 'Gote king' },
   // 天秤の図。左の皿が先手（先に動ける得＋薄い玉）、右の皿が後手（堅い玉）。釣り合った水平の梁。
-  scale_label: { ja: '天秤: 先手番の得と玉の堅さ', en: 'The balance: first move against king safety' },
+  scale_label: { ja: '天秤: 先手の利と玉の堅さ', en: 'The balance: first move against king safety' },
   scale_sente: { ja: '先手', en: 'Sente' },
   scale_sente_1: { ja: '先に動ける得', en: 'moves first' },
   scale_sente_2: { ja: '＋ 薄い玉', en: '+ thin king' },
@@ -319,7 +319,7 @@ const DICT = {
   reason_human_timeout: { ja: '持ち時間が切れた', en: 'time forfeit' },
   reason_ai_resign: { ja: 'AIの投了', en: 'AI resigned' },
   reason_ai_nyugyoku_declaration: { ja: 'AIの入玉宣言', en: 'AI declared an entering king' },
-  reason_engine_illegal_move: { ja: 'エンジンが非合法手を返した', en: 'engine returned an illegal move' },
+  reason_engine_illegal_move: { ja: 'エンジンが反則手を返した', en: 'engine returned an illegal move' },
   summary_kings: {
     ja: '{placer}が両玉 {kb}・{kw} を置き、{chooser}が{side}を持った · 見立て 先手 {p}%',
     en: '{placer} placed the kings {kb}/{kw}; {chooser} took {side} · table: Sente {p}%',
@@ -497,7 +497,7 @@ const DICT = {
   reason_agreement: { ja: '合意の引き分け', en: 'draw by agreement' },
   reason_sennichite: { ja: '千日手', en: 'repetition (sennichite)' },
   reason_perpetual_check: { ja: '連続王手の千日手', en: 'perpetual check' },
-  reason_illegal: { ja: '非合法手', en: 'illegal move' },
+  reason_illegal: { ja: '反則手', en: 'illegal move' },
   reason_cancelled: { ja: '取り消し', en: 'cancelled' },
 
   // ---- フッター ----
