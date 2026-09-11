@@ -30,10 +30,10 @@ const ASSETS = {
   // esbuildを通さずに素で読み込んだときのために既定値を持たせる。ここだけは
   // build.mjs の PUBLIC_MODEL と二重に持つことになるので、片方を変えたら両方直す。
   model: new URL(`./models/${typeof __MODEL_FILE__ === 'undefined'
-    ? 'fuseki_degct_b3_iter1177.onnx' : __MODEL_FILE__}`, import.meta.url).href,
+    ? 'fuseki_degct_b3_iter2455.onnx' : __MODEL_FILE__}`, import.meta.url).href,
   // 天秤将棋の価値表（src/kings.js）。重みと世代が対（build.mjs の KING_TABLE）。
   kingTable: new URL(`./models/${typeof __KING_TABLE_FILE__ === 'undefined'
-    ? 'king_pairs_iter1177_games.json' : __KING_TABLE_FILE__}`, import.meta.url).href,
+    ? 'king_pairs_iter2455_games.json' : __KING_TABLE_FILE__}`, import.meta.url).href,
   // 布石フェーズの評価値（src/value.js）。方策と同じ特徴量を食べる別のネット。
   // 無くても対局はできるので、読み込みに失敗したら布石の評価だけ出さない。
   valueModel: new URL(`./models/${typeof __VALUE_MODEL_FILE__ === 'undefined'

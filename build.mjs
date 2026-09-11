@@ -102,7 +102,7 @@ copy(path.join(ORT, 'ort-wasm-simd-threaded.wasm'), path.join(OUT, 'vendor/ort')
 // 指定する。出力が dist-local/ に分かれるので、配布経路（dist/）には乗らない。
 //
 // 名前は esbuild の define で main.js へ渡すので、定義はここ1箇所で済む。
-const PUBLIC_MODEL = 'fuseki_degct_b3_iter1177.onnx';
+const PUBLIC_MODEL = 'fuseki_degct_b3_iter2455.onnx';
 const modelArg = process.argv[process.argv.indexOf('--model') + 1];
 const MODEL_SRC = custom ? path.resolve(modelArg) : path.join(HERE, 'models', PUBLIC_MODEL);
 const MODEL = path.basename(MODEL_SRC);
@@ -113,7 +113,7 @@ else if (custom) console.warn(`--model: ${path.basename(OUT)}/models/${MODEL} �
 // 天秤将棋の価値表（src/kings.js）。公開重みのロールアウトをやねうら王で採点した
 // もので、GCT由来の値は含まない（models/README.md）。重みと世代が対になっており、
 // --model で別の重みを当てたときは src/kings.js の照合が落として、そのモードだけ閉じる。
-const KING_TABLE = 'king_pairs_iter1177_games.json';
+const KING_TABLE = 'king_pairs_iter2455_games.json';
 
 // 布石フェーズの評価値を出すネット（src/value.js）。方策と同じ特徴量を食べる別の重みで、
 // 乱数初期化から学習してあり GCT 由来の値は入っていない（models/README.md）。
