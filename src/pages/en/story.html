@@ -116,6 +116,12 @@
 <p>This is not a design failure but something no rule can escape. Ordinary shogi is in the same position: if Sente can force a win, the toss decides the game. What you can aim at is not erasing the value but <b>making the difference invisible at the strengths people actually play at</b>. The whole job of Balance Shogi is to shrink the tilt of the pairs the placer hands over until neither a human nor an engine can see it. The precision of the table is the ceiling on fairness.</p>
 <p>The strongest engines show a larger first-move advantage still. If the kings stop being enough, there is room to widen what gets placed from the kings to the kings and rooks.</p>
 
+<h2>8. Adding Nihikyō</h2>
+<p>On 13 September 2026 Balance Shogi gained one more placement restriction: <b>each file of your camp may hold at most one of your rook and lances</b>. I called it Nihikyō. Fuseki Shogi itself is unchanged.</p>
+<p>The trigger was the placement AI&#39;s own games. Stacking the rook and both lances on one file — a “triple rocket” — had become a dominant strategy. In the newest network 55.7% of camps built it, and in games where the opponent built nothing, the side that did scored 11.4 points higher. It wins whether or not the opponent builds one too, so more training never wore it out.</p>
+<p>The core of its strength is the two lances: lance and lance without the rook does nearly as well. But banning only doubled lances looked likely to push the AI to rook and lance, which would keep some of the value, so the rule counts the rook as well and the change only has to be made once. Shapes that can be answered by preparing a defence, such as pieces facing each other, are left alone. The only thing removed is stacking pieces that run along the same file.</p>
+<p class="note">The king table and every measurement above were taken under the rules before Nihikyō and have not been redone. The placement AI, too, is still the one trained under the old rules; it simply skips the moves that are now illegal.</p>
+
 <h2>Sources</h2>
 <ul>
   <li><a href="https://yaneuraou.yaneu.com/2026/07/23/shogi-ai-black-win-rate-94-percent/">Sente now wins 94% in shogi AI tournaments</a> (YaneuraOu, in Japanese)</li>

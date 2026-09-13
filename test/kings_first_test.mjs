@@ -9,12 +9,13 @@
 //   - 手順（tokens）が往復すること（手順の読み込みと待ったの経路）
 //   - 選ぶ前に投了しても表示の口が全部読めること（game_terminal_test と同じ理由）
 //   - 通常モードが何も変わっていないこと
+//   - 二飛香が天秤将棋（2版）にだけ効き、布石将棋と旧ルール（1版）には効かないこと
 //
 //   node test/kings_first_test.mjs
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { Fuseki } from '../src/fuseki.js';
-import { Game } from '../src/game.js';
+import { Fuseki, FUSEKI_RULE_NIHIKYO } from '../src/fuseki.js';
+import { Game, rulesForTokens } from '../src/game.js';
 import { KingTable } from '../src/kings.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -260,6 +261,86 @@ check('通常モードの手順に選択は入れられない', () => {
   g.play('P*5g');
   eq(g.tokens().join(' '), 'P*5g', '通常モードの手順に選択は無い');
   eq(g.kifu[0].actor, 'human', '通常モードでも actor が付く');
+});
+
+console.log('--- 二飛香（天秤将棋の2版） ---');
+
+// GitHub Issue #1 の「確認用の手順」。24手目は後手番。
+const NIHIKYO_24 = 'K*8g K*6b choose:sente P*1g R*8a S*7g N*7c S*9g P*4d L*5g S*6c P*8f B*3b B*3f P*8d G*8h P*3d P*5i G*7b N*4f P*7d P*9f P*9d G*6h';
+const NIHIKYO_40 = `${NIHIKYO_24} P*1d P*2h G*5b P*4g S*4c P*7f P*6d N*6f P*2d P*3g N*5d R*2f P*5c P*6g L*2c L*7i L*5a`;
+// 後手玉 5c に先手の飛 5f が当たったまま39手を打ち終え、後手の最後の1枚は香。
+// 遮る 5d は、5b に後手の香があるので二飛香で打てない。
+const BLOCK_ONLY_BY_LANCE = 'K*5i K*5c choose:sente R*5f P*5a P*1f L*5b P*2f P*1a P*3f P*2a P*4f P*3a P*5g P*4a ' +
+  'P*6f P*6a P*7f P*7a P*8f P*8a P*9f P*9a L*1g N*1b L*2g N*1c N*1h S*1d N*1i S*2b S*2h G*2c S*2i G*2d G*3g B*3b G*3h R*3c B*3i';
+
+/** 天秤将棋で手順を入れ、手番側の合法手を返す。 */
+const playKings = (tokens, extra = {}) => {
+  const g = newGame('placer', extra);
+  for (const t of tokens.split(' ')) g.play(t);
+  return { g, legal: new Set(g.fuseki.legalDrops().map(d => d.usi)) };
+};
+/** 同じ駒打ちを布石将棋で並べる（選択のトークンを抜くだけ。手番の色は同じ）。 */
+const playStandard = tokens => {
+  const g = new Game({ fuseki, policy: null, engine: null, humanColor: 'sente' });
+  for (const t of tokens.split(' ')) if (!t.startsWith('choose:')) g.play(t);
+  return new Set(g.fuseki.legalDrops().map(d => d.usi));
+};
+
+check('後手の反則: 8筋に後手の飛があれば香を打てない', () => {
+  const { g, legal } = playKings(NIHIKYO_24);
+  eq(g.turnColor, 'gote', '24手目は後手');
+  eq(legal.has('L*8c'), false, 'L*8c');
+  eq(legal.has('P*1d'), true, 'P*1d');
+  throws(() => g.play('L*8c'), 'L*8c を指す');
+});
+
+check('先手の反則: 5筋に先手の飛があれば香を打てない', () => {
+  const { legal } = playKings('K*5i K*5a choose:sente R*5h P*1c');
+  eq(legal.has('L*5g'), false, 'L*5g');
+  eq(legal.has('L*4g'), true, 'L*4g');
+});
+
+check('相手の飛・香は数えない', () => {
+  const { g, legal } = playKings('K*5i K*5a choose:sente R*5h');
+  eq(g.turnColor, 'gote', '後手番');
+  eq(legal.has('L*5c'), true, 'L*5c');
+});
+
+check('布石将棋と旧ルール（1版）では同じ手が合法のまま', () => {
+  eq(playStandard(NIHIKYO_24).has('L*8c'), true, '布石将棋の L*8c');
+  eq(playStandard('K*5i K*5a choose:sente R*5h P*1c').has('L*5g'), true, '布石将棋の L*5g');
+  eq(playKings(NIHIKYO_24, { balanceRules: 1 }).legal.has('L*8c'), true, '1版の L*8c');
+});
+
+check('二飛香に合う40手は、2版でも1版でも41手目まで入る', () => {
+  for (const balanceRules of [2, 1]) eq(playKings(NIHIKYO_40, { balanceRules }).g.phase, 'normal', `${balanceRules}版`);
+});
+
+check('40手目: 遮る手が二飛香で打てなければ制限が外れ、二飛香は外れない', () => {
+  const { g, legal } = playKings(BLOCK_ONLY_BY_LANCE);
+  eq(g.fuseki.isKingAttacked(1), true, '後手玉に飛が当たっている');
+  eq(legal.has('L*5d'), false, '遮る L*5d は二飛香');
+  if (!legal.size) throw new Error('打てる手が無い');
+  for (const u of legal) if (u.slice(2, 3) === '3' || u.slice(2, 3) === '5') throw new Error(`飛・香のある筋に打てる: ${u}`);
+  g.play([...legal][0]);
+  eq(g.result?.reason, 'fuseki_king_capture', '41手目の裁定');
+  eq(g.result.winner, 'sente', '先手の勝ち');
+  eq([...playKings(BLOCK_ONLY_BY_LANCE, { balanceRules: 1 }).legal].join(' '), 'L*5d', '1版では遮る手だけ');
+});
+
+check('版の無い手順の版を決める（二飛香に当たる手順は1版で再生する）', () => {
+  eq(rulesForTokens(fuseki, NIHIKYO_40.split(' ')), 2, '二飛香に合う手順');
+  eq(rulesForTokens(fuseki, `${NIHIKYO_24} L*8c`.split(' ')), 1, '二飛香に当たる旧ルールの手順');
+  eq(rulesForTokens(fuseki, `${NIHIKYO_24} K*5e`.split(' ')), 2, 'どちらの版でも入らない手順');
+});
+
+check('待ったで作り直しても版は変わらない。布石将棋に旗は立たない', () => {
+  const { g } = playKings(`${NIHIKYO_24} P*1d P*2h`);
+  g.undoTo(g.tokens().length - 2);
+  eq(g.fuseki.legalDrops().some(d => d.usi === 'L*8c'), false, '戻した局面でも二飛香');
+  eq(g.fusekiRules, FUSEKI_RULE_NIHIKYO, '天秤将棋の旗');
+  eq(new Game({ fuseki, policy: null, engine: null }).fusekiRules, 0, '布石将棋の旗');
+  throws(() => newGame('placer', { balanceRules: 3 }), '知らない版');
 });
 
 console.log('--- 選ぶ前の終局 ---');

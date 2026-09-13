@@ -12,10 +12,19 @@ import { makeJapaneseMoveOrDrop } from 'shogiops/notation/japanese';
 import { makeWesternMoveOrDrop } from 'shogiops/notation/western';
 import { makeJapaneseSquare, roleToKanji, roleToWestern } from 'shogiops/notation/util';
 import { makeKifPositionHeader, makeKifMoveOrDrop } from 'shogiops/notation/kif';
-import { BLACK, WHITE } from './fuseki.js';
+import { BLACK, WHITE, FUSEKI_RULE_NONE, FUSEKI_RULE_NIHIKYO } from './fuseki.js';
 
 export const SENTE = 'sente';
 export const GOTE = 'gote';
+
+/**
+ * 天秤将棋のルールの版。手順（tokens）には書かれないので、版の無い手順は rulesForTokens() で決める。
+ *   1 … 二飛香の前。布石の禁じ手は布石将棋と同じ
+ *   2 … 二飛香を加えた版（2026-09-13 の決定、GitHub Issue #1）
+ * 布石将棋（mode 'standard'）には版が無く、shogitter のルールのまま変えない。
+ */
+export const BALANCE_RULES_V1 = 1;
+export const BALANCE_RULES = 2;
 
 /** cppshogi の Color を shogiops / shogiground の色名へ。両者は同じ語彙を使っている。 */
 const COLOR_NAME = [SENTE, GOTE];
@@ -44,10 +53,15 @@ export class Game {
    *   部屋から受けて play() で入れる。AIは指さない（playAiMove は呼ばれない）
    * @param {import('./value.js').FusekiValue|null} [valueNet] 布石フェーズの評価値を出すネット。
    *   無ければ布石の区間は評価なしのまま（従来どおりの見え方に戻る）
+   * @param {1|2} [balanceRules] 天秤将棋のルールの版（BALANCE_RULES）。旧ルールの棋譜を再生するときだけ 1
    */
   constructor({ fuseki, policy, engine, humanColor = SENTE, movetimeMs = 1000, temperature = 1,
                 mode = 'standard', humanRole = null, kingTable = null, rng = Math.random,
-                notation = 'ja', spectate = false, opponent = 'ai', valueNet = null }) {
+                notation = 'ja', spectate = false, opponent = 'ai', valueNet = null,
+                balanceRules = BALANCE_RULES }) {
+    if (balanceRules !== BALANCE_RULES && balanceRules !== BALANCE_RULES_V1)
+      throw new Error(`天秤将棋のルールの版が分からない: ${balanceRules}`);
+    this.balanceRules = balanceRules;
     this.valueNet = valueNet;
     this.notation = notation === 'en' ? 'en' : 'ja';
     this.MARK = MARKS[this.notation];
@@ -104,8 +118,16 @@ export class Game {
     // 千日手の判定用。通常フェーズの局面（盤・持ち駒・手番）と、その局面が王手かどうか。
     this._history = [];
 
-    this.fuseki.reset();
+    this.fuseki.reset(this.fusekiRules);
     this.boardPieces = new Map();    // 布石フェーズの表示用。打った手をそのまま並べるだけ。
+  }
+
+  /**
+   * 布石のWASMに渡す禁じ手の旗。二飛香は天秤将棋の2版からで、布石将棋には掛けない。
+   * 同じ手順を別の Fuseki で作り直す口（検討の候補手）も、これを渡して reset すること。
+   */
+  get fusekiRules() {
+    return this.mode === 'kings-first' && this.balanceRules >= BALANCE_RULES ? FUSEKI_RULE_NIHIKYO : FUSEKI_RULE_NONE;
   }
 
   // ---- 手番 ----
@@ -720,7 +742,7 @@ export class Game {
   }
 
   _reset() {
-    this.fuseki.reset();
+    this.fuseki.reset(this.fusekiRules);
     this.boardPieces.clear();
     this.kifu.length = 0;
     this.fusekiMoves.length = 0;
@@ -737,6 +759,32 @@ export class Game {
     this._lastDestSquare = undefined;
     this._history = [];
   }
+}
+
+/**
+ * 版の書かれていない天秤将棋の手順を、どの版のルールで再生するか。いまの版で最後まで入れば
+ * いまの版、入らず二飛香の前の版なら入るならそちら。どちらでも入らなければいまの版を返す
+ * （どこで止まったかを言うのは呼び手）。
+ *
+ * 両方の版で入る手順は、どちらで再生しても同じ盤・同じ結果になる（版で変わるのは打てる手の
+ * 候補だけで、41手目の裁定は盤しか見ない）。だから先に試した版で決めてよい。
+ *
+ * fuseki の局面を上書きするので、呼んだ後は Game を作り直すこと。
+ */
+export function rulesForTokens(fuseki, tokens) {
+  const fits = balanceRules => {
+    const g = new Game({ fuseki, policy: null, engine: null, mode: 'kings-first', humanRole: 'placer', balanceRules });
+    try {
+      for (const t of tokens) {
+        if (g.phase === 'over') return false;
+        g.play(t);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  return fits(BALANCE_RULES) || !fits(BALANCE_RULES_V1) ? BALANCE_RULES : BALANCE_RULES_V1;
 }
 
 /** 千日手の判定に使う局面の鍵。盤・持ち駒・手番（手数は含めない）。 */

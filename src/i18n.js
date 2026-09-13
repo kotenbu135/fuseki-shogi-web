@@ -364,6 +364,11 @@ const DICT = {
   io_no_table: { ja: '天秤将棋の手順ですが、天秤の表が読み込まれていません。', en: 'These are Balance Shogi moves, but the king table is not loaded.' },
   io_stopped: { ja: '{n}手目「{m}」で止まりました: {e}', en: 'Stopped at move {n} “{m}”: {e}' },
   io_loaded: { ja: '{n}手を読み込みました。', en: 'Loaded {n} moves.' },
+  // 二飛香を加える前の天秤将棋の手順（game.js の rulesForTokens）。
+  io_loaded_v1: {
+    ja: '{n}手を読み込みました。二飛香を加える前のルールで指された棋譜なので、そのルールで再生しています。',
+    en: 'Loaded {n} moves. This game was played before the Nihikyō rule was added, so it is replayed under the old rules.',
+  },
   io_over: { ja: 'この手順は途中で終局している', en: 'this sequence ends the game before the last move' },
 
   // ---- ホームへ戻る ----
@@ -376,6 +381,7 @@ const DICT = {
   // ---- 棋譜の書き出し ----
   kifu_rule_standard: { ja: '布石将棋', en: 'Fuseki Shogi' },
   kifu_rule_kings: { ja: '天秤将棋', en: 'Balance Shogi' },
+  kifu_rule_kings_v1: { ja: '天秤将棋（二飛香を加える前のルール）', en: 'Balance Shogi (rules before Nihikyō)' },
   kifu_level: { ja: 'AIレベル{n}', en: 'AI level {n}' },
   kifu_seats_undecided: { ja: '先後は未定', en: 'sides undecided' },
   kifu_seats_you_sente: { ja: '先手 あなた・後手 {them}', en: 'Sente you · Gote {them}' },
@@ -515,8 +521,8 @@ const DICT = {
   // 天秤将棋の案内（/balance/）。「天秤将棋」で探した人が最初に着く場所。題は遊べることを言う。
   page_title_balance: { ja: '天秤将棋をブラウザで対局', en: 'Play Balance Shogi in your browser' },
   page_desc_rules: {
-    ja: '布石将棋と天秤将棋のルール。置ける範囲、二歩回避の禁じ手、41手目の裁定、天秤将棋の手順。',
-    en: 'Rules of Fuseki Shogi and Balance Shogi: placement zone, the nifu-avoidance restriction, the move-41 adjudication, and the king-placement procedure.',
+    ja: '布石将棋と天秤将棋のルール。置ける範囲、二歩回避の禁じ手、41手目の裁定、天秤将棋の手順と禁じ手「二飛香」。',
+    en: 'Rules of Fuseki Shogi and Balance Shogi: placement zone, the nifu-avoidance restriction, the move-41 adjudication, and Balance Shogi’s king-placement procedure and Nihikyō restriction.',
   },
   page_desc_balance: {
     ja: '天秤将棋は、一方が両方の玉を置き、もう一方が先手か後手かを選ぶ将棋。先手の得を対局者自身が釣り合わせる。AIや友達と、ブラウザだけで対局できる。ルールの要点と始め方。',

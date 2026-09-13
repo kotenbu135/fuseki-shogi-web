@@ -22,6 +22,13 @@ const PIECE_TYPES = [
   { pt: 8, usi: 'K', role: 'king' },
 ];
 
+/**
+ * cppshogi の FusekiRule（engine/dlshogi/cppshogi/fuseki.hpp）。reset() に渡す、布石のルールに足す禁じ手。
+ * 0 は shogitter の布石将棋そのまま。値は load() 時に fw_rule_nihikyo で照合する。
+ */
+export const FUSEKI_RULE_NONE = 0;
+export const FUSEKI_RULE_NIHIKYO = 1;   // 二飛香（天秤将棋、2026-09-13）
+
 const ROLE_OF_PT = new Map(PIECE_TYPES.map(p => [p.pt, p.role]));
 const PT_OF_USI = new Map(PIECE_TYPES.map(p => [p.usi, p.pt]));
 
@@ -62,6 +69,11 @@ export class Fuseki {
       const got = M.ccall('fw_move_to_usi', 'string', ['number', 'number'], [pt, 0]);
       if (got[0] !== usi) throw new Error(`PieceTypeの対応がズレている: pt=${pt} は '${got[0]}' で '${usi}' ではない`);
     }
+    // 二飛香の旗。古いWASMには口が無く、ズレていれば天秤将棋で禁じ手が効かない。
+    let nihikyo;
+    try { nihikyo = M.ccall('fw_rule_nihikyo', 'number', [], []); } catch { nihikyo = null; }
+    if (nihikyo !== FUSEKI_RULE_NIHIKYO)
+      throw new Error(`FusekiRule の二飛香の値が合わない: ${nihikyo}（WASMが古いか、enumがズレている）`);
     return new Fuseki(M);
   }
 
@@ -74,7 +86,8 @@ export class Fuseki {
     this.reset();
   }
 
-  reset() { this.M.ccall('fw_reset', null, [], []); }
+  /** 空の盤に戻す。rules は FUSEKI_RULE_* の組み合わせで、次の reset まで効く。 */
+  reset(rules = FUSEKI_RULE_NONE) { this.M.ccall('fw_reset', null, ['number'], [rules]); }
 
   get ply() { return this.M.ccall('fw_ply', 'number', [], []); }
   get turn() { return this.M.ccall('fw_turn', 'number', [], []); }

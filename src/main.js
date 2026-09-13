@@ -10,7 +10,10 @@ import { Fuseki } from './fuseki.js';
 import { FusekiPolicy } from './policy.js';
 import { FusekiValue } from './value.js';
 import { NormalEngine, loadYaneuraOuFactory } from './normal.js';
-import { Game, SENTE, GOTE, positionMoveDests, positionDropDests, promotionConfig, usiDropSquare } from './game.js';
+import {
+  Game, SENTE, GOTE, BALANCE_RULES, BALANCE_RULES_V1, rulesForTokens,
+  positionMoveDests, positionDropDests, promotionConfig, usiDropSquare,
+} from './game.js';
 import { parseSquareName, parseUsi, makeSquareName } from 'shogiops/util';
 import { makeJapaneseSquare } from 'shogiops/notation/util';
 import { makeSfen } from 'shogiops/sfen';
@@ -1011,7 +1014,8 @@ function flipBoard() {
 ui.flip.addEventListener('click', flipBoard);
 ui.flipAnalyze.addEventListener('click', flipBoard);
 
-function startGame() {
+/** @param {{balanceRules?: 1|2}} [opts] 天秤将棋の版。旧ルールの手順を読み込むとき（loadMoves）だけ渡す */
+function startGame({ balanceRules = BALANCE_RULES } = {}) {
   if (busy || !engines) return;
   leaveRoom();     // オンラインの部屋に居たなら出る（AI相手の対局を始める）
   endAnalysis();   // 前の対局の検討が開いていれば閉じる（MultiPV も戻す）
@@ -1032,7 +1036,7 @@ function startGame() {
   if (LEVELS[n]) aiLevel = n;
   const lv = LEVELS[aiLevel] ?? LEVELS[3];
   game = new Game({
-    ...engines, humanColor, mode, humanRole, spectate,
+    ...engines, humanColor, mode, humanRole, spectate, balanceRules,
     movetimeMs: lv.movetimeMs, temperature: lv.temperature, notation: LANG,
   });
   soundedKifu = 0;
@@ -1332,12 +1336,14 @@ function onState(st) {
 function buildOnlineGame(st) {
   endAnalysis();
   const me = st.you ? st.seats[st.you] : null;
+  // 天秤将棋の版は部屋が決める（worker/src/room.js）。版を送ってこない部屋は二飛香の前に作られた部屋。
+  const balanceRules = st.balanceRules === BALANCE_RULES ? BALANCE_RULES : BALANCE_RULES_V1;
   game = me
     ? new Game({
-      ...engines, opponent: 'remote', mode: st.mode, notation: LANG,
+      ...engines, opponent: 'remote', mode: st.mode, notation: LANG, balanceRules,
       humanColor: me.side ?? SENTE, humanRole: st.mode === 'kings-first' ? me.role : null,
     })
-    : new Game({ ...engines, opponent: 'remote', mode: st.mode, notation: LANG, spectate: true });
+    : new Game({ ...engines, opponent: 'remote', mode: st.mode, notation: LANG, balanceRules, spectate: true });
   online.game = game;
   online.reported = false;
   orientation = me?.side ?? SENTE;
@@ -2376,7 +2382,7 @@ async function fusekiCandidates(row, gen) {
   if (g.mode === 'kings-first' && row < 3) return renderAnalysis();
   if (!analysisFuseki) analysisFuseki = await Fuseki.load(ASSETS.fuseki);
   if (gen !== infoGen || game !== g) return;
-  analysisFuseki.reset();
+  analysisFuseki.reset(g.fusekiRules);   // 対局と同じ禁じ手で作り直す（二飛香）
   for (const e of g.kifu.slice(0, row)) if (!e.usi.startsWith('choose:')) analysisFuseki.drop(e.usi);
   if (analysisFuseki.isPlacementDone) return renderAnalysis();
   const { logits } = await engines.policy.evaluate(analysisFuseki);
@@ -2694,7 +2700,8 @@ function kifuText() {
     : t(game.humanColor === SENTE ? 'kifu_seats_you_sente' : 'kifu_seats_you_gote', { them: themShort() });
   // 天秤将棋は役も残す。色と役は一致するとは限らないので、両方書く。
   const roles = game.mode !== 'kings-first' ? '' : `${kifuHeadText()} / `;
-  const rule = t(game.mode === 'kings-first' ? 'kifu_rule_kings' : 'kifu_rule_standard');
+  const rule = t(game.mode !== 'kings-first' ? 'kifu_rule_standard'
+    : game.balanceRules === BALANCE_RULES ? 'kifu_rule_kings' : 'kifu_rule_kings_v1');
   const lines = [`${rule} / ${online ? t('kifu_online') : t('kifu_level', { n: aiLevel })} / ${roles}${seats}`];
   for (const e of game.kifu) {
     // 41手目の局面は指し手からは再現できない（布石フェーズにPositionが無い）。
@@ -2779,10 +2786,13 @@ function loadMoves() {
   // ルールは手順に書いてある。選択のトークンがあれば天秤将棋。
   const kingsFirst = moves.some(m => m.startsWith('choose:'));
   if (kingsFirst && !engines.kingTable) return note(t('io_no_table'));
+  // 手順にルールの版は書かれない。天秤将棋の手順がいまの版（二飛香あり）で入らず、
+  // 二飛香の前の版なら入るなら、旧ルールの棋譜としてそちらで再生し、そう知らせる。
+  const balanceRules = kingsFirst ? rulesForTokens(engines.fuseki, moves) : BALANCE_RULES;
   setMode(kingsFirst ? 'kings-first' : 'standard');
 
   sound.unlock();     // 利用者の操作の中でしか起こせない。ここも最初の機会になりうる
-  startGame();        // 時計も設定も入れ直す。この直後の drive() は下の undoTo で捨てられる
+  startGame({ balanceRules });   // 時計も設定も入れ直す。この直後の drive() は下の undoTo で捨てられる
   game.undoTo(0);
   let i = 0;
   try {
@@ -2798,7 +2808,7 @@ function loadMoves() {
     render();
     return;
   }
-  note(t('io_loaded', { n: moves.length }));
+  note(t(balanceRules === BALANCE_RULES ? 'io_loaded' : 'io_loaded_v1', { n: moves.length }));
   ui.ioDialog.close();
   viewPly = null;
   soundedKifu = game.kifu.length;   // 読み込んだぶんの駒音は鳴らさない

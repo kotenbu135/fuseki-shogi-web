@@ -13,6 +13,14 @@ import {
   normalCount, MAX_MSG_BYTES, MAX_ROOM_SOCKETS, MSG_STRIKES, newBucket, takeToken,
 } from './rules.js';
 import { newJudge } from './judge.js';
+import { BALANCE_RULES, BALANCE_RULES_V1 } from '../../src/game.js';
+
+/**
+ * 部屋の天秤将棋のルールの版（src/game.js の BALANCE_RULES）。部屋を作った時点の版で最後まで指す。
+ * 版を持たない部屋（state.v が 2 まで）は二飛香の前に作られたので、旧ルールのまま判定する
+ * ——deploy の時点で進行中の部屋も、判定役が手順を入れられなくならずに終局まで続く。
+ */
+const balanceRulesOf = s => (s.balanceRules === BALANCE_RULES ? BALANCE_RULES : BALANCE_RULES_V1);
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -88,7 +96,8 @@ export class Room {
       seats.guest.role = role === 'placer' ? 'chooser' : 'placer';
     }
     this.state = {
-      v: 2, id: body.id, mode, timeKey: tcKey, timeCtl: TIME_CONTROLS[tcKey],
+      // v3: balanceRules を持つ（二飛香）。布石将棋の部屋では使わないが、同じ形にしておく。
+      v: 3, id: body.id, mode, balanceRules: BALANCE_RULES, timeKey: tcKey, timeCtl: TIME_CONTROLS[tcKey],
       lang: body.lang === 'en' ? 'en' : 'ja',
       public: body.public === true,
       names: { host: cleanNick(body.nick), guest: null },
@@ -185,7 +194,7 @@ export class Room {
     const s = this.state;
     const now = Date.now();
     return {
-      t: 'state', id: s.id, mode: s.mode, time: s.timeKey, timeCtl: s.timeCtl, lang: s.lang,
+      t: 'state', id: s.id, mode: s.mode, balanceRules: balanceRulesOf(s), time: s.timeKey, timeCtl: s.timeCtl, lang: s.lang,
       you: seat, names: s.names, public: s.public,
       seats: {
         host: { side: s.seats.host.side, role: s.seats.host.role },
@@ -295,7 +304,7 @@ export class Room {
   async ensureJudge() {
     if (this.judge || this.judgeBroken) return this.judge;
     try {
-      this.judge = await newJudge({ mode: this.state.mode, tokens: this.state.tokens });
+      this.judge = await newJudge({ mode: this.state.mode, balanceRules: balanceRulesOf(this.state), tokens: this.state.tokens });
     } catch (e) {
       console.error('judge を作れない。検証なしで続ける:', e?.message ?? e);
       this.judgeBroken = true;

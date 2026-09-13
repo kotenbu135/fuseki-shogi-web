@@ -154,6 +154,18 @@ await kh.wait(m => m.t === 'moved' && m.ply === 3);
 kh.send({ t: 'over', ply: 4, result: { winner: 'sente', reason: 'checkmate' } });
 e = await kh.wait(m => m.t === 'error');
 check('天秤: 終局の申告は判定役が見直し、終わっていなければ断る', e.code === 'not_over', e.code);
+// 二飛香（src/game.js の BALANCE_RULES）。新しく作った部屋は2版で、判定役もその版で見る。
+check('天秤: 部屋は二飛香の版（2）で作られる', st.balanceRules === 2, String(st.balanceRules));
+kh.send({ t: 'move', ply: 4, token: 'R*5b' });
+await kg.wait(m => m.t === 'moved' && m.ply === 4);
+kg.send({ t: 'move', ply: 5, token: 'P*1g' });
+await kh.wait(m => m.t === 'moved' && m.ply === 5);
+kh.send({ t: 'move', ply: 6, token: 'L*5c' });   // 5筋に後手の飛がある（5a は後手玉）
+e = await kh.wait(m => m.t === 'error', 10000);
+check('天秤: 判定役が二飛香（飛のある筋への香）を断る', e.code === 'illegal', e.code);
+kh.send({ t: 'move', ply: 6, token: 'L*4b' });
+const m6 = await kg.wait(m => m.t === 'moved' && m.ply === 6);
+check('天秤: 別の筋への香は通る', m6.token === 'L*4b');
 kh.close(); kg.close();
 
 // ---- 10秒将棋の時間切れ（アラーム） ----

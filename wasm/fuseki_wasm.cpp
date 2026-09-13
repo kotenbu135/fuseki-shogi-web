@@ -12,7 +12,7 @@
 #include "fuseki.hpp"
 
 void init();
-void __fuseki_reset();
+void __fuseki_reset(int rules);
 int __fuseki_legal_drops(int* outPieceTypes, int* outSquares, int maxCount);
 void __fuseki_do_drop(int pieceType, int square);
 bool __fuseki_is_placement_done();
@@ -38,7 +38,10 @@ namespace {
 extern "C" {
 
 EMSCRIPTEN_KEEPALIVE void fw_init() { if (!g_initialized) { init(); g_initialized = true; } }
-EMSCRIPTEN_KEEPALIVE void fw_reset() { fw_init(); __fuseki_reset(); }
+// rules は FusekiRule（fuseki.hpp）の組み合わせ。0 が布石将棋、FusekiRuleNihikyo が天秤将棋の二飛香。
+EMSCRIPTEN_KEEPALIVE void fw_reset(int rules) { fw_init(); __fuseki_reset(rules); }
+// JS側（src/fuseki.js）が起動時に値を照合する。enumがズレたら禁じ手を取り違えるため。
+EMSCRIPTEN_KEEPALIVE int fw_rule_nihikyo() { return FusekiRuleNihikyo; }
 EMSCRIPTEN_KEEPALIVE int fw_legal_drops() { return __fuseki_legal_drops(g_pts, g_sqs, 2048); }
 EMSCRIPTEN_KEEPALIVE int* fw_drops_pt_ptr() { return g_pts; }
 EMSCRIPTEN_KEEPALIVE int* fw_drops_sq_ptr() { return g_sqs; }

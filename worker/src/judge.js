@@ -17,7 +17,7 @@ import { Game } from '../../src/game.js';
  * 判定役の Game を作り、手順を入れる。手順のどれかが入らなければ例外
  * （部屋の手順が壊れている。部屋はその場合、検証なしで続ける）。
  */
-export async function newJudge({ mode, tokens }) {
+export async function newJudge({ mode, balanceRules, tokens }) {
   const fuseki = await Fuseki.create(FusekiModule, {
     instantiateWasm(imports, done) {
       const instance = new WebAssembly.Instance(fusekiWasm, imports);
@@ -27,7 +27,7 @@ export async function newJudge({ mode, tokens }) {
   });
   // 人間の色・役は判定には関係ない。コンストラクタが要求する形だけ満たす。
   const game = new Game({
-    fuseki, policy: null, engine: null, opponent: 'remote', mode,
+    fuseki, policy: null, engine: null, opponent: 'remote', mode, balanceRules,
     humanColor: 'sente', humanRole: mode === 'kings-first' ? 'placer' : null, notation: 'en',
   });
   for (const t of tokens) game.play(t);

@@ -182,7 +182,33 @@
     <span class="what">Moves 3–40 — the rest<br><em>19 each, alternately from Sente</em></span>
   </li>
 </ol>
-<p>The placement zone, the nifu-avoidance rule, the move-40 restriction and the move-41 adjudication are unchanged. Only the first two moves and the choice are new. The kings are already on the board, so 19 pieces each remain from move 3.</p>
+<p>The placement zone, the nifu-avoidance rule, the move-40 restriction and the move-41 adjudication are unchanged. What is new: the first two moves, the choice, and one more restriction, Nihikyō, described next. The kings are already on the board, so 19 pieces each remain from move 3.</p>
+
+<h3 id="nihikyo">Nihikyō</h3>
+<p>During placement (moves 3–40), <b>each file of your camp may hold at most one of your rook and lances</b>. Dropping a rook or a lance on a file that already holds your rook or a lance is illegal. Only your own pieces count; the opponent’s rook and lances do not. From move 41 the rule no longer applies.</p>
+<div class="diag-row">
+  <figure>
+    <h4><span class="tag bad">✕</span>A lance on the rook’s file</h4>
+    <div class="diag camp">
+      <piece class="sente rook f5 r8"></piece>
+      <div class="mk bad f5 r6">✕</div>
+      <piece class="sente lance f9 r9"></piece>
+      <div class="mk bad f9 r7">✕</div>
+    </div>
+    <figcaption>File 5 already holds the rook, so a lance there is illegal. So is a second lance, or the rook, on file 9 where a lance already stands.</figcaption>
+  </figure>
+  <figure>
+    <h4><span class="tag ok">○</span>Rook and lances on separate files</h4>
+    <div class="diag camp">
+      <piece class="sente rook f5 r8"></piece>
+      <piece class="sente lance f9 r9"></piece>
+      <piece class="sente lance f1 r9"></piece>
+    </div>
+    <figcaption>With the rook and both lances on different files, any rank is fine.</figcaption>
+  </figure>
+</div>
+<p>It applies together with the move-40 restriction. If a move that would block the attack on your king is ruled out by Nihikyō, that move does not exist. If no blocking move remains, the move-41 adjudication applies as before — and Nihikyō is not lifted. Some legal placement always remains, in every position.</p>
+<p>The rule was added on 13 September 2026. The placement AI had come to stack its rook and both lances on one file (a “triple rocket”) in most games, a shape that scored better whether or not the opponent built it too, so more training never wore it out. Its strength lies mainly in the two lances, but banning only those would just have shifted play to rook and lance, so the rook counts as well. Shapes that can be answered by preparing a defence, such as pieces facing each other, are left alone; only stacking pieces that run along the same file is ruled out.</p>
 
 <h3>Who places, and who is Sente</h3>
 <p>Furigoma decides who places the kings; the choice decides the sides. <b>The placer is not necessarily Sente.</b> The game record keeps both.</p>
@@ -216,9 +242,9 @@
 <ul>
   <li><b>Placing</b>: draw one pair at random from the 48 closest to even. Not narrower, so the AI does not open the same way every game.</li>
   <li><b>Choosing</b>: take Sente if the pair’s value is above 50%, Gote if below.</li>
-  <li><b>From move 3</b>: the placement policy network puts down the rest.</li>
+  <li><b>From move 3</b>: the placement policy network puts down the rest. It was trained under the rules before Nihikyō and chooses among the moves that remain legal.</li>
 </ul>
-<p>Those 48 pairs are valued by real games rather than by an engine score — over 600 games each. The table itself is below.</p>
+<p>Those 48 pairs are valued by real games rather than by an engine score — over 600 games each. The table itself is below. Every value in it was measured under the rules before Nihikyō and has not been re-measured.</p>
 <figure>
   <div class="heat" id="heat" data-table="{{king_table}}" data-black="Sente king (Sente’s camp, back rank at the bottom)" data-white="Gote king (Gote’s camp, back rank at the top)" data-low="favours Gote" data-high="favours Sente" data-error="Could not load the table"></div>
   <figcaption>The value of a single king square, in winning-rate points from Sente’s side. Sente’s king on the left, Gote’s on the right; positive favours Sente, negative favours Gote. Drawn straight from the published table <code>{{king_table}}</code>.</figcaption>
@@ -230,6 +256,7 @@
   <tr><th></th><th>Ordinary shogi</th><th>Fuseki Shogi</th><th>Balance Shogi</th></tr>
   <tr><th>Opening position</th><td>fixed (one)</td><td colspan="2">built by the players (about 10<sup>37</sup>)</td></tr>
   <tr><th>First 40 moves</th><td>played</td><td colspan="2">placements only; nothing moves</td></tr>
+  <tr><th>Placement restrictions</th><td>—</td><td>nifu avoidance</td><td>nifu avoidance, Nihikyō</td></tr>
   <tr><th>King square</th><td>5i and 5a</td><td>anywhere in your four ranks</td><td>the placer decides both</td></tr>
   <tr><th>Choosing sides</th><td>furigoma</td><td>furigoma</td><td>look at both kings, then choose</td></tr>
   <tr><th>From move 41</th><td>—</td><td colspan="2">ordinary shogi</td></tr>
